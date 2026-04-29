@@ -9,6 +9,7 @@ import {
   type StoredAuth,
 } from "@/components/api";
 import { LoginPanel } from "@/components/LoginPanel";
+import { Spinner } from "@/components/Spinner";
 
 type Employee = {
   id: string;
@@ -62,7 +63,13 @@ const workTypeLabels: Record<WorkType, string> = {
   business_trip: "출장",
 };
 
+const weekdayLabels = ["일", "월", "화", "수", "목", "금", "토"];
+
 export function AdminApp() {
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
+  const [adminPassword, setAdminPassword] = useState("");
+  const [unlockMessage, setUnlockMessage] = useState("");
+  const [isUnlocking, setIsUnlocking] = useState(false);
   const [auth, setAuth] = useState<StoredAuth | null>(null);
   const [admin, setAdmin] = useState<Employee | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -74,7 +81,10 @@ export function AdminApp() {
   const [form, setForm] = useState<AttendanceForm>(() => emptyForm());
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [approvingDeviceId, setApprovingDeviceId] = useState<string | null>(null);
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
@@ -93,35 +103,51 @@ export function AdminApp() {
   const load = useCallback(
     async (storedAuth: StoredAuth) => {
       setMessage("");
-      const me = await apiFetch<{ employee: Employee }>("/api/auth/me", {
-        auth: storedAuth,
-      });
+      setIsRefreshing(true);
 
-      if (me.employee.role !== "admin") {
-        throw new Error("관리자만 접근할 수 있습니다.");
+      try {
+        const me = await apiFetch<{ employee: Employee }>("/api/auth/me", {
+          auth: storedAuth,
+        });
+
+        if (me.employee.role !== "admin") {
+          throw new Error("관리자만 접근할 수 있습니다.");
+        }
+
+        const [employeesResult, recordsResult, devicesResult] = await Promise.all([
+          apiFetch<{ employees: Employee[] }>("/api/admin/employees", {
+            auth: storedAuth,
+          }),
+          apiFetch<{ records: AttendanceRecord[] }>(`/api/admin/attendance?${query}`, {
+            auth: storedAuth,
+          }),
+          apiFetch<{ devices: DeviceRequest[] }>("/api/admin/devices", {
+            auth: storedAuth,
+          }),
+        ]);
+
+        setAdmin(me.employee);
+        setEmployees(employeesResult.employees);
+        setRecords(recordsResult.records);
+        setDevices(devicesResult.devices);
+      } finally {
+        setIsRefreshing(false);
       }
-
-      const [employeesResult, recordsResult, devicesResult] = await Promise.all([
-        apiFetch<{ employees: Employee[] }>("/api/admin/employees", {
-          auth: storedAuth,
-        }),
-        apiFetch<{ records: AttendanceRecord[] }>(`/api/admin/attendance?${query}`, {
-          auth: storedAuth,
-        }),
-        apiFetch<{ devices: DeviceRequest[] }>("/api/admin/devices", {
-          auth: storedAuth,
-        }),
-      ]);
-
-      setAdmin(me.employee);
-      setEmployees(employeesResult.employees);
-      setRecords(recordsResult.records);
-      setDevices(devicesResult.devices);
     },
     [query],
   );
 
   useEffect(() => {
+    setIsAdminUnlocked(sessionStorage.getItem("attendance.adminUnlocked") === "1");
+  }, []);
+
+  useEffect(() => {
+    if (!isAdminUnlocked) {
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
     const storedAuth = getStoredAuth();
     setAuth(storedAuth);
 
@@ -140,8 +166,32 @@ export function AdminApp() {
         clearToken();
         setAuth(null);
       })
-      .finally(() => setIsLoading(false));
-  }, [load]);
+      .finally(() => {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      });
+  }, [isAdminUnlocked, load]);
+
+  async function unlockAdmin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setUnlockMessage("");
+    setIsUnlocking(true);
+
+    try {
+      await apiFetch<{ ok: true }>("/api/admin/unlock", {
+        method: "POST",
+        body: JSON.stringify({ password: adminPassword }),
+      });
+      sessionStorage.setItem("attendance.adminUnlocked", "1");
+      setIsAdminUnlocked(true);
+    } catch (error) {
+      setUnlockMessage(
+        error instanceof Error ? error.message : "관리자 비밀번호를 확인하지 못했습니다.",
+      );
+    } finally {
+      setIsUnlocking(false);
+    }
+  }
 
   async function refresh() {
     const storedAuth = getStoredAuth();
@@ -195,6 +245,7 @@ export function AdminApp() {
     if (!auth) return;
 
     setIsMutating(true);
+    setApprovingDeviceId(id);
     setMessage("");
     try {
       await apiFetch(`/api/admin/devices/${id}/approve`, {
@@ -208,6 +259,7 @@ export function AdminApp() {
       );
     } finally {
       setIsMutating(false);
+      setApprovingDeviceId(null);
     }
   }
 
@@ -215,6 +267,7 @@ export function AdminApp() {
     if (!auth) return;
 
     setMessage("");
+    setIsDownloading(true);
     try {
       const response = await fetch(`/api/admin/attendance/export?${query}`, {
         headers: {
@@ -237,6 +290,8 @@ export function AdminApp() {
       URL.revokeObjectURL(url);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "CSV를 내려받지 못했습니다.");
+    } finally {
+      setIsDownloading(false);
     }
   }
 
@@ -249,14 +304,75 @@ export function AdminApp() {
     }
 
     clearToken();
+    sessionStorage.removeItem("attendance.adminUnlocked");
     setAuth(null);
     setAdmin(null);
+    setIsAdminUnlocked(false);
   }
 
   if (isLoading) {
     return (
       <main className="flex min-h-dvh items-center justify-center px-4 text-sm text-muted">
-        불러오는 중
+        <span className="inline-flex items-center gap-2">
+          <Spinner />
+          불러오는 중
+        </span>
+      </main>
+    );
+  }
+
+  if (!isAdminUnlocked) {
+    return (
+      <main className="mx-auto flex min-h-dvh w-full max-w-md items-center px-4 py-6">
+        <form
+          className="w-full rounded-lg border border-line bg-white/95 p-6 shadow-panel"
+          onSubmit={unlockAdmin}
+        >
+          <img
+            alt="웰니스박스"
+            className="mb-4 h-8 w-auto"
+            height={32}
+            src="/brand/wellnessbox-logo.png"
+            width={160}
+          />
+          <h1 className="text-xl font-bold text-ink">관리자 확인</h1>
+          <p className="mt-1 text-sm text-muted">
+            관리자 페이지에 접근하려면 비밀번호를 입력하세요.
+          </p>
+
+          <label className="mt-5 block">
+            <span className="label">관리자 비밀번호</span>
+            <input
+              autoComplete="current-password"
+              className="field mt-1"
+              inputMode="numeric"
+              onChange={(event) => setAdminPassword(event.target.value)}
+              type="password"
+              value={adminPassword}
+            />
+          </label>
+
+          {unlockMessage ? (
+            <p className="mt-4 rounded border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn">
+              {unlockMessage}
+            </p>
+          ) : null}
+
+          <button
+            className="primary-button mt-5 w-full"
+            disabled={isUnlocking}
+            type="submit"
+          >
+            {isUnlocking ? (
+              <>
+                <Spinner className="mr-2" />
+                확인 중
+              </>
+            ) : (
+              "확인"
+            )}
+          </button>
+        </form>
       </main>
     );
   }
@@ -328,11 +444,35 @@ export function AdminApp() {
           <button className="secondary-button self-end" onClick={setThisMonth} type="button">
             이번 달
           </button>
-          <button className="secondary-button self-end" onClick={refresh} type="button">
-            조회
+          <button
+            className="secondary-button self-end"
+            disabled={isRefreshing}
+            onClick={refresh}
+            type="button"
+          >
+            {isRefreshing ? (
+              <>
+                <Spinner className="mr-2" />
+                조회 중
+              </>
+            ) : (
+              "조회"
+            )}
           </button>
-          <button className="primary-button self-end" onClick={downloadCsv} type="button">
-            CSV
+          <button
+            className="primary-button self-end"
+            disabled={isDownloading}
+            onClick={downloadCsv}
+            type="button"
+          >
+            {isDownloading ? (
+              <>
+                <Spinner className="mr-2" />
+                CSV
+              </>
+            ) : (
+              "CSV"
+            )}
           </button>
         </div>
       </section>
@@ -365,7 +505,14 @@ export function AdminApp() {
                         onClick={() => approveDevice(device.id)}
                         type="button"
                       >
-                        승인
+                        {approvingDeviceId === device.id ? (
+                          <>
+                            <Spinner className="mr-2 h-3 w-3" />
+                            승인 중
+                          </>
+                        ) : (
+                          "승인"
+                        )}
                       </button>
                     </td>
                   </tr>
@@ -380,42 +527,69 @@ export function AdminApp() {
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-base font-bold text-ink">직원별 월간 요약</h2>
           <span className="text-xs font-semibold text-muted">
-            {startDate} ~ {endDate}
+            {isRefreshing ? (
+              <span className="inline-flex items-center gap-1">
+                <Spinner className="h-3 w-3" />
+                갱신 중
+              </span>
+            ) : (
+              `${startDate} ~ ${endDate}`
+            )}
           </span>
         </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {monthlySummary.map((summary) => (
-            <div key={summary.employee.id} className="rounded border border-line bg-field/80 p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-bold text-ink">{displayEmployee(summary.employee)}</h3>
-                  <p className="mt-1 text-xs text-muted">
-                    기록 {summary.checkInDays}일 · 확인필요 {summary.openDays}건
-                  </p>
-                </div>
-                <span className={summary.openDays ? "text-sm font-bold text-warn" : "text-sm font-bold text-accent"}>
-                  {summary.openDays ? "확인필요" : "정상"}
-                </span>
-              </div>
-              <div className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(34px,1fr))] gap-1">
-                {summary.days.map((day) => (
-                  <span
-                    key={day.date}
-                    className={dayClassName(day.status)}
-                    title={`${day.date} ${day.label}`}
-                  >
-                    {day.day}
+        <div className="max-h-[560px] overflow-auto pr-1">
+          <div className="grid min-w-[340px] gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {monthlySummary.map((summary) => (
+              <div key={summary.employee.id} className="rounded border border-line bg-field/80 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-bold text-ink">{displayEmployee(summary.employee)}</h3>
+                    <p className="mt-1 text-xs text-muted">
+                      기록 {summary.checkInDays}일 · 확인필요 {summary.openDays}건
+                    </p>
+                  </div>
+                  <span className={summary.openDays ? "text-sm font-bold text-warn" : "text-sm font-bold text-accent"}>
+                    {summary.openDays ? "확인필요" : "정상"}
                   </span>
-                ))}
+                </div>
+
+                <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[11px] font-bold text-muted">
+                  {weekdayLabels.map((weekday) => (
+                    <span key={weekday} className="py-1">
+                      {weekday}
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-1 max-h-72 overflow-y-auto pr-1">
+                  <div className="grid grid-cols-7 gap-1">
+                    {summary.days.map((day) => (
+                      <span
+                        key={day.date}
+                        className={dayClassName(day.status)}
+                        title={day.label ? `${day.date} ${day.label}` : undefined}
+                      >
+                        {day.day}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </section>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
         <section className="rounded-lg border border-line bg-white/95 p-4 shadow-panel">
-          <h2 className="mb-3 text-base font-bold text-ink">직원별 상세 기록</h2>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-base font-bold text-ink">직원별 상세 기록</h2>
+            {isRefreshing ? (
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted">
+                <Spinner className="h-3 w-3" />
+                갱신 중
+              </span>
+            ) : null}
+          </div>
           <div className="space-y-5">
             {groupedRecords.map((group) => (
               <div key={group.employeeKey} className="overflow-hidden rounded border border-line">
@@ -448,7 +622,7 @@ export function AdminApp() {
                           <td className="py-2 pr-3">{formatTimeOnly(record.checkOutAt)}</td>
                           <td className="py-2 pr-3">{workTypeLabels[record.workType]}</td>
                           <td className="py-2 pr-3 text-xs text-muted">
-                            {record.checkInIp ?? "-"} / {record.checkOutIp ?? "-"}
+                            {formatIpPair(record.checkInIp, record.checkOutIp)}
                           </td>
                           <td className="max-w-48 truncate py-2 pr-3">{record.note ?? "-"}</td>
                           <td className="py-2 pr-3 text-right">
@@ -574,7 +748,14 @@ export function AdminApp() {
             </label>
 
             <button className="primary-button w-full" disabled={isMutating} type="submit">
-              저장
+              {isMutating && !approvingDeviceId ? (
+                <>
+                  <Spinner className="mr-2" />
+                  저장 중
+                </>
+              ) : (
+                "저장"
+              )}
             </button>
           </form>
         </section>
@@ -671,6 +852,26 @@ function formatTimeOnly(value: string | null) {
   }).format(new Date(value));
 }
 
+function formatIpPair(checkInIp: string | null, checkOutIp: string | null) {
+  return `${formatIp(checkInIp)} / ${formatIp(checkOutIp)}`;
+}
+
+function formatIp(value: string | null) {
+  if (!value) {
+    return "-";
+  }
+
+  if (value === "::1" || value === "127.0.0.1" || value === "::ffff:127.0.0.1") {
+    return "개발환경(localhost)";
+  }
+
+  if (value === "auto") {
+    return "자동마감";
+  }
+
+  return value;
+}
+
 function displayEmployee(employee: {
   name?: string;
   employeeName?: string;
@@ -715,11 +916,20 @@ function buildMonthlySummary(
   endDate: string,
 ) {
   const recordMap = new Map(records.map((record) => [`${record.employeeId}_${record.workDate}`, record]));
-  const days = getDateRange(startDate, endDate);
+  const days = getCalendarDateRange(startDate, endDate);
 
   return employees.map((employee) => {
-    const employeeDays = days.map((date) => {
-      const record = recordMap.get(`${employee.id}_${date}`);
+    const employeeDays = days.map((calendarDay) => {
+      if (!calendarDay.date) {
+        return {
+          date: calendarDay.key,
+          day: "",
+          status: "placeholder",
+          label: "",
+        };
+      }
+
+      const record = recordMap.get(`${employee.id}_${calendarDay.date}`);
       const status = record?.checkOutAt && !record.checkInAt
         ? "missing_check_in"
         : record?.checkOutAt
@@ -728,8 +938,8 @@ function buildMonthlySummary(
             ? "open"
             : "empty";
       return {
-        date,
-        day: date.slice(8, 10),
+        date: calendarDay.date,
+        day: calendarDay.date.slice(8, 10),
         status,
         label: status === "done"
           ? "완료"
@@ -744,20 +954,32 @@ function buildMonthlySummary(
     return {
       employee,
       days: employeeDays,
-      checkInDays: employeeDays.filter((day) => day.status !== "empty").length,
+      checkInDays: employeeDays.filter((day) => day.status !== "empty" && day.status !== "placeholder").length,
       openDays: employeeDays.filter((day) => day.status === "open" || day.status === "missing_check_in").length,
     };
   });
 }
 
-function getDateRange(startDate: string, endDate: string) {
-  const dates: string[] = [];
+function getCalendarDateRange(startDate: string, endDate: string) {
+  const dates: Array<{ date: string | null; key: string }> = [];
   const cursor = dateStringToUtcDate(startDate);
   const end = dateStringToUtcDate(endDate);
+  const startDayOfWeek = cursor.getUTCDay();
+
+  for (let index = 0; index < startDayOfWeek; index += 1) {
+    dates.push({ date: null, key: `start-${index}` });
+  }
 
   while (cursor <= end) {
-    dates.push(cursor.toISOString().slice(0, 10));
+    const date = cursor.toISOString().slice(0, 10);
+    dates.push({ date, key: date });
     cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  let endPaddingIndex = 0;
+  while (dates.length % 7 !== 0) {
+    dates.push({ date: null, key: `end-${endPaddingIndex}` });
+    endPaddingIndex += 1;
   }
 
   return dates;
@@ -770,6 +992,7 @@ function dateStringToUtcDate(value: string) {
 
 function dayClassName(status: string) {
   const base = "inline-flex h-7 items-center justify-center rounded text-xs font-bold";
+  if (status === "placeholder") return `${base} bg-transparent`;
   if (status === "done") return `${base} bg-accent text-white`;
   if (status === "missing_check_in") return `${base} bg-warn text-white`;
   if (status === "open") return `${base} bg-warn text-white`;

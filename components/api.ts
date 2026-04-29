@@ -18,6 +18,29 @@ export function getDeviceId() {
   return deviceId;
 }
 
+export async function getDeviceFingerprint() {
+  const source = [
+    navigator.userAgent,
+    navigator.language,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+    screen.width,
+    screen.height,
+    screen.colorDepth,
+    navigator.hardwareConcurrency ?? "",
+    navigator.platform ?? "",
+  ].join("|");
+
+  if (!crypto.subtle) {
+    return btoa(source).slice(0, 128);
+  }
+
+  const encoded = new TextEncoder().encode(source);
+  const digest = await crypto.subtle.digest("SHA-256", encoded);
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 export function getStoredAuth(): StoredAuth | null {
   const token = localStorage.getItem(TOKEN_KEY);
   const deviceId = getDeviceId();

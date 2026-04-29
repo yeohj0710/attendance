@@ -63,11 +63,13 @@ export async function loginWithPin({
   employeeName,
   pin,
   deviceId,
+  deviceFingerprint,
   request,
 }: {
   employeeName: string;
   pin: string;
   deviceId: string;
+  deviceFingerprint?: string;
   request: Request;
 }): Promise<LoginResult> {
   const db = getDb();
@@ -93,6 +95,7 @@ export async function loginWithPin({
     device = await resolveLoginDevice({
       employeeId: employeeDoc.id,
       deviceId,
+      deviceFingerprint,
       request,
     });
   } catch (error) {

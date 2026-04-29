@@ -16,6 +16,7 @@ export type EmployeeDevice = {
   employeeNo?: string;
   employeeName?: string;
   deviceId: string;
+  deviceFingerprint: string | null;
   userAgentHash: string;
   status: DeviceStatus;
   requestedAt: string;
@@ -28,6 +29,7 @@ export type EmployeeDevice = {
 type DeviceData = {
   employee_id: string;
   device_id: string;
+  device_fingerprint?: string | null;
   user_agent_hash: string;
   status: DeviceStatus;
   requested_at: unknown;
@@ -79,13 +81,16 @@ export function isLikelyDesktopRequest(request: Request) {
 export async function resolveLoginDevice({
   employeeId,
   deviceId,
+  deviceFingerprint,
   request,
 }: {
   employeeId: string;
   deviceId: string;
+  deviceFingerprint?: string;
   request: Request;
 }) {
   const normalizedDeviceId = validateDeviceId(deviceId);
+  const normalizedFingerprint = validateDeviceFingerprint(deviceFingerprint);
   const db = getDb();
   const ip = getClientIp(request);
   const userAgentHash = hashUserAgent(request.headers.get("user-agent") ?? "");
@@ -104,6 +109,7 @@ export async function resolveLoginDevice({
     const data: DeviceData = {
       employee_id: employeeId,
       device_id: normalizedDeviceId,
+      device_fingerprint: normalizedFingerprint,
       user_agent_hash: userAgentHash,
       status: "approved",
       requested_at: nowTimestamp(),
@@ -119,16 +125,48 @@ export async function resolveLoginDevice({
     return mapDevice(ref.id, data);
   }
 
-  if (approved.device_id === normalizedDeviceId) {
-    await approvedDoc.ref.update({
+  if (
+    approved.device_id === normalizedDeviceId ||
+    (normalizedFingerprint && approved.device_fingerprint === normalizedFingerprint) ||
+    (!approved.device_fingerprint && approved.user_agent_hash === userAgentHash)
+  ) {
+    const pendingSnapshot = await db
+      .collection("employee_devices")
+      .where("employee_id", "==", employeeId)
+      .where("status", "==", "pending_replacement")
+      .get();
+    const batch = db.batch();
+
+    batch.update(approvedDoc.ref, {
+      device_id: normalizedDeviceId,
+      device_fingerprint: normalizedFingerprint,
       user_agent_hash: userAgentHash,
       last_ip: ip,
       last_seen_at: nowTimestamp(),
       updated_at: nowTimestamp(),
     });
 
+    for (const pendingDoc of pendingSnapshot.docs) {
+      const pending = pendingDoc.data() as DeviceData;
+      const isSameDevice =
+        pending.device_id === normalizedDeviceId ||
+        (normalizedFingerprint && pending.device_fingerprint === normalizedFingerprint) ||
+        (!pending.device_fingerprint && pending.user_agent_hash === userAgentHash);
+
+      if (pendingDoc.id !== approvedDoc.id && isSameDevice) {
+        batch.update(pendingDoc.ref, {
+          status: "replaced",
+          updated_at: nowTimestamp(),
+        });
+      }
+    }
+
+    await batch.commit();
+
     return mapDevice(approvedDoc.id, {
       ...approved,
+      device_id: normalizedDeviceId,
+      device_fingerprint: normalizedFingerprint,
       user_agent_hash: userAgentHash,
       last_ip: ip,
       last_seen_at: nowTimestamp(),
@@ -145,6 +183,7 @@ export async function resolveLoginDevice({
   const data: DeviceData = {
     employee_id: employeeId,
     device_id: normalizedDeviceId,
+    device_fingerprint: normalizedFingerprint,
     user_agent_hash: userAgentHash,
     status: "pending_replacement",
     requested_at: nowTimestamp(),
@@ -162,27 +201,19 @@ export async function resolveLoginDevice({
 
 export async function verifyApprovedDevice(auth: AuthContext, request: Request) {
   const db = getDb();
-  const doc = await db.collection("employee_devices").doc(auth.session.deviceRecordId).get();
-  if (!doc.exists) {
+  const ref = db.collection("employee_devices").doc(auth.session.deviceRecordId);
+
+  try {
+    await ref.update({
+      last_ip: getClientIp(request),
+      last_seen_at: nowTimestamp(),
+      updated_at: nowTimestamp(),
+    });
+  } catch {
     forbidden("등록된 회사 컴퓨터에서만 출퇴근 체크가 가능합니다.");
   }
 
-  const device = doc.data() as DeviceData;
-  if (
-    device.employee_id !== auth.employee.id ||
-    device.device_id !== auth.session.deviceId ||
-    device.status !== "approved"
-  ) {
-    forbidden("등록된 회사 컴퓨터에서만 출퇴근 체크가 가능합니다.");
-  }
-
-  await doc.ref.update({
-    last_ip: getClientIp(request),
-    last_seen_at: nowTimestamp(),
-    updated_at: nowTimestamp(),
-  });
-
-  return mapDevice(doc.id, device);
+  return null;
 }
 
 export async function listPendingDeviceRequests() {
@@ -259,11 +290,25 @@ function validateDeviceId(deviceId: string) {
   return normalized;
 }
 
+function validateDeviceFingerprint(deviceFingerprint: string | undefined) {
+  const normalized = deviceFingerprint?.trim() ?? "";
+  if (!normalized) {
+    return null;
+  }
+
+  if (!/^[a-zA-Z0-9+/=:-]{16,256}$/.test(normalized)) {
+    badRequest("기기 정보를 확인할 수 없습니다.");
+  }
+
+  return normalized;
+}
+
 function mapDevice(id: string, data: DeviceData): EmployeeDevice {
   return {
     id,
     employeeId: data.employee_id,
     deviceId: data.device_id,
+    deviceFingerprint: data.device_fingerprint ?? null,
     userAgentHash: data.user_agent_hash,
     status: data.status,
     requestedAt: timestampToIso(data.requested_at) ?? new Date().toISOString(),

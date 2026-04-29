@@ -55,6 +55,7 @@ type AttendanceData = {
 type EmployeeData = {
   employee_no?: string;
   name?: string;
+  is_active?: boolean;
 };
 
 type SessionData = {
@@ -65,8 +66,10 @@ export async function getAttendanceStatus(auth: AuthContext) {
   await autoCloseForgottenCheckOuts(auth);
 
   const today = getWorkDateString();
-  const todayRecord = await getRecordByEmployeeDate(auth.employee.id, today);
-  const openRecord = await getOpenRecord(auth.employee.id);
+  const [todayRecord, openRecord] = await Promise.all([
+    getRecordByEmployeeDate(auth.employee.id, today),
+    getOpenRecord(auth.employee.id),
+  ]);
   const hasPreviousOpen =
     openRecord !== null && openRecord.workDate !== today && !openRecord.checkOutAt;
 
@@ -91,6 +94,43 @@ export async function getRecentAttendance(employeeId: string, limit: number) {
     .map((doc) => mapAttendance(doc.id, doc.data() as AttendanceData))
     .sort((a, b) => b.workDate.localeCompare(a.workDate))
     .slice(0, limit);
+}
+
+export async function getTeamTodayAttendance() {
+  const db = getDb();
+  const today = getWorkDateString();
+  const [employeesSnapshot, attendanceSnapshot] = await Promise.all([
+    db.collection("employees").where("is_active", "==", true).get(),
+    db.collection("attendance_records").where("work_date", "==", today).get(),
+  ]);
+
+  const attendanceByEmployee = new Map(
+    attendanceSnapshot.docs.map((doc) => {
+      const record = mapAttendance(doc.id, doc.data() as AttendanceData);
+      return [record.employeeId, record];
+    }),
+  );
+
+  return employeesSnapshot.docs
+    .map((doc) => {
+      const employee = doc.data() as EmployeeData;
+      const record = attendanceByEmployee.get(doc.id);
+
+      return {
+        employeeId: doc.id,
+        employeeNo: employee.employee_no ?? "",
+        employeeName: employee.name ?? "",
+        workDate: today,
+        checkInAt: record?.checkInAt ?? null,
+        checkOutAt: record?.checkOutAt ?? null,
+        workType: record?.workType ?? "office",
+        note: record?.note ?? null,
+      };
+    })
+    .sort((a, b) => {
+      const statusCompare = teamStatusRank(a) - teamStatusRank(b);
+      return statusCompare || a.employeeName.localeCompare(b.employeeName);
+    });
 }
 
 export async function checkIn(auth: AuthContext, ip: string | null) {
@@ -486,6 +526,21 @@ async function createAuditLog({
 
 function attendanceDocId(employeeId: string, workDate: string) {
   return `${employeeId}_${workDate}`;
+}
+
+function teamStatusRank(record: {
+  checkInAt: string | null;
+  checkOutAt: string | null;
+}) {
+  if (record.checkInAt && !record.checkOutAt) {
+    return 0;
+  }
+
+  if (record.checkOutAt) {
+    return 1;
+  }
+
+  return 2;
 }
 
 function getEndOfWorkDate(workDate: string) {

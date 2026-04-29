@@ -30,8 +30,8 @@ export function attendanceToCsv(records: AttendanceRecord[]) {
     formatKst(record.checkOutAt),
     workTypeLabels[record.workType] ?? record.workType,
     record.note ?? "",
-    record.checkInIp ?? "",
-    record.checkOutIp ?? "",
+    formatIp(record.checkInIp),
+    formatIp(record.checkOutIp),
     shortDevice(record.checkInDeviceId),
     shortDevice(record.checkOutDeviceId),
   ]);
@@ -62,4 +62,20 @@ function formatKst(value: string | null) {
 
 function shortDevice(value: string | null | undefined) {
   return value ? value.slice(0, 8) : "";
+}
+
+function formatIp(value: string | null | undefined) {
+  if (!value) {
+    return "";
+  }
+
+  if (value === "::1" || value === "127.0.0.1" || value === "::ffff:127.0.0.1") {
+    return "개발환경(localhost)";
+  }
+
+  if (value === "auto") {
+    return "자동마감";
+  }
+
+  return value;
 }

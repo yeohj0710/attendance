@@ -11,11 +11,15 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       employeeName?: string;
       pin?: string;
+      pinConfirm?: string;
       deviceId?: string;
+      deviceFingerprint?: string;
     };
     const employeeName = body.employeeName?.trim();
     const pin = body.pin?.trim();
+    const pinConfirm = body.pinConfirm?.trim();
     const deviceId = body.deviceId?.trim();
+    const deviceFingerprint = body.deviceFingerprint?.trim();
 
     if (!employeeName) {
       badRequest("이름을 입력하세요.");
@@ -23,6 +27,10 @@ export async function POST(request: Request) {
 
     if (!pin || !/^\d{4}$/.test(pin)) {
       badRequest("4자리 PIN을 입력하세요.");
+    }
+
+    if (pinConfirm !== pin) {
+      badRequest("PIN이 서로 일치하지 않습니다.");
     }
 
     if (!deviceId) {
@@ -33,6 +41,7 @@ export async function POST(request: Request) {
       employeeName,
       pin,
       deviceId,
+      deviceFingerprint,
       request,
     });
 
