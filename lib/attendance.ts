@@ -62,6 +62,8 @@ type SessionData = {
 };
 
 export async function getAttendanceStatus(auth: AuthContext) {
+  await autoCloseForgottenCheckOuts(auth);
+
   const today = getWorkDateString();
   const todayRecord = await getRecordByEmployeeDate(auth.employee.id, today);
   const openRecord = await getOpenRecord(auth.employee.id);
@@ -152,6 +154,28 @@ export async function checkOut(auth: AuthContext, ip: string | null) {
   return mapAttendance(updated.id, updated.data() as AttendanceData);
 }
 
+export async function cancelCheckOut(auth: AuthContext) {
+  const db = getDb();
+  const workDate = getWorkDateString();
+  const record = await getRecordByEmployeeDate(auth.employee.id, workDate);
+
+  if (!record?.checkOutAt) {
+    conflict("취소할 퇴근 기록이 없습니다.");
+  }
+
+  const ref = db.collection("attendance_records").doc(record.id);
+  await ref.update({
+    check_out_at: null,
+    check_out_ip: null,
+    check_out_session_id: null,
+    updated_by: auth.employee.id,
+    updated_at: nowTimestamp(),
+  });
+
+  const updated = await ref.get();
+  return mapAttendance(updated.id, updated.data() as AttendanceData);
+}
+
 export async function listAdminAttendance({
   startDate,
   endDate,
@@ -161,6 +185,8 @@ export async function listAdminAttendance({
   endDate: string | null;
   employeeId: string | null;
 }) {
+  await autoCloseForgottenCheckOutsForAll();
+
   const db = getDb();
   const [attendanceSnapshot, employeesSnapshot, sessionsSnapshot] = await Promise.all([
     db.collection("attendance_records").get(),
@@ -347,6 +373,65 @@ async function getOpenRecord(employeeId: string) {
   );
 }
 
+async function autoCloseForgottenCheckOuts(auth: AuthContext) {
+  const db = getDb();
+  const today = getWorkDateString();
+  const snapshot = await db
+    .collection("attendance_records")
+    .where("employee_id", "==", auth.employee.id)
+    .get();
+  const batch = db.batch();
+  let changed = 0;
+
+  for (const doc of snapshot.docs) {
+    const data = doc.data() as AttendanceData;
+    if (!data.check_in_at || data.check_out_at || data.work_date >= today) {
+      continue;
+    }
+
+    batch.update(doc.ref, {
+      check_out_at: toTimestamp(getEndOfWorkDate(data.work_date)),
+      check_out_ip: "auto",
+      check_out_session_id: null,
+      updated_by: auth.employee.id,
+      updated_at: nowTimestamp(),
+    });
+    changed += 1;
+  }
+
+  if (changed > 0) {
+    await batch.commit();
+  }
+}
+
+async function autoCloseForgottenCheckOutsForAll() {
+  const db = getDb();
+  const today = getWorkDateString();
+  const snapshot = await db.collection("attendance_records").get();
+  const batch = db.batch();
+  let changed = 0;
+
+  for (const doc of snapshot.docs) {
+    const data = doc.data() as AttendanceData;
+    if (!data.check_in_at || data.check_out_at || data.work_date >= today) {
+      continue;
+    }
+
+    batch.update(doc.ref, {
+      check_out_at: toTimestamp(getEndOfWorkDate(data.work_date)),
+      check_out_ip: "auto",
+      check_out_session_id: null,
+      updated_by: null,
+      updated_at: nowTimestamp(),
+    });
+    changed += 1;
+  }
+
+  if (changed > 0) {
+    await batch.commit();
+  }
+}
+
 async function createAuditLog({
   attendanceRecordId,
   action,
@@ -376,6 +461,10 @@ async function createAuditLog({
 
 function attendanceDocId(employeeId: string, workDate: string) {
   return `${employeeId}_${workDate}`;
+}
+
+function getEndOfWorkDate(workDate: string) {
+  return new Date(`${workDate}T23:59:00+09:00`);
 }
 
 function serializeAttendance(data: AttendanceData) {

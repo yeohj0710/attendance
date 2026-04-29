@@ -58,12 +58,13 @@ export function EmployeeApp() {
     const me = await apiFetch<{ employee: Employee }>("/api/auth/me", {
       auth: storedAuth,
     });
-    const [statusResult, recentResult] = await Promise.all([
-      apiFetch<StatusResponse>("/api/attendance/status", { auth: storedAuth }),
-      apiFetch<{ records: AttendanceRecord[] }>("/api/attendance/recent?limit=10", {
-        auth: storedAuth,
-      }),
-    ]);
+    const statusResult = await apiFetch<StatusResponse>("/api/attendance/status", {
+      auth: storedAuth,
+    });
+    const recentResult = await apiFetch<{ records: AttendanceRecord[] }>(
+      "/api/attendance/recent?limit=10",
+      { auth: storedAuth },
+    );
 
     setEmployee(me.employee);
     setStatus(statusResult);
@@ -81,7 +82,9 @@ export function EmployeeApp() {
 
     load(storedAuth)
       .catch((error) => {
-        setMessage(error instanceof Error ? error.message : "정보를 불러오지 못했습니다.");
+        setMessage(
+          error instanceof Error ? error.message : "정보를 불러오지 못했습니다.",
+        );
         clearToken();
         setAuth(null);
       })
@@ -96,17 +99,12 @@ export function EmployeeApp() {
   async function refresh() {
     const storedAuth = getStoredAuth();
     setAuth(storedAuth);
-    if (!storedAuth) {
-      return;
-    }
-
+    if (!storedAuth) return;
     await load(storedAuth);
   }
 
   async function runAction(path: string) {
-    if (!auth) {
-      return;
-    }
+    if (!auth) return;
 
     setMessage("");
     setIsMutating(true);
@@ -158,6 +156,7 @@ export function EmployeeApp() {
       : "출근 전";
   const canPressCheckOut =
     Boolean(status?.canCheckOut || status?.todayRecord?.checkInAt) && !isMutating;
+  const canCancelCheckOut = Boolean(status?.todayRecord?.checkOutAt) && !isMutating;
 
   return (
     <main className="mx-auto min-h-dvh w-full max-w-xl px-3 py-4 sm:px-5">
@@ -191,6 +190,18 @@ export function EmployeeApp() {
           </button>
         </div>
 
+        {canCancelCheckOut ? (
+          <div className="mt-3 text-right">
+            <button
+              className="text-xs font-semibold text-muted underline-offset-4 hover:text-ink hover:underline"
+              onClick={() => runAction("/api/attendance/cancel-check-out")}
+              type="button"
+            >
+              퇴근 취소
+            </button>
+          </div>
+        ) : null}
+
         {message ? (
           <p className="mt-4 rounded border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn">
             {message}
@@ -199,7 +210,7 @@ export function EmployeeApp() {
 
         {status?.hasPreviousOpen ? (
           <p className="mt-4 rounded border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
-            이전 출근 기록에 퇴근이 없습니다. 관리자에게 수정 요청하세요.
+            이전 출근 기록에 퇴근이 없습니다. 다음날 접속 시 23:59 퇴근으로 자동 정리됩니다.
           </p>
         ) : null}
 
