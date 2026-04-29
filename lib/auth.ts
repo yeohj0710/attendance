@@ -73,21 +73,28 @@ export async function loginWithPin({
   request: Request;
 }): Promise<LoginResult> {
   const db = getDb();
+  const normalizedEmployeeName = normalizeLoginName(employeeName);
   const snapshot = await db
     .collection("employees")
-    .where("name", "==", employeeName)
     .where("is_active", "==", true)
-    .limit(2)
     .get();
+  const matchedDocs = snapshot.docs.filter((doc) => {
+    const employee = doc.data() as EmployeeData;
+    return (
+      normalizeLoginName(employee.name) === normalizedEmployeeName ||
+      normalizeLoginName(employee.employee_no) === normalizedEmployeeName
+    );
+  });
+  const activeDocCount = matchedDocs.length;
 
-  if (snapshot.size > 1) {
+  if (activeDocCount > 1) {
     conflict("같은 이름의 직원이 2명 이상 있습니다. 관리자에게 이름 구분을 요청하세요.");
   }
 
-  const employeeDoc = snapshot.docs[0];
+  const employeeDoc = matchedDocs[0];
   const employee = employeeDoc?.data() as EmployeeData | undefined;
   if (!employee || !verifyPin(pin, employee.pin_hash, employee.pin_salt)) {
-    unauthorized("이름 또는 PIN이 올바르지 않습니다.");
+    unauthorized("이름 또는 PIN이 올바르지 않습니다. 이름은 공백 없이 입력해주세요.");
   }
 
   let device;
@@ -239,6 +246,10 @@ function getBearerToken(request: Request) {
   }
 
   return authHeader.slice("Bearer ".length).trim();
+}
+
+function normalizeLoginName(value: string) {
+  return value.normalize("NFC").replace(/\s+/g, "").trim();
 }
 
 function mapEmployee(id: string, employee: EmployeeData): AuthEmployee {

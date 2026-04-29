@@ -122,6 +122,13 @@ export function EmployeeApp() {
   const [isWorkLogSaving, setIsWorkLogSaving] = useState(false);
   const [newTaskText, setNewTaskText] = useState("");
   const [newTaskSection, setNewTaskSection] = useState<WorkTaskSection>("today");
+  const [isTodayWorkOpen, setIsTodayWorkOpen] = useState(false);
+  const [todayWorkLog, setTodayWorkLog] = useState<WorkLog | null>(null);
+  const [todayWorkMessage, setTodayWorkMessage] = useState("");
+  const [isTodayWorkLoading, setIsTodayWorkLoading] = useState(false);
+  const [isTodayWorkSaving, setIsTodayWorkSaving] = useState(false);
+  const [todayTaskText, setTodayTaskText] = useState("");
+  const [todayTaskSection, setTodayTaskSection] = useState<WorkTaskSection>("today");
 
   const load = useCallback(async (storedAuth: StoredAuth, knownEmployee?: Employee) => {
     setMessage("");
@@ -306,6 +313,69 @@ export function EmployeeApp() {
     }
   }
 
+  async function toggleTodayWorkPanel() {
+    if (isTodayWorkOpen) {
+      setIsTodayWorkOpen(false);
+      return;
+    }
+
+    setIsTodayWorkOpen(true);
+    await loadTodayWorkLog();
+  }
+
+  async function loadTodayWorkLog() {
+    if (!auth || !employee || !status?.kstDate) return;
+
+    setTodayWorkMessage("");
+    setIsTodayWorkLoading(true);
+    try {
+      const params = new URLSearchParams({
+        employeeId: employee.id,
+        workDate: status.kstDate,
+      });
+      const result = await apiFetch<{ workLog: WorkLog }>(`/api/work-log?${params.toString()}`, {
+        auth,
+      });
+      setTodayWorkLog(result.workLog);
+    } catch (error) {
+      setTodayWorkMessage(error instanceof Error ? error.message : "오늘 업무를 불러오지 못했습니다.");
+    } finally {
+      setIsTodayWorkLoading(false);
+    }
+  }
+
+  async function persistTodayWorkLog(nextLog: WorkLog) {
+    if (!auth) return;
+
+    setTodayWorkLog(nextLog);
+    setTodayWorkMessage("");
+    setIsTodayWorkSaving(true);
+    try {
+      const result = await apiFetch<{ workLog: WorkLog }>("/api/work-log", {
+        method: "PUT",
+        auth,
+        body: JSON.stringify({
+          employeeId: nextLog.employeeId,
+          workDate: nextLog.workDate,
+          summary: nextLog.summary,
+          tasks: nextLog.tasks,
+        }),
+      });
+      setTodayWorkLog(result.workLog);
+      updateTeamMonthWorkSummary(result.workLog);
+      setWorkLog((currentLog) =>
+        currentLog?.employeeId === result.workLog.employeeId &&
+        currentLog.workDate === result.workLog.workDate
+          ? result.workLog
+          : currentLog,
+      );
+    } catch (error) {
+      setTodayWorkMessage(error instanceof Error ? error.message : "오늘 업무를 저장하지 못했습니다.");
+    } finally {
+      setIsTodayWorkSaving(false);
+    }
+  }
+
   function closeWorkLog() {
     setSelectedWorkRecord(null);
     setWorkLog(null);
@@ -365,9 +435,19 @@ export function EmployeeApp() {
     setWorkLog((currentLog) => (currentLog ? { ...currentLog, summary } : currentLog));
   }
 
+  function updateTodayWorkSummary(summary: string) {
+    setTodayWorkLog((currentLog) => (currentLog ? { ...currentLog, summary } : currentLog));
+  }
+
   async function saveCurrentWorkLog() {
     if (workLog) {
       await persistWorkLog(workLog);
+    }
+  }
+
+  async function saveTodayWorkLog() {
+    if (todayWorkLog) {
+      await persistTodayWorkLog(todayWorkLog);
     }
   }
 
@@ -393,6 +473,28 @@ export function EmployeeApp() {
     await persistWorkLog(nextLog);
   }
 
+  async function addTodayTask() {
+    if (!todayWorkLog || !todayTaskText.trim()) return;
+
+    const now = new Date().toISOString();
+    const nextLog = {
+      ...todayWorkLog,
+      tasks: [
+        ...todayWorkLog.tasks,
+        {
+          id: crypto.randomUUID(),
+          text: todayTaskText.trim(),
+          done: false,
+          section: todayTaskSection,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    };
+    setTodayTaskText("");
+    await persistTodayWorkLog(nextLog);
+  }
+
   async function toggleWorkTask(taskId: string) {
     if (!workLog) return;
 
@@ -406,12 +508,34 @@ export function EmployeeApp() {
     });
   }
 
+  async function toggleTodayTask(taskId: string) {
+    if (!todayWorkLog) return;
+
+    await persistTodayWorkLog({
+      ...todayWorkLog,
+      tasks: todayWorkLog.tasks.map((task) =>
+        task.id === taskId
+          ? { ...task, done: !task.done, updatedAt: new Date().toISOString() }
+          : task,
+      ),
+    });
+  }
+
   async function removeWorkTask(taskId: string) {
     if (!workLog) return;
 
     await persistWorkLog({
       ...workLog,
       tasks: workLog.tasks.filter((task) => task.id !== taskId),
+    });
+  }
+
+  async function removeTodayTask(taskId: string) {
+    if (!todayWorkLog) return;
+
+    await persistTodayWorkLog({
+      ...todayWorkLog,
+      tasks: todayWorkLog.tasks.filter((task) => task.id !== taskId),
     });
   }
 
@@ -430,6 +554,7 @@ export function EmployeeApp() {
     setRecords([]);
     setTeamRecords([]);
     setTeamMonth(null);
+    setTodayWorkLog(null);
   }
 
   if (isLoading) {
@@ -565,6 +690,41 @@ export function EmployeeApp() {
             </dd>
           </div>
         </dl>
+
+        <div className="mt-5 rounded border border-line bg-field/60">
+          <button
+            className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left"
+            onClick={toggleTodayWorkPanel}
+            type="button"
+          >
+            <span>
+              <span className="block text-sm font-bold text-ink">오늘 할 일 / 한 일</span>
+              <span className="mt-0.5 block text-xs text-muted">
+                출퇴근하면서 바로 적고, 나중에 펼쳐볼 수 있어요.
+              </span>
+            </span>
+            <span className="shrink-0 rounded bg-white px-2 py-1 text-xs font-bold text-accent ring-1 ring-line">
+              {isTodayWorkOpen ? "접기" : "펼치기"}
+            </span>
+          </button>
+          {isTodayWorkOpen ? (
+            <QuickWorkLogPanel
+              isLoading={isTodayWorkLoading}
+              isSaving={isTodayWorkSaving}
+              message={todayWorkMessage}
+              newTaskSection={todayTaskSection}
+              newTaskText={todayTaskText}
+              onAddTask={addTodayTask}
+              onRemoveTask={removeTodayTask}
+              onSaveSummary={saveTodayWorkLog}
+              onSummaryChange={updateTodayWorkSummary}
+              onTaskSectionChange={setTodayTaskSection}
+              onTaskTextChange={setTodayTaskText}
+              onToggleTask={toggleTodayTask}
+              workLog={todayWorkLog}
+            />
+          ) : null}
+        </div>
       </section>
 
       <section className="mt-4 w-full max-w-xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
@@ -837,6 +997,141 @@ function TeamCalendarRecord({
         </div>
       ) : null}
     </button>
+  );
+}
+
+function QuickWorkLogPanel({
+  isLoading,
+  isSaving,
+  message,
+  newTaskSection,
+  newTaskText,
+  onAddTask,
+  onRemoveTask,
+  onSaveSummary,
+  onSummaryChange,
+  onTaskSectionChange,
+  onTaskTextChange,
+  onToggleTask,
+  workLog,
+}: {
+  isLoading: boolean;
+  isSaving: boolean;
+  message: string;
+  newTaskSection: WorkTaskSection;
+  newTaskText: string;
+  onAddTask: () => void;
+  onRemoveTask: (taskId: string) => void;
+  onSaveSummary: () => void;
+  onSummaryChange: (summary: string) => void;
+  onTaskSectionChange: (section: WorkTaskSection) => void;
+  onTaskTextChange: (text: string) => void;
+  onToggleTask: (taskId: string) => void;
+  workLog: WorkLog | null;
+}) {
+  const todayTasks = workLog?.tasks.filter((task) => task.section === "today") ?? [];
+  const laterTasks = workLog?.tasks.filter((task) => task.section === "later") ?? [];
+
+  return (
+    <div className="border-t border-line px-3 pb-3">
+      {isLoading ? (
+        <div className="flex items-center gap-2 py-5 text-sm font-semibold text-muted">
+          <Spinner />
+          오늘 업무를 불러오는 중
+        </div>
+      ) : null}
+
+      {!isLoading && workLog ? (
+        <div className="space-y-3 pt-3">
+          <textarea
+            className="field min-h-16 resize-y text-sm"
+            disabled={isSaving}
+            onChange={(event) => onSummaryChange(event.target.value)}
+            placeholder="오늘 한 일, 공유할 내용, 기억할 메모를 적어두세요."
+            value={workLog.summary}
+          />
+          <div className="flex justify-end">
+            <button
+              className="secondary-button px-3 py-2 text-xs"
+              disabled={isSaving}
+              onClick={onSaveSummary}
+              type="button"
+            >
+              {isSaving ? (
+                <span className="inline-flex items-center gap-1">
+                  <Spinner className="h-3 w-3" />
+                  저장 중
+                </span>
+              ) : (
+                "메모 저장"
+              )}
+            </button>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+            <input
+              className="field text-sm"
+              disabled={isSaving}
+              onChange={(event) => onTaskTextChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  onAddTask();
+                }
+              }}
+              placeholder="할 일 또는 한 일을 입력하세요"
+              value={newTaskText}
+            />
+            <select
+              className="field text-sm"
+              disabled={isSaving}
+              onChange={(event) => onTaskSectionChange(event.target.value as WorkTaskSection)}
+              value={newTaskSection}
+            >
+              <option value="today">오늘의 업무</option>
+              <option value="later">후순위 업무</option>
+            </select>
+            <button
+              className="primary-button px-4 py-2 text-sm"
+              disabled={isSaving || !newTaskText.trim()}
+              onClick={onAddTask}
+              type="button"
+            >
+              추가
+            </button>
+          </div>
+
+          <TaskSection
+            canEdit
+            isSaving={isSaving}
+            onRemoveTask={onRemoveTask}
+            onToggleTask={onToggleTask}
+            tasks={todayTasks}
+            title="오늘의 업무"
+          />
+          <TaskSection
+            canEdit
+            isSaving={isSaving}
+            onRemoveTask={onRemoveTask}
+            onToggleTask={onToggleTask}
+            tasks={laterTasks}
+            title="후순위 업무"
+          />
+
+          {workLog.tasks.length === 0 ? (
+            <p className="rounded border border-line bg-white/70 px-3 py-4 text-center text-sm text-muted">
+              아직 적힌 업무가 없어요. 하나만 적어도 퇴근할 때 훨씬 편해져요.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {message ? (
+        <p className="mt-3 rounded border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn">
+          {message}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
