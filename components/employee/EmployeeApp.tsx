@@ -503,7 +503,7 @@ export function EmployeeApp() {
         <TeamMonthCalendar teamMonth={teamMonth} currentEmployeeId={employee.id} />
       </section>
 
-      <div className="mt-5 text-center">
+      <div className="mt-5 flex items-center justify-center gap-3 text-xs">
         <button
           className="text-xs text-muted underline-offset-4 hover:text-ink hover:underline"
           onClick={logout}
@@ -511,6 +511,10 @@ export function EmployeeApp() {
         >
           이 기기 로그아웃
         </button>
+        <span className="text-line">|</span>
+        <a className="text-muted underline-offset-4 hover:text-ink hover:underline" href="/admin">
+          관리자 로그인
+        </a>
       </div>
     </main>
   );
@@ -560,7 +564,7 @@ function TeamMonthCalendar({
 
             return (
               <div
-                className="min-h-20 min-w-0 border-b border-r border-line bg-white p-1 sm:min-h-24 sm:p-2"
+                className="min-h-32 min-w-0 border-b border-r border-line bg-white p-1.5 sm:min-h-36 sm:p-2"
                 key={day.key}
               >
                 {day.date ? (
@@ -568,19 +572,14 @@ function TeamMonthCalendar({
                     <div className="mb-1 text-right text-[10px] font-bold text-muted sm:mb-2 sm:text-xs">
                       {Number(day.date.slice(8, 10))}
                     </div>
-                    <div className="space-y-1">
-                      {dayRecords.slice(0, 3).map((record) => (
+                    <div className="max-h-28 space-y-1 overflow-y-auto pr-0.5 sm:max-h-32">
+                      {dayRecords.map((record) => (
                         <TeamCalendarRecord
                           currentEmployeeId={currentEmployeeId}
                           key={`${record.employeeId}-${record.workDate}`}
                           record={record}
                         />
                       ))}
-                      {dayRecords.length > 3 ? (
-                        <div className="truncate rounded bg-field px-1 py-0.5 text-[10px] font-semibold text-muted sm:px-2 sm:py-1 sm:text-xs">
-                          +{dayRecords.length - 3}명
-                        </div>
-                      ) : null}
                     </div>
                   </>
                 ) : null}
@@ -605,7 +604,7 @@ function TeamCalendarRecord({
 
   return (
     <div
-      className={`min-w-0 rounded border px-1 py-0.5 text-[10px] sm:px-2 sm:py-1 sm:text-xs ${
+      className={`min-w-0 rounded border px-1.5 py-1 text-[10px] leading-tight sm:px-2 sm:py-1.5 sm:text-xs ${
         isMe
           ? "border-accent/30 bg-accentSoft text-accent"
           : "border-line bg-field/80 text-ink"
@@ -615,7 +614,7 @@ function TeamCalendarRecord({
       <div className="truncate font-bold">
         {record.employeeName} {isMe ? "나" : ""}
       </div>
-      <div className="mt-0.5 truncate text-[10px] opacity-80 sm:text-[11px]">{timeText}</div>
+      <div className="mt-0.5 break-words text-[10px] opacity-80 sm:text-[11px]">{timeText}</div>
     </div>
   );
 }
