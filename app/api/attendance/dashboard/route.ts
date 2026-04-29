@@ -2,6 +2,7 @@ import { requireAuth } from "@/lib/auth";
 import {
   getAttendanceStatus,
   getRecentAttendance,
+  getTeamMonthAttendance,
   getTeamTodayAttendance,
 } from "@/lib/attendance";
 import { assertOfficeDesktopRequest, verifyApprovedDevice } from "@/lib/device";
@@ -17,10 +18,11 @@ export async function GET(request: Request) {
 
     const url = new URL(request.url);
     const limit = Math.min(Number(url.searchParams.get("limit") ?? 10), 31);
-    const [status, records, teamRecords] = await Promise.all([
+    const [status, records, teamRecords, teamMonth] = await Promise.all([
       getAttendanceStatus(auth),
       getRecentAttendance(auth.employee.id, limit),
       getTeamTodayAttendance(),
+      getTeamMonthAttendance(),
     ]);
 
     return Response.json({
@@ -28,6 +30,7 @@ export async function GET(request: Request) {
       status,
       records,
       teamRecords,
+      teamMonth,
     });
   });
 }

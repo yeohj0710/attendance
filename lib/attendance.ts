@@ -133,6 +133,48 @@ export async function getTeamTodayAttendance() {
     });
 }
 
+export async function getTeamMonthAttendance() {
+  const db = getDb();
+  const { startDate, endDate } = getCurrentKstMonthRange();
+  const [employeesSnapshot, attendanceSnapshot] = await Promise.all([
+    db.collection("employees").where("is_active", "==", true).get(),
+    db
+      .collection("attendance_records")
+      .where("work_date", ">=", startDate)
+      .where("work_date", "<=", endDate)
+      .get(),
+  ]);
+
+  const employees = new Map(
+    employeesSnapshot.docs.map((doc) => [doc.id, doc.data() as EmployeeData]),
+  );
+
+  const records = attendanceSnapshot.docs
+    .map((doc) => mapAttendance(doc.id, doc.data() as AttendanceData, employees))
+    .filter((record) => employees.has(record.employeeId))
+    .map((record) => ({
+      employeeId: record.employeeId,
+      employeeNo: record.employeeNo ?? "",
+      employeeName: record.employeeName ?? "",
+      workDate: record.workDate,
+      checkInAt: record.checkInAt,
+      checkOutAt: record.checkOutAt,
+      workType: record.workType,
+      note: record.note,
+    }))
+    .sort(
+      (a, b) =>
+        a.workDate.localeCompare(b.workDate) ||
+        a.employeeName.localeCompare(b.employeeName),
+    );
+
+  return {
+    startDate,
+    endDate,
+    records,
+  };
+}
+
 export async function checkIn(auth: AuthContext, ip: string | null) {
   const db = getDb();
   const today = getWorkDateString();
@@ -541,6 +583,17 @@ function teamStatusRank(record: {
   }
 
   return 2;
+}
+
+function getCurrentKstMonthRange() {
+  const now = new Date();
+  const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const year = kstNow.getUTCFullYear();
+  const month = kstNow.getUTCMonth() + 1;
+  const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+  const endDate = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+
+  return { startDate, endDate };
 }
 
 function getEndOfWorkDate(workDate: string) {

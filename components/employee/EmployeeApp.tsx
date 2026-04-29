@@ -47,6 +47,7 @@ type DashboardResponse = {
   status: StatusResponse;
   records: AttendanceRecord[];
   teamRecords: TeamAttendanceRecord[];
+  teamMonth: TeamMonthAttendance;
 };
 
 type TeamAttendanceRecord = {
@@ -60,6 +61,12 @@ type TeamAttendanceRecord = {
   note: string | null;
 };
 
+type TeamMonthAttendance = {
+  startDate: string;
+  endDate: string;
+  records: TeamAttendanceRecord[];
+};
+
 const workTypeLabels: Record<AttendanceRecord["workType"], string> = {
   office: "사무실",
   remote: "재택",
@@ -67,12 +74,15 @@ const workTypeLabels: Record<AttendanceRecord["workType"], string> = {
   business_trip: "출장",
 };
 
+const weekdayLabels = ["일", "월", "화", "수", "목", "금", "토"];
+
 export function EmployeeApp() {
   const [auth, setAuth] = useState<StoredAuth | null>(null);
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [teamRecords, setTeamRecords] = useState<TeamAttendanceRecord[]>([]);
+  const [teamMonth, setTeamMonth] = useState<TeamMonthAttendance | null>(null);
   const [message, setMessage] = useState("");
   const [clock, setClock] = useState(new Date());
   const [isLoading, setIsLoading] = useState(true);
@@ -95,6 +105,7 @@ export function EmployeeApp() {
       setStatus(dashboard.status);
       setRecords(dashboard.records);
       setTeamRecords(dashboard.teamRecords);
+      setTeamMonth(dashboard.teamMonth);
     } finally {
       setIsRefreshing(false);
     }
@@ -200,6 +211,36 @@ export function EmployeeApp() {
           : item,
       ),
     );
+
+    setTeamMonth((currentMonth) => {
+      if (!currentMonth || !employee?.id || !isDateInRange(record.workDate, currentMonth)) {
+        return currentMonth;
+      }
+
+      const nextRecord: TeamAttendanceRecord = {
+        employeeId: employee.id,
+        employeeNo: employee.employeeNo,
+        employeeName: employee.name,
+        workDate: record.workDate,
+        checkInAt: record.checkInAt,
+        checkOutAt: record.checkOutAt,
+        workType: record.workType,
+        note: record.note,
+      };
+
+      const recordsWithoutMe = currentMonth.records.filter(
+        (item) => !(item.employeeId === employee.id && item.workDate === record.workDate),
+      );
+
+      return {
+        ...currentMonth,
+        records: [...recordsWithoutMe, nextRecord].sort(
+          (a, b) =>
+            a.workDate.localeCompare(b.workDate) ||
+            a.employeeName.localeCompare(b.employeeName),
+        ),
+      };
+    });
   }
 
   async function logout() {
@@ -216,6 +257,7 @@ export function EmployeeApp() {
     setStatus(null);
     setRecords([]);
     setTeamRecords([]);
+    setTeamMonth(null);
   }
 
   if (isLoading) {
@@ -246,8 +288,8 @@ export function EmployeeApp() {
   const canCancelCheckOut = Boolean(status?.todayRecord?.checkOutAt) && !isMutating;
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-xl flex-col justify-center px-3 py-8 sm:px-5">
-      <section className="rounded-lg border border-line bg-white/95 p-4 shadow-panel">
+    <main className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col justify-center px-3 py-8 sm:px-5">
+      <section className="w-full max-w-xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
         <div className="flex items-start justify-between gap-3">
           <div>
             <img
@@ -352,7 +394,7 @@ export function EmployeeApp() {
         </dl>
       </section>
 
-      <section className="mt-4 rounded-lg border border-line bg-white/95 p-4 shadow-panel">
+      <section className="mt-4 w-full max-w-xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-base font-bold text-ink">오늘 함께하는 사람들 🤝</h2>
           {isRefreshing ? (
@@ -401,7 +443,7 @@ export function EmployeeApp() {
         </div>
       </section>
 
-      <section className="mt-4 rounded-lg border border-line bg-white/95 p-4 shadow-panel">
+      <section className="mt-4 w-full max-w-xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-base font-bold text-ink">나의 최근 발자국 👣</h2>
           {isRefreshing ? (
@@ -445,6 +487,22 @@ export function EmployeeApp() {
         </div>
       </section>
 
+      <section className="mt-4 w-full max-w-4xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-ink">이번 달 팀 달력 🗓️</h2>
+            <p className="mt-1 text-xs text-muted">날짜별로 서로의 하루 흐름을 가볍게 볼 수 있어요.</p>
+          </div>
+          {isRefreshing ? (
+            <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted">
+              <Spinner className="h-3 w-3" />
+              갱신 중
+            </span>
+          ) : null}
+        </div>
+        <TeamMonthCalendar teamMonth={teamMonth} currentEmployeeId={employee.id} />
+      </section>
+
       <div className="mt-5 text-center">
         <button
           className="text-xs text-muted underline-offset-4 hover:text-ink hover:underline"
@@ -460,6 +518,106 @@ export function EmployeeApp() {
 
 function LoadingLine() {
   return <span className="block h-4 w-20 animate-pulse rounded bg-line" />;
+}
+
+function TeamMonthCalendar({
+  teamMonth,
+  currentEmployeeId,
+}: {
+  teamMonth: TeamMonthAttendance | null;
+  currentEmployeeId: string;
+}) {
+  if (!teamMonth) {
+    return (
+      <div className="mt-3 rounded border border-line bg-field/70 px-3 py-5 text-center text-sm text-muted">
+        달력을 불러오는 중이에요.
+      </div>
+    );
+  }
+
+  const recordsByDate = new Map<string, TeamAttendanceRecord[]>();
+  for (const record of teamMonth.records) {
+    const dayRecords = recordsByDate.get(record.workDate) ?? [];
+    dayRecords.push(record);
+    recordsByDate.set(record.workDate, dayRecords);
+  }
+
+  const days = getCalendarDays(teamMonth.startDate, teamMonth.endDate);
+
+  return (
+    <div className="mt-3 overflow-hidden rounded border-l border-t border-line">
+      <div className="w-full">
+        <div className="grid grid-cols-7 text-center text-[10px] font-bold text-muted sm:text-xs">
+          {weekdayLabels.map((weekday) => (
+            <div className="border-b border-r border-line bg-field/80 py-2" key={weekday}>
+              {weekday}
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7">
+          {days.map((day) => {
+            const dayRecords = day.date ? recordsByDate.get(day.date) ?? [] : [];
+
+            return (
+              <div
+                className="min-h-20 min-w-0 border-b border-r border-line bg-white p-1 sm:min-h-24 sm:p-2"
+                key={day.key}
+              >
+                {day.date ? (
+                  <>
+                    <div className="mb-1 text-right text-[10px] font-bold text-muted sm:mb-2 sm:text-xs">
+                      {Number(day.date.slice(8, 10))}
+                    </div>
+                    <div className="space-y-1">
+                      {dayRecords.slice(0, 3).map((record) => (
+                        <TeamCalendarRecord
+                          currentEmployeeId={currentEmployeeId}
+                          key={`${record.employeeId}-${record.workDate}`}
+                          record={record}
+                        />
+                      ))}
+                      {dayRecords.length > 3 ? (
+                        <div className="truncate rounded bg-field px-1 py-0.5 text-[10px] font-semibold text-muted sm:px-2 sm:py-1 sm:text-xs">
+                          +{dayRecords.length - 3}명
+                        </div>
+                      ) : null}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TeamCalendarRecord({
+  currentEmployeeId,
+  record,
+}: {
+  currentEmployeeId: string;
+  record: TeamAttendanceRecord;
+}) {
+  const isMe = record.employeeId === currentEmployeeId;
+  const timeText = `${formatKstTime(record.checkInAt)}~${formatKstTime(record.checkOutAt)}`;
+
+  return (
+    <div
+      className={`min-w-0 rounded border px-1 py-0.5 text-[10px] sm:px-2 sm:py-1 sm:text-xs ${
+        isMe
+          ? "border-accent/30 bg-accentSoft text-accent"
+          : "border-line bg-field/80 text-ink"
+      }`}
+      title={`${record.employeeName} ${timeText}`}
+    >
+      <div className="truncate font-bold">
+        {record.employeeName} {isMe ? "나" : ""}
+      </div>
+      <div className="mt-0.5 truncate text-[10px] opacity-80 sm:text-[11px]">{timeText}</div>
+    </div>
+  );
 }
 
 function TeamStatusBadge({ record }: { record: TeamAttendanceRecord }) {
@@ -480,6 +638,40 @@ function TeamStatusBadge({ record }: { record: TeamAttendanceRecord }) {
         : "bg-slate-100 text-muted";
 
   return <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-bold ${className}`}>{label}</span>;
+}
+
+function getCalendarDays(startDate: string, endDate: string) {
+  const days: Array<{ date: string | null; key: string }> = [];
+  const cursor = dateStringToUtcDate(startDate);
+  const end = dateStringToUtcDate(endDate);
+  const startDayOfWeek = cursor.getUTCDay();
+
+  for (let index = 0; index < startDayOfWeek; index += 1) {
+    days.push({ date: null, key: `start-${index}` });
+  }
+
+  while (cursor <= end) {
+    const date = cursor.toISOString().slice(0, 10);
+    days.push({ date, key: date });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  let paddingIndex = 0;
+  while (days.length % 7 !== 0) {
+    days.push({ date: null, key: `end-${paddingIndex}` });
+    paddingIndex += 1;
+  }
+
+  return days;
+}
+
+function dateStringToUtcDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function isDateInRange(date: string, range: { startDate: string; endDate: string }) {
+  return date >= range.startDate && date <= range.endDate;
 }
 
 function getWarmGreeting(record: AttendanceRecord | null | undefined) {
