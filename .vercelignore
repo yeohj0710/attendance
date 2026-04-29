@@ -1,0 +1,5 @@
+.env
+.env.local
+.env*.local
+attendance-check-*-firebase-adminsdk-*.json
+next-dev-*.log

@@ -63,10 +63,17 @@ export function LoginPanel({
     <section className="mx-auto flex min-h-dvh w-full max-w-md items-center px-4 py-6">
       <form
         onSubmit={handleSubmit}
-        className="w-full rounded-lg border border-line bg-white p-5 shadow-panel"
+        className="w-full rounded-lg border border-line bg-white/95 p-6 shadow-panel"
       >
         <div className="mb-5">
-          <h1 className="text-xl font-bold text-ink">출퇴근 체크</h1>
+          <img
+            alt="웰니스박스"
+            className="mb-4 h-8 w-auto"
+            height={32}
+            src="/brand/wellnessbox-logo.png"
+            width={160}
+          />
+          <h1 className="text-xl font-bold text-ink">웰니스박스 출퇴근기록부</h1>
           <p className="mt-1 text-sm text-muted">
             처음 한 번만 이름과 PIN으로 이 회사 컴퓨터를 등록합니다.
           </p>

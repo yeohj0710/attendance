@@ -160,13 +160,20 @@ export function EmployeeApp() {
 
   return (
     <main className="mx-auto min-h-dvh w-full max-w-xl px-3 py-4 sm:px-5">
-      <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+      <section className="rounded-lg border border-line bg-white/95 p-4 shadow-panel">
         <div className="flex items-start justify-between gap-3">
           <div>
+            <img
+              alt="웰니스박스"
+              className="mb-3 h-7 w-auto"
+              height={28}
+              src="/brand/wellnessbox-logo.png"
+              width={140}
+            />
             <p className="text-xs font-semibold text-muted">{formatKstClock(clock)}</p>
             <h1 className="mt-1 text-2xl font-bold text-ink">{employee.name}</h1>
           </div>
-          <span className="rounded-full bg-field px-3 py-1 text-sm font-semibold text-ink">
+          <span className="rounded-full bg-accentSoft px-3 py-1 text-sm font-semibold text-accent">
             {statusText}
           </span>
         </div>
@@ -215,13 +222,13 @@ export function EmployeeApp() {
         ) : null}
 
         <dl className="mt-5 grid grid-cols-2 gap-3 text-sm">
-          <div className="rounded border border-line bg-field p-3">
+          <div className="rounded border border-line bg-field/80 p-3">
             <dt className="label">출근</dt>
             <dd className="mt-1 font-semibold text-ink">
               {formatKstDateTime(currentRecord?.checkInAt)}
             </dd>
           </div>
-          <div className="rounded border border-line bg-field p-3">
+          <div className="rounded border border-line bg-field/80 p-3">
             <dt className="label">퇴근</dt>
             <dd className="mt-1 font-semibold text-ink">
               {formatKstDateTime(currentRecord?.checkOutAt)}
@@ -230,7 +237,7 @@ export function EmployeeApp() {
         </dl>
       </section>
 
-      <section className="mt-4 rounded-lg border border-line bg-white p-4 shadow-panel">
+      <section className="mt-4 rounded-lg border border-line bg-white/95 p-4 shadow-panel">
         <h2 className="text-base font-bold text-ink">최근 기록</h2>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-96 border-collapse text-left text-sm">

@@ -266,11 +266,18 @@ export function AdminApp() {
   }
 
   return (
-    <main className="mx-auto min-h-dvh w-full max-w-7xl px-4 py-5">
+    <main className="mx-auto min-h-dvh w-full max-w-7xl px-4 py-5 sm:py-7">
       <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
+          <img
+            alt="웰니스박스"
+            className="mb-3 h-8 w-auto"
+            height={32}
+            src="/brand/wellnessbox-logo.png"
+            width={160}
+          />
           <p className="text-sm font-semibold text-muted">관리자</p>
-          <h1 className="text-2xl font-bold text-ink">출퇴근 현황</h1>
+          <h1 className="text-2xl font-bold text-ink">웰니스박스 출퇴근기록부</h1>
         </div>
         <button className="text-xs text-muted hover:text-ink" onClick={logout} type="button">
           이 기기 로그아웃
@@ -283,7 +290,7 @@ export function AdminApp() {
         </p>
       ) : null}
 
-      <section className="mb-4 rounded-lg border border-line bg-white p-4 shadow-panel">
+      <section className="mb-4 rounded-lg border border-line bg-white/95 p-4 shadow-panel">
         <div className="grid gap-3 md:grid-cols-[1fr_1fr_1.3fr_auto_auto_auto]">
           <label>
             <span className="label">시작일</span>
@@ -331,7 +338,7 @@ export function AdminApp() {
       </section>
 
       {devices.length > 0 ? (
-        <section className="mb-4 rounded-lg border border-line bg-white p-4 shadow-panel">
+        <section className="mb-4 rounded-lg border border-line bg-white/95 p-4 shadow-panel">
           <h2 className="text-base font-bold text-ink">기기 변경 요청</h2>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[720px] text-left text-sm">
@@ -369,7 +376,7 @@ export function AdminApp() {
         </section>
       ) : null}
 
-      <section className="mb-4 rounded-lg border border-line bg-white p-4 shadow-panel">
+      <section className="mb-4 rounded-lg border border-line bg-white/95 p-4 shadow-panel">
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-base font-bold text-ink">직원별 월간 요약</h2>
           <span className="text-xs font-semibold text-muted">
@@ -378,7 +385,7 @@ export function AdminApp() {
         </div>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {monthlySummary.map((summary) => (
-            <div key={summary.employee.id} className="rounded border border-line bg-field p-3">
+            <div key={summary.employee.id} className="rounded border border-line bg-field/80 p-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h3 className="font-bold text-ink">{displayEmployee(summary.employee)}</h3>
@@ -407,12 +414,12 @@ export function AdminApp() {
       </section>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
-        <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+        <section className="rounded-lg border border-line bg-white/95 p-4 shadow-panel">
           <h2 className="mb-3 text-base font-bold text-ink">직원별 상세 기록</h2>
           <div className="space-y-5">
             {groupedRecords.map((group) => (
               <div key={group.employeeKey} className="overflow-hidden rounded border border-line">
-                <div className="flex items-center justify-between gap-3 bg-field px-3 py-2">
+                <div className="flex items-center justify-between gap-3 bg-field/90 px-3 py-2">
                   <h3 className="font-bold text-ink">{group.employeeName}</h3>
                   <span className="text-xs font-semibold text-muted">{group.records.length}건</span>
                 </div>
@@ -468,7 +475,7 @@ export function AdminApp() {
           </div>
         </section>
 
-        <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+        <section className="rounded-lg border border-line bg-white/95 p-4 shadow-panel">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h2 className="text-base font-bold text-ink">
               {form.id ? "기록 수정" : "기록 추가"}
