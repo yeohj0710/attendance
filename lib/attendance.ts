@@ -74,8 +74,8 @@ export async function getAttendanceStatus(auth: AuthContext) {
     kstDate: today,
     todayRecord,
     openRecord,
-    canCheckIn: !todayRecord?.checkInAt && !hasPreviousOpen,
-    canCheckOut: Boolean(openRecord),
+    canCheckIn: !todayRecord?.checkInAt && !todayRecord?.checkOutAt && !hasPreviousOpen,
+    canCheckOut: true,
     hasPreviousOpen,
   };
 }
@@ -104,6 +104,10 @@ export async function checkIn(auth: AuthContext, ip: string | null) {
 
   if (status.todayRecord?.checkInAt) {
     conflict("이미 오늘 출근 처리되었습니다.");
+  }
+
+  if (status.todayRecord?.checkOutAt) {
+    conflict("이미 퇴근 처리된 기록이 있어 출근 처리할 수 없습니다. 퇴근 취소 후 다시 시도하세요.");
   }
 
   const ref = db.collection("attendance_records").doc(attendanceDocId(auth.employee.id, today));
@@ -136,14 +140,35 @@ export async function checkOut(auth: AuthContext, ip: string | null) {
   const openRecord =
     (await getOpenRecord(auth.employee.id)) ??
     (await getRecordByEmployeeDate(auth.employee.id, workDate));
+  const now = nowTimestamp();
 
-  if (!openRecord?.checkInAt) {
-    conflict("퇴근 처리할 출근 기록이 없습니다.");
+  if (!openRecord) {
+    const ref = db.collection("attendance_records").doc(attendanceDocId(auth.employee.id, workDate));
+    const data: AttendanceData = {
+      employee_id: auth.employee.id,
+      work_date: workDate,
+      check_in_at: null,
+      check_out_at: now,
+      check_in_ip: null,
+      check_out_ip: ip,
+      check_in_session_id: null,
+      check_out_session_id: auth.session.id,
+      work_type: "office",
+      note: "출근 미기록",
+      source: "employee",
+      created_by: auth.employee.id,
+      updated_by: auth.employee.id,
+      created_at: now,
+      updated_at: now,
+    };
+
+    await ref.set(data);
+    return mapAttendance(ref.id, data);
   }
 
   const ref = db.collection("attendance_records").doc(openRecord.id);
   await ref.update({
-    check_out_at: nowTimestamp(),
+    check_out_at: now,
     check_out_ip: ip,
     check_out_session_id: auth.session.id,
     updated_by: auth.employee.id,

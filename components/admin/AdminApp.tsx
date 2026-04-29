@@ -390,7 +390,7 @@ export function AdminApp() {
                 <div>
                   <h3 className="font-bold text-ink">{displayEmployee(summary.employee)}</h3>
                   <p className="mt-1 text-xs text-muted">
-                    출근 {summary.checkInDays}일 · 퇴근누락 {summary.openDays}건
+                    기록 {summary.checkInDays}일 · 확인필요 {summary.openDays}건
                   </p>
                 </div>
                 <span className={summary.openDays ? "text-sm font-bold text-warn" : "text-sm font-bold text-accent"}>
@@ -584,8 +584,17 @@ export function AdminApp() {
 }
 
 function StatusBadge({ record }: { record: AttendanceRecord }) {
-  const label = record.checkOutAt ? "완료" : record.checkInAt ? "근무중" : "미출근";
-  const className = record.checkOutAt
+  const isMissingCheckIn = !record.checkInAt && record.checkOutAt;
+  const label = isMissingCheckIn
+    ? "출근누락"
+    : record.checkOutAt
+      ? "완료"
+      : record.checkInAt
+        ? "근무중"
+        : "미출근";
+  const className = isMissingCheckIn
+    ? "bg-warn/10 text-warn"
+    : record.checkOutAt
     ? "bg-accent/10 text-accent"
     : record.checkInAt
       ? "bg-warn/10 text-warn"
@@ -711,16 +720,24 @@ function buildMonthlySummary(
   return employees.map((employee) => {
     const employeeDays = days.map((date) => {
       const record = recordMap.get(`${employee.id}_${date}`);
-      const status = record?.checkOutAt
-        ? "done"
-        : record?.checkInAt
-          ? "open"
-          : "empty";
+      const status = record?.checkOutAt && !record.checkInAt
+        ? "missing_check_in"
+        : record?.checkOutAt
+          ? "done"
+          : record?.checkInAt
+            ? "open"
+            : "empty";
       return {
         date,
         day: date.slice(8, 10),
         status,
-        label: status === "done" ? "완료" : status === "open" ? "퇴근누락" : "기록없음",
+        label: status === "done"
+          ? "완료"
+          : status === "missing_check_in"
+            ? "출근누락"
+            : status === "open"
+              ? "퇴근누락"
+              : "기록없음",
       };
     });
 
@@ -728,7 +745,7 @@ function buildMonthlySummary(
       employee,
       days: employeeDays,
       checkInDays: employeeDays.filter((day) => day.status !== "empty").length,
-      openDays: employeeDays.filter((day) => day.status === "open").length,
+      openDays: employeeDays.filter((day) => day.status === "open" || day.status === "missing_check_in").length,
     };
   });
 }
@@ -754,6 +771,7 @@ function dateStringToUtcDate(value: string) {
 function dayClassName(status: string) {
   const base = "inline-flex h-7 items-center justify-center rounded text-xs font-bold";
   if (status === "done") return `${base} bg-accent text-white`;
+  if (status === "missing_check_in") return `${base} bg-warn text-white`;
   if (status === "open") return `${base} bg-warn text-white`;
   return `${base} bg-white text-slate-400 ring-1 ring-line`;
 }
