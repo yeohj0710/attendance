@@ -59,12 +59,37 @@ type TeamAttendanceRecord = {
   checkOutAt: string | null;
   workType: AttendanceRecord["workType"];
   note: string | null;
+  taskCount?: number;
+  doneCount?: number;
 };
 
 type TeamMonthAttendance = {
   startDate: string;
   endDate: string;
   records: TeamAttendanceRecord[];
+};
+
+type WorkTaskSection = "today" | "later";
+
+type WorkTask = {
+  id: string;
+  text: string;
+  done: boolean;
+  section: WorkTaskSection;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type WorkLog = {
+  employeeId: string;
+  employeeName: string;
+  workDate: string;
+  summary: string;
+  tasks: WorkTask[];
+  taskCount: number;
+  doneCount: number;
+  createdAt: string | null;
+  updatedAt: string | null;
 };
 
 const workTypeLabels: Record<AttendanceRecord["workType"], string> = {
@@ -90,6 +115,13 @@ export function EmployeeApp() {
   const [isMutating, setIsMutating] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [encouragement, setEncouragement] = useState("");
+  const [selectedWorkRecord, setSelectedWorkRecord] = useState<TeamAttendanceRecord | null>(null);
+  const [workLog, setWorkLog] = useState<WorkLog | null>(null);
+  const [workLogMessage, setWorkLogMessage] = useState("");
+  const [isWorkLogLoading, setIsWorkLogLoading] = useState(false);
+  const [isWorkLogSaving, setIsWorkLogSaving] = useState(false);
+  const [newTaskText, setNewTaskText] = useState("");
+  const [newTaskSection, setNewTaskSection] = useState<WorkTaskSection>("today");
 
   const load = useCallback(async (storedAuth: StoredAuth, knownEmployee?: Employee) => {
     setMessage("");
@@ -217,6 +249,9 @@ export function EmployeeApp() {
         return currentMonth;
       }
 
+      const existingRecord = currentMonth.records.find(
+        (item) => item.employeeId === employee.id && item.workDate === record.workDate,
+      );
       const nextRecord: TeamAttendanceRecord = {
         employeeId: employee.id,
         employeeNo: employee.employeeNo,
@@ -226,6 +261,8 @@ export function EmployeeApp() {
         checkOutAt: record.checkOutAt,
         workType: record.workType,
         note: record.note,
+        taskCount: existingRecord?.taskCount ?? 0,
+        doneCount: existingRecord?.doneCount ?? 0,
       };
 
       const recordsWithoutMe = currentMonth.records.filter(
@@ -240,6 +277,141 @@ export function EmployeeApp() {
             a.employeeName.localeCompare(b.employeeName),
         ),
       };
+    });
+  }
+
+  async function openWorkLog(record: TeamAttendanceRecord) {
+    if (!auth) return;
+
+    setSelectedWorkRecord(record);
+    setWorkLog(null);
+    setWorkLogMessage("");
+    setNewTaskText("");
+    setNewTaskSection("today");
+    setIsWorkLogLoading(true);
+
+    try {
+      const params = new URLSearchParams({
+        employeeId: record.employeeId,
+        workDate: record.workDate,
+      });
+      const result = await apiFetch<{ workLog: WorkLog }>(`/api/work-log?${params.toString()}`, {
+        auth,
+      });
+      setWorkLog(result.workLog);
+    } catch (error) {
+      setWorkLogMessage(error instanceof Error ? error.message : "업무 기록을 불러오지 못했습니다.");
+    } finally {
+      setIsWorkLogLoading(false);
+    }
+  }
+
+  function closeWorkLog() {
+    setSelectedWorkRecord(null);
+    setWorkLog(null);
+    setWorkLogMessage("");
+    setNewTaskText("");
+  }
+
+  async function persistWorkLog(nextLog: WorkLog) {
+    if (!auth) return;
+
+    setWorkLog(nextLog);
+    setWorkLogMessage("");
+    setIsWorkLogSaving(true);
+
+    try {
+      const result = await apiFetch<{ workLog: WorkLog }>("/api/work-log", {
+        method: "PUT",
+        auth,
+        body: JSON.stringify({
+          employeeId: nextLog.employeeId,
+          workDate: nextLog.workDate,
+          summary: nextLog.summary,
+          tasks: nextLog.tasks,
+        }),
+      });
+      setWorkLog(result.workLog);
+      updateTeamMonthWorkSummary(result.workLog);
+    } catch (error) {
+      setWorkLogMessage(error instanceof Error ? error.message : "업무 기록을 저장하지 못했습니다.");
+    } finally {
+      setIsWorkLogSaving(false);
+    }
+  }
+
+  function updateTeamMonthWorkSummary(nextLog: WorkLog) {
+    setTeamMonth((currentMonth) => {
+      if (!currentMonth) {
+        return currentMonth;
+      }
+
+      return {
+        ...currentMonth,
+        records: currentMonth.records.map((record) =>
+          record.employeeId === nextLog.employeeId && record.workDate === nextLog.workDate
+            ? {
+                ...record,
+                taskCount: nextLog.taskCount,
+                doneCount: nextLog.doneCount,
+              }
+            : record,
+        ),
+      };
+    });
+  }
+
+  function updateWorkLogSummary(summary: string) {
+    setWorkLog((currentLog) => (currentLog ? { ...currentLog, summary } : currentLog));
+  }
+
+  async function saveCurrentWorkLog() {
+    if (workLog) {
+      await persistWorkLog(workLog);
+    }
+  }
+
+  async function addWorkTask() {
+    if (!workLog || !newTaskText.trim()) return;
+
+    const now = new Date().toISOString();
+    const nextLog = {
+      ...workLog,
+      tasks: [
+        ...workLog.tasks,
+        {
+          id: crypto.randomUUID(),
+          text: newTaskText.trim(),
+          done: false,
+          section: newTaskSection,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    };
+    setNewTaskText("");
+    await persistWorkLog(nextLog);
+  }
+
+  async function toggleWorkTask(taskId: string) {
+    if (!workLog) return;
+
+    await persistWorkLog({
+      ...workLog,
+      tasks: workLog.tasks.map((task) =>
+        task.id === taskId
+          ? { ...task, done: !task.done, updatedAt: new Date().toISOString() }
+          : task,
+      ),
+    });
+  }
+
+  async function removeWorkTask(taskId: string) {
+    if (!workLog) return;
+
+    await persistWorkLog({
+      ...workLog,
+      tasks: workLog.tasks.filter((task) => task.id !== taskId),
     });
   }
 
@@ -288,6 +460,7 @@ export function EmployeeApp() {
   const canCancelCheckOut = Boolean(status?.todayRecord?.checkOutAt) && !isMutating;
 
   return (
+    <>
     <main className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col justify-center px-3 py-8 sm:px-5">
       <section className="w-full max-w-xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
         <div className="flex items-start justify-between gap-3">
@@ -500,7 +673,11 @@ export function EmployeeApp() {
             </span>
           ) : null}
         </div>
-        <TeamMonthCalendar teamMonth={teamMonth} currentEmployeeId={employee.id} />
+        <TeamMonthCalendar
+          currentEmployeeId={employee.id}
+          onSelectRecord={openWorkLog}
+          teamMonth={teamMonth}
+        />
       </section>
 
       <div className="mt-5 flex items-center justify-center gap-3 text-xs">
@@ -517,6 +694,27 @@ export function EmployeeApp() {
         </a>
       </div>
     </main>
+    {selectedWorkRecord ? (
+      <WorkLogModal
+        canEdit={selectedWorkRecord.employeeId === employee.id || employee.role === "admin"}
+        isLoading={isWorkLogLoading}
+        isSaving={isWorkLogSaving}
+        message={workLogMessage}
+        newTaskSection={newTaskSection}
+        newTaskText={newTaskText}
+        onAddTask={addWorkTask}
+        onClose={closeWorkLog}
+        onRemoveTask={removeWorkTask}
+        onSaveSummary={saveCurrentWorkLog}
+        onSummaryChange={updateWorkLogSummary}
+        onTaskSectionChange={setNewTaskSection}
+        onTaskTextChange={setNewTaskText}
+        onToggleTask={toggleWorkTask}
+        record={selectedWorkRecord}
+        workLog={workLog}
+      />
+    ) : null}
+    </>
   );
 }
 
@@ -525,11 +723,13 @@ function LoadingLine() {
 }
 
 function TeamMonthCalendar({
-  teamMonth,
   currentEmployeeId,
+  onSelectRecord,
+  teamMonth,
 }: {
-  teamMonth: TeamMonthAttendance | null;
   currentEmployeeId: string;
+  onSelectRecord: (record: TeamAttendanceRecord) => void;
+  teamMonth: TeamMonthAttendance | null;
 }) {
   if (!teamMonth) {
     return (
@@ -577,6 +777,7 @@ function TeamMonthCalendar({
                         <TeamCalendarRecord
                           currentEmployeeId={currentEmployeeId}
                           key={`${record.employeeId}-${record.workDate}`}
+                          onSelect={onSelectRecord}
                           record={record}
                         />
                       ))}
@@ -594,9 +795,11 @@ function TeamMonthCalendar({
 
 function TeamCalendarRecord({
   currentEmployeeId,
+  onSelect,
   record,
 }: {
   currentEmployeeId: string;
+  onSelect: (record: TeamAttendanceRecord) => void;
   record: TeamAttendanceRecord;
 }) {
   const isMe = record.employeeId === currentEmployeeId;
@@ -610,11 +813,14 @@ function TeamCalendarRecord({
     : isLongDay || isMe
       ? "border-accent/30 bg-accentSoft text-accent"
       : "border-line bg-field/80 text-ink";
+  const hasTasks = Boolean(record.taskCount);
 
   return (
-    <div
-      className={`min-w-0 rounded border px-1.5 py-1 text-[10px] leading-tight sm:px-2 sm:py-1.5 sm:text-xs ${cardClassName}`}
+    <button
+      className={`min-w-0 rounded border px-1.5 py-1 text-left text-[10px] leading-tight transition hover:-translate-y-0.5 hover:shadow-sm sm:px-2 sm:py-1.5 sm:text-xs ${cardClassName}`}
+      onClick={() => onSelect(record)}
       title={`${record.employeeName} ${timeText}${durationText ? ` · ${durationText}` : ""}`}
+      type="button"
     >
       <div className="truncate font-bold">
         {record.employeeName} {isMe ? "나" : ""} {isLongDay ? "🔥" : ""}
@@ -625,7 +831,246 @@ function TeamCalendarRecord({
           {durationText}
         </div>
       ) : null}
+      {hasTasks ? (
+        <div className="mt-1 rounded bg-white/80 px-1.5 py-0.5 text-[10px] font-bold opacity-90">
+          업무 {record.doneCount ?? 0}/{record.taskCount}
+        </div>
+      ) : null}
+    </button>
+  );
+}
+
+function WorkLogModal({
+  canEdit,
+  isLoading,
+  isSaving,
+  message,
+  newTaskSection,
+  newTaskText,
+  onAddTask,
+  onClose,
+  onRemoveTask,
+  onSaveSummary,
+  onSummaryChange,
+  onTaskSectionChange,
+  onTaskTextChange,
+  onToggleTask,
+  record,
+  workLog,
+}: {
+  canEdit: boolean;
+  isLoading: boolean;
+  isSaving: boolean;
+  message: string;
+  newTaskSection: WorkTaskSection;
+  newTaskText: string;
+  onAddTask: () => void;
+  onClose: () => void;
+  onRemoveTask: (taskId: string) => void;
+  onSaveSummary: () => void;
+  onSummaryChange: (summary: string) => void;
+  onTaskSectionChange: (section: WorkTaskSection) => void;
+  onTaskTextChange: (text: string) => void;
+  onToggleTask: (taskId: string) => void;
+  record: TeamAttendanceRecord;
+  workLog: WorkLog | null;
+}) {
+  const todayTasks = workLog?.tasks.filter((task) => task.section === "today") ?? [];
+  const laterTasks = workLog?.tasks.filter((task) => task.section === "later") ?? [];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/35 px-3 py-6">
+      <div className="max-h-full w-full max-w-2xl overflow-hidden rounded-lg border border-line bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-line px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-muted">{record.workDate}</p>
+            <h3 className="truncate text-lg font-bold text-ink">
+              {record.employeeName} 업무 기록
+            </h3>
+            <p className="mt-1 text-xs text-muted">
+              {formatKstTime(record.checkInAt)} ~ {formatKstTime(record.checkOutAt)}
+            </p>
+          </div>
+          <button
+            className="rounded px-2 py-1 text-sm font-bold text-muted hover:bg-field hover:text-ink"
+            onClick={onClose}
+            type="button"
+          >
+            닫기
+          </button>
+        </div>
+
+        <div className="max-h-[75vh] overflow-y-auto px-4 py-4">
+          {isLoading ? (
+            <div className="flex items-center justify-center gap-2 py-16 text-sm font-semibold text-muted">
+              <Spinner />
+              업무 기록을 불러오는 중
+            </div>
+          ) : null}
+
+          {!isLoading && workLog ? (
+            <div className="space-y-5">
+              <div className="rounded border border-line bg-field/60 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-bold text-ink">오늘 메모</p>
+                  {isSaving ? (
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted">
+                      <Spinner className="h-3 w-3" />
+                      저장 중
+                    </span>
+                  ) : null}
+                </div>
+                <textarea
+                  className="field mt-2 min-h-20 resize-y"
+                  disabled={!canEdit || isSaving}
+                  onChange={(event) => onSummaryChange(event.target.value)}
+                  placeholder={canEdit ? "오늘 한 일이나 공유할 메모를 가볍게 적어두세요." : "아직 메모가 없어요."}
+                  value={workLog.summary}
+                />
+                {canEdit ? (
+                  <div className="mt-2 text-right">
+                    <button
+                      className="secondary-button px-3 py-2 text-xs"
+                      disabled={isSaving}
+                      onClick={onSaveSummary}
+                      type="button"
+                    >
+                      메모 저장
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+
+              {canEdit ? (
+                <div className="rounded border border-line p-3">
+                  <p className="text-sm font-bold text-ink">업무 추가</p>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+                    <input
+                      className="field"
+                      disabled={isSaving}
+                      onChange={(event) => onTaskTextChange(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          onAddTask();
+                        }
+                      }}
+                      placeholder="할 일을 입력하세요"
+                      value={newTaskText}
+                    />
+                    <select
+                      className="field"
+                      disabled={isSaving}
+                      onChange={(event) => onTaskSectionChange(event.target.value as WorkTaskSection)}
+                      value={newTaskSection}
+                    >
+                      <option value="today">오늘의 업무</option>
+                      <option value="later">후순위 업무</option>
+                    </select>
+                    <button
+                      className="primary-button px-4 py-2 text-sm"
+                      disabled={isSaving || !newTaskText.trim()}
+                      onClick={onAddTask}
+                      type="button"
+                    >
+                      추가
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="rounded border border-line bg-field/70 px-3 py-2 text-xs text-muted">
+                  다른 사람의 업무 기록은 참고용으로만 볼 수 있어요.
+                </p>
+              )}
+
+              <TaskSection
+                canEdit={canEdit}
+                isSaving={isSaving}
+                onRemoveTask={onRemoveTask}
+                onToggleTask={onToggleTask}
+                tasks={todayTasks}
+                title="오늘의 업무"
+              />
+              <TaskSection
+                canEdit={canEdit}
+                isSaving={isSaving}
+                onRemoveTask={onRemoveTask}
+                onToggleTask={onToggleTask}
+                tasks={laterTasks}
+                title="후순위 업무"
+              />
+
+              {workLog.tasks.length === 0 ? (
+                <p className="rounded border border-line py-8 text-center text-sm text-muted">
+                  아직 업무 체크리스트가 없어요. 오늘 할 일을 하나씩 적어두면 하루가 조금 선명해져요.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {message ? (
+            <p className="mt-3 rounded border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn">
+              {message}
+            </p>
+          ) : null}
+        </div>
+      </div>
     </div>
+  );
+}
+
+function TaskSection({
+  canEdit,
+  isSaving,
+  onRemoveTask,
+  onToggleTask,
+  tasks,
+  title,
+}: {
+  canEdit: boolean;
+  isSaving: boolean;
+  onRemoveTask: (taskId: string) => void;
+  onToggleTask: (taskId: string) => void;
+  tasks: WorkTask[];
+  title: string;
+}) {
+  if (tasks.length === 0) {
+    return null;
+  }
+
+  return (
+    <section>
+      <h4 className="mb-2 text-sm font-bold text-ink">{title}</h4>
+      <div className="space-y-2">
+        {tasks.map((task) => (
+          <div
+            className="grid grid-cols-[auto_1fr_auto] items-start gap-2 rounded border border-line bg-white px-3 py-2 text-sm"
+            key={task.id}
+          >
+            <input
+              checked={task.done}
+              className="mt-1 h-4 w-4 accent-accent"
+              disabled={!canEdit || isSaving}
+              onChange={() => onToggleTask(task.id)}
+              type="checkbox"
+            />
+            <span className={task.done ? "text-muted line-through" : "text-ink"}>
+              {task.text}
+            </span>
+            {canEdit ? (
+              <button
+                className="text-xs font-semibold text-muted hover:text-danger"
+                disabled={isSaving}
+                onClick={() => onRemoveTask(task.id)}
+                type="button"
+              >
+                삭제
+              </button>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

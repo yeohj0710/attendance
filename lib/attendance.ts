@@ -1,6 +1,7 @@
 import { getDb, nowTimestamp, timestampToIso, toTimestamp } from "@/lib/db";
 import { badRequest, conflict } from "@/lib/http";
 import { getWorkDateString, parseKstDateTimeInput } from "@/lib/time";
+import { getWorkLogSummariesForRange } from "@/lib/work-log";
 import type { AuthContext } from "@/lib/auth";
 
 export type WorkType = "office" | "remote" | "offsite" | "business_trip";
@@ -144,9 +145,16 @@ export async function getTeamMonthAttendance() {
       .where("work_date", "<=", endDate)
       .get(),
   ]);
+  const workLogSummaries = await getWorkLogSummariesForRange(startDate, endDate);
 
   const employees = new Map(
     employeesSnapshot.docs.map((doc) => [doc.id, doc.data() as EmployeeData]),
+  );
+  const workSummaryByKey = new Map(
+    workLogSummaries.map((summary) => [
+      `${summary.employeeId}:${summary.workDate}`,
+      summary,
+    ]),
   );
 
   const records = attendanceSnapshot.docs
@@ -161,6 +169,8 @@ export async function getTeamMonthAttendance() {
       checkOutAt: record.checkOutAt,
       workType: record.workType,
       note: record.note,
+      taskCount: workSummaryByKey.get(`${record.employeeId}:${record.workDate}`)?.taskCount ?? 0,
+      doneCount: workSummaryByKey.get(`${record.employeeId}:${record.workDate}`)?.doneCount ?? 0,
     }))
     .sort(
       (a, b) =>
