@@ -130,3 +130,5 @@ npm run db:upsert-employee -- --name 관리자 --pin 1234 --role admin
 npm run typecheck
 npm run build
 ```
+
+Firebase Admin SDK 하위 의존성은 Vercel 런타임 호환성을 위해 `uuid` 강제 override를 하지 않습니다.
