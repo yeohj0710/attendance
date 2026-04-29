@@ -601,20 +601,30 @@ function TeamCalendarRecord({
 }) {
   const isMe = record.employeeId === currentEmployeeId;
   const timeText = `${formatKstTime(record.checkInAt)}~${formatKstTime(record.checkOutAt)}`;
+  const workedMinutes = getWorkedMinutes(record);
+  const durationText = workedMinutes === null ? "" : formatWorkedDuration(workedMinutes);
+  const isLongDay = workedMinutes !== null && workedMinutes >= 10 * 60;
+  const isVeryLongDay = workedMinutes !== null && workedMinutes >= 12 * 60;
+  const cardClassName = isVeryLongDay
+    ? "border-warn/40 bg-warn/10 text-warn shadow-[0_0_0_1px_rgba(234,88,12,0.08)]"
+    : isLongDay || isMe
+      ? "border-accent/30 bg-accentSoft text-accent"
+      : "border-line bg-field/80 text-ink";
 
   return (
     <div
-      className={`min-w-0 rounded border px-1.5 py-1 text-[10px] leading-tight sm:px-2 sm:py-1.5 sm:text-xs ${
-        isMe
-          ? "border-accent/30 bg-accentSoft text-accent"
-          : "border-line bg-field/80 text-ink"
-      }`}
-      title={`${record.employeeName} ${timeText}`}
+      className={`min-w-0 rounded border px-1.5 py-1 text-[10px] leading-tight sm:px-2 sm:py-1.5 sm:text-xs ${cardClassName}`}
+      title={`${record.employeeName} ${timeText}${durationText ? ` · ${durationText}` : ""}`}
     >
       <div className="truncate font-bold">
-        {record.employeeName} {isMe ? "나" : ""}
+        {record.employeeName} {isMe ? "나" : ""} {isLongDay ? "🔥" : ""}
       </div>
       <div className="mt-0.5 break-words text-[10px] opacity-80 sm:text-[11px]">{timeText}</div>
+      {durationText ? (
+        <div className="mt-1 inline-flex rounded bg-white/70 px-1.5 py-0.5 text-[10px] font-bold opacity-90">
+          {durationText}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -671,6 +681,35 @@ function dateStringToUtcDate(value: string) {
 
 function isDateInRange(date: string, range: { startDate: string; endDate: string }) {
   return date >= range.startDate && date <= range.endDate;
+}
+
+function getWorkedMinutes(record: Pick<AttendanceRecord, "checkInAt" | "checkOutAt">) {
+  if (!record.checkInAt || !record.checkOutAt) {
+    return null;
+  }
+
+  const checkIn = new Date(record.checkInAt).getTime();
+  const checkOut = new Date(record.checkOutAt).getTime();
+  if (!Number.isFinite(checkIn) || !Number.isFinite(checkOut) || checkOut <= checkIn) {
+    return null;
+  }
+
+  return Math.round((checkOut - checkIn) / 60000);
+}
+
+function formatWorkedDuration(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+
+  if (hours === 0) {
+    return `${restMinutes}분`;
+  }
+
+  if (restMinutes === 0) {
+    return `${hours}시간`;
+  }
+
+  return `${hours}시간 ${restMinutes}분`;
 }
 
 function getWarmGreeting(record: AttendanceRecord | null | undefined) {

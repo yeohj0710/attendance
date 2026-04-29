@@ -395,9 +395,15 @@ export function AdminApp() {
           <p className="text-sm font-semibold text-muted">관리자</p>
           <h1 className="text-2xl font-bold text-ink">웰니스박스 출퇴근기록부</h1>
         </div>
-        <button className="text-xs text-muted hover:text-ink" onClick={logout} type="button">
-          이 기기 로그아웃
-        </button>
+        <div className="flex items-center gap-3 text-xs">
+          <a className="text-muted underline-offset-4 hover:text-ink hover:underline" href="/">
+            일반 화면으로
+          </a>
+          <span className="text-line">|</span>
+          <button className="text-muted underline-offset-4 hover:text-ink hover:underline" onClick={logout} type="button">
+            이 기기 로그아웃
+          </button>
+        </div>
       </header>
 
       {message ? (

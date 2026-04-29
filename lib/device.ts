@@ -95,16 +95,25 @@ export async function resolveLoginDevice({
   const ip = getClientIp(request);
   const userAgentHash = hashUserAgent(request.headers.get("user-agent") ?? "");
 
-  const approvedSnapshot = await db
+  const existingByDeviceSnapshot = await db
     .collection("employee_devices")
     .where("employee_id", "==", employeeId)
-    .where("status", "==", "approved")
+    .where("device_id", "==", normalizedDeviceId)
     .limit(1)
     .get();
-  const approvedDoc = approvedSnapshot.docs[0];
-  const approved = approvedDoc?.data() as DeviceData | undefined;
+  let existingDoc = existingByDeviceSnapshot.docs[0];
 
-  if (!approved) {
+  if (!existingDoc && normalizedFingerprint) {
+    const existingByFingerprintSnapshot = await db
+      .collection("employee_devices")
+      .where("employee_id", "==", employeeId)
+      .where("device_fingerprint", "==", normalizedFingerprint)
+      .limit(1)
+      .get();
+    existingDoc = existingByFingerprintSnapshot.docs[0];
+  }
+
+  if (!existingDoc) {
     const ref = db.collection("employee_devices").doc();
     const data: DeviceData = {
       employee_id: employeeId,
@@ -125,78 +134,23 @@ export async function resolveLoginDevice({
     return mapDevice(ref.id, data);
   }
 
-  if (
-    approved.device_id === normalizedDeviceId ||
-    (normalizedFingerprint && approved.device_fingerprint === normalizedFingerprint) ||
-    (!approved.device_fingerprint && approved.user_agent_hash === userAgentHash)
-  ) {
-    const pendingSnapshot = await db
-      .collection("employee_devices")
-      .where("employee_id", "==", employeeId)
-      .where("status", "==", "pending_replacement")
-      .get();
-    const batch = db.batch();
-
-    batch.update(approvedDoc.ref, {
-      device_id: normalizedDeviceId,
-      device_fingerprint: normalizedFingerprint,
-      user_agent_hash: userAgentHash,
-      last_ip: ip,
-      last_seen_at: nowTimestamp(),
-      updated_at: nowTimestamp(),
-    });
-
-    for (const pendingDoc of pendingSnapshot.docs) {
-      const pending = pendingDoc.data() as DeviceData;
-      const isSameDevice =
-        pending.device_id === normalizedDeviceId ||
-        (normalizedFingerprint && pending.device_fingerprint === normalizedFingerprint) ||
-        (!pending.device_fingerprint && pending.user_agent_hash === userAgentHash);
-
-      if (pendingDoc.id !== approvedDoc.id && isSameDevice) {
-        batch.update(pendingDoc.ref, {
-          status: "replaced",
-          updated_at: nowTimestamp(),
-        });
-      }
-    }
-
-    await batch.commit();
-
-    return mapDevice(approvedDoc.id, {
-      ...approved,
-      device_id: normalizedDeviceId,
-      device_fingerprint: normalizedFingerprint,
-      user_agent_hash: userAgentHash,
-      last_ip: ip,
-      last_seen_at: nowTimestamp(),
-    });
-  }
-
-  const existingSnapshot = await db
-    .collection("employee_devices")
-    .where("employee_id", "==", employeeId)
-    .where("device_id", "==", normalizedDeviceId)
-    .limit(1)
-    .get();
-  const ref = existingSnapshot.docs[0]?.ref ?? db.collection("employee_devices").doc();
-  const data: DeviceData = {
-    employee_id: employeeId,
+  const existing = existingDoc.data() as DeviceData;
+  const data: Partial<DeviceData> = {
     device_id: normalizedDeviceId,
     device_fingerprint: normalizedFingerprint,
     user_agent_hash: userAgentHash,
-    status: "pending_replacement",
-    requested_at: nowTimestamp(),
-    first_ip: existingSnapshot.docs[0]?.data().first_ip ?? ip,
+    status: "approved",
+    approved_at: existing.approved_at ?? nowTimestamp(),
     last_ip: ip,
-    last_seen_at: null,
-    replacement_of: approvedDoc.id,
-    created_at: existingSnapshot.docs[0]?.data().created_at ?? nowTimestamp(),
+    last_seen_at: nowTimestamp(),
     updated_at: nowTimestamp(),
   };
-  await ref.set(data, { merge: true });
+  await existingDoc.ref.set(data, { merge: true });
 
-  throw new DeviceApprovalRequiredError(mapDevice(ref.id, data));
+  return mapDevice(existingDoc.id, {
+    ...existing,
+    ...data,
+  } as DeviceData);
 }
 
 export async function verifyApprovedDevice(auth: AuthContext, request: Request) {
@@ -254,28 +208,13 @@ export async function approveDeviceRequest(auth: AuthContext, deviceRecordId: st
     badRequest("승인할 기기 변경 요청을 찾을 수 없습니다.");
   }
 
-  const approvedSnapshot = await db
-    .collection("employee_devices")
-    .where("employee_id", "==", pending.employee_id)
-    .where("status", "==", "approved")
-    .get();
-
-  const batch = db.batch();
-  for (const doc of approvedSnapshot.docs) {
-    batch.update(doc.ref, {
-      status: "replaced",
-      updated_at: nowTimestamp(),
-    });
-  }
-
-  batch.update(pendingRef, {
+  await pendingRef.update({
     status: "approved",
     approved_at: nowTimestamp(),
     approved_by: auth.employee.id,
     last_seen_at: nowTimestamp(),
     updated_at: nowTimestamp(),
   });
-  await batch.commit();
 
   const updated = await pendingRef.get();
   return mapDevice(updated.id, updated.data() as DeviceData);
