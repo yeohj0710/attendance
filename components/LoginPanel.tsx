@@ -25,7 +25,7 @@ export function LoginPanel({
 }: {
   onLogin: () => void;
 }) {
-  const [employeeNo, setEmployeeNo] = useState("");
+  const [employeeName, setEmployeeName] = useState("");
   const [pin, setPin] = useState("");
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -39,7 +39,7 @@ export function LoginPanel({
       const result = await apiFetch<LoginResponse>("/api/auth/login", {
         method: "POST",
         body: JSON.stringify({
-          employeeNo,
+          employeeName,
           pin,
           deviceId: getDeviceId(),
         }),
@@ -68,17 +68,17 @@ export function LoginPanel({
         <div className="mb-5">
           <h1 className="text-xl font-bold text-ink">출퇴근 체크</h1>
           <p className="mt-1 text-sm text-muted">
-            처음 한 번만 사번과 PIN으로 이 회사 컴퓨터를 등록합니다.
+            처음 한 번만 이름과 PIN으로 이 회사 컴퓨터를 등록합니다.
           </p>
         </div>
 
         <div className="space-y-4">
           <label className="block">
-            <span className="label">사번</span>
+            <span className="label">이름</span>
             <input
               className="field mt-1"
-              value={employeeNo}
-              onChange={(event) => setEmployeeNo(event.target.value)}
+              value={employeeName}
+              onChange={(event) => setEmployeeName(event.target.value)}
               autoComplete="username"
             />
           </label>

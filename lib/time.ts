@@ -15,6 +15,11 @@ export function getKstDateString(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+export function getWorkDateString(date = new Date()) {
+  const kstShifted = new Date(date.getTime() - 6 * 60 * 60 * 1000);
+  return getKstDateString(kstShifted);
+}
+
 export function addDaysToKstDate(dateString: string, days: number) {
   const date = new Date(`${dateString}T00:00:00+09:00`);
   date.setUTCDate(date.getUTCDate() + days);

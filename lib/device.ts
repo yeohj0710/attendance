@@ -1,4 +1,4 @@
-import { getSql } from "@/lib/db";
+import { getDb, nowTimestamp, timestampToIso } from "@/lib/db";
 import { badRequest, forbidden } from "@/lib/http";
 import { getClientIp, getOfficeNetworkMessage, isOfficeIp } from "@/lib/ip";
 import { hashUserAgent } from "@/lib/security";
@@ -25,19 +25,20 @@ export type EmployeeDevice = {
   lastSeenAt: string | null;
 };
 
-type DeviceRow = {
-  id: string;
+type DeviceData = {
   employee_id: string;
-  employee_no?: string;
-  employee_name?: string;
   device_id: string;
   user_agent_hash: string;
   status: DeviceStatus;
-  requested_at: string;
-  approved_at: string | null;
-  first_ip: string | null;
-  last_ip: string | null;
-  last_seen_at: string | null;
+  requested_at: unknown;
+  approved_at?: unknown;
+  approved_by?: string | null;
+  first_ip?: string | null;
+  last_ip?: string | null;
+  last_seen_at?: unknown;
+  replacement_of?: string | null;
+  created_at?: unknown;
+  updated_at?: unknown;
 };
 
 export class DeviceApprovalRequiredError extends Error {
@@ -85,173 +86,168 @@ export async function resolveLoginDevice({
   request: Request;
 }) {
   const normalizedDeviceId = validateDeviceId(deviceId);
-  const sql = getSql();
+  const db = getDb();
   const ip = getClientIp(request);
   const userAgentHash = hashUserAgent(request.headers.get("user-agent") ?? "");
 
-  const approvedRows = await sql<DeviceRow[]>`
-    select *
-    from employee_devices
-    where employee_id = ${employeeId}
-      and status = 'approved'
-    limit 1
-  `;
+  const approvedSnapshot = await db
+    .collection("employee_devices")
+    .where("employee_id", "==", employeeId)
+    .where("status", "==", "approved")
+    .limit(1)
+    .get();
+  const approvedDoc = approvedSnapshot.docs[0];
+  const approved = approvedDoc?.data() as DeviceData | undefined;
 
-  const approved = approvedRows[0];
   if (!approved) {
-    const rows = await sql<DeviceRow[]>`
-      insert into employee_devices (
-        employee_id,
-        device_id,
-        user_agent_hash,
-        status,
-        requested_at,
-        approved_at,
-        first_ip,
-        last_ip,
-        last_seen_at
-      )
-      values (
-        ${employeeId},
-        ${normalizedDeviceId},
-        ${userAgentHash},
-        'approved',
-        now(),
-        now(),
-        ${ip},
-        ${ip},
-        now()
-      )
-      returning *
-    `;
-
-    return mapDevice(rows[0]);
+    const ref = db.collection("employee_devices").doc();
+    const data: DeviceData = {
+      employee_id: employeeId,
+      device_id: normalizedDeviceId,
+      user_agent_hash: userAgentHash,
+      status: "approved",
+      requested_at: nowTimestamp(),
+      approved_at: nowTimestamp(),
+      first_ip: ip,
+      last_ip: ip,
+      last_seen_at: nowTimestamp(),
+      replacement_of: null,
+      created_at: nowTimestamp(),
+      updated_at: nowTimestamp(),
+    };
+    await ref.set(data);
+    return mapDevice(ref.id, data);
   }
 
   if (approved.device_id === normalizedDeviceId) {
-    const rows = await sql<DeviceRow[]>`
-      update employee_devices
-      set user_agent_hash = ${userAgentHash},
-          last_ip = ${ip},
-          last_seen_at = now()
-      where id = ${approved.id}
-      returning *
-    `;
+    await approvedDoc.ref.update({
+      user_agent_hash: userAgentHash,
+      last_ip: ip,
+      last_seen_at: nowTimestamp(),
+      updated_at: nowTimestamp(),
+    });
 
-    return mapDevice(rows[0]);
+    return mapDevice(approvedDoc.id, {
+      ...approved,
+      user_agent_hash: userAgentHash,
+      last_ip: ip,
+      last_seen_at: nowTimestamp(),
+    });
   }
 
-  const rows = await sql<DeviceRow[]>`
-    insert into employee_devices (
-      employee_id,
-      device_id,
-      user_agent_hash,
-      status,
-      requested_at,
-      first_ip,
-      last_ip,
-      replacement_of
-    )
-    values (
-      ${employeeId},
-      ${normalizedDeviceId},
-      ${userAgentHash},
-      'pending_replacement',
-      now(),
-      ${ip},
-      ${ip},
-      ${approved.id}
-    )
-    on conflict (employee_id, device_id)
-    do update set
-      user_agent_hash = excluded.user_agent_hash,
-      status = case
-        when employee_devices.status = 'approved' then employee_devices.status
-        else 'pending_replacement'
-      end,
-      requested_at = now(),
-      last_ip = excluded.last_ip,
-      replacement_of = excluded.replacement_of
-    returning *
-  `;
+  const existingSnapshot = await db
+    .collection("employee_devices")
+    .where("employee_id", "==", employeeId)
+    .where("device_id", "==", normalizedDeviceId)
+    .limit(1)
+    .get();
+  const ref = existingSnapshot.docs[0]?.ref ?? db.collection("employee_devices").doc();
+  const data: DeviceData = {
+    employee_id: employeeId,
+    device_id: normalizedDeviceId,
+    user_agent_hash: userAgentHash,
+    status: "pending_replacement",
+    requested_at: nowTimestamp(),
+    first_ip: existingSnapshot.docs[0]?.data().first_ip ?? ip,
+    last_ip: ip,
+    last_seen_at: null,
+    replacement_of: approvedDoc.id,
+    created_at: existingSnapshot.docs[0]?.data().created_at ?? nowTimestamp(),
+    updated_at: nowTimestamp(),
+  };
+  await ref.set(data, { merge: true });
 
-  throw new DeviceApprovalRequiredError(mapDevice(rows[0]));
+  throw new DeviceApprovalRequiredError(mapDevice(ref.id, data));
 }
 
 export async function verifyApprovedDevice(auth: AuthContext, request: Request) {
-  const sql = getSql();
-  const rows = await sql<DeviceRow[]>`
-    select *
-    from employee_devices
-    where employee_id = ${auth.employee.id}
-      and device_id = ${auth.session.deviceId}
-      and status = 'approved'
-    limit 1
-  `;
-
-  if (!rows[0]) {
+  const db = getDb();
+  const doc = await db.collection("employee_devices").doc(auth.session.deviceRecordId).get();
+  if (!doc.exists) {
     forbidden("등록된 회사 컴퓨터에서만 출퇴근 체크가 가능합니다.");
   }
 
-  await sql`
-    update employee_devices
-    set last_ip = ${getClientIp(request)},
-        last_seen_at = now()
-    where id = ${rows[0].id}
-  `;
+  const device = doc.data() as DeviceData;
+  if (
+    device.employee_id !== auth.employee.id ||
+    device.device_id !== auth.session.deviceId ||
+    device.status !== "approved"
+  ) {
+    forbidden("등록된 회사 컴퓨터에서만 출퇴근 체크가 가능합니다.");
+  }
 
-  return mapDevice(rows[0]);
+  await doc.ref.update({
+    last_ip: getClientIp(request),
+    last_seen_at: nowTimestamp(),
+    updated_at: nowTimestamp(),
+  });
+
+  return mapDevice(doc.id, device);
 }
 
 export async function listPendingDeviceRequests() {
-  const sql = getSql();
-  const rows = await sql<DeviceRow[]>`
-    select
-      d.*,
-      e.employee_no,
-      e.name as employee_name
-    from employee_devices d
-    join employees e on e.id = d.employee_id
-    where d.status = 'pending_replacement'
-    order by d.requested_at asc
-  `;
+  const db = getDb();
+  const [devicesSnapshot, employeesSnapshot] = await Promise.all([
+    db.collection("employee_devices").where("status", "==", "pending_replacement").get(),
+    db.collection("employees").get(),
+  ]);
 
-  return rows.map(mapDevice);
+  const employees = new Map(
+    employeesSnapshot.docs.map((doc) => [doc.id, doc.data() as { employee_no?: string; name?: string }]),
+  );
+
+  return devicesSnapshot.docs
+    .map((doc) => {
+      const data = doc.data() as DeviceData;
+      const employee = employees.get(data.employee_id);
+      return {
+        ...mapDevice(doc.id, data),
+        employeeNo: employee?.employee_no,
+        employeeName: employee?.name,
+      };
+    })
+    .sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
 }
 
 export async function approveDeviceRequest(auth: AuthContext, deviceRecordId: string) {
-  const sql = getSql();
-  const pendingRows = await sql<DeviceRow[]>`
-    select *
-    from employee_devices
-    where id = ${deviceRecordId}
-      and status = 'pending_replacement'
-    limit 1
-  `;
+  const db = getDb();
+  const pendingRef = db.collection("employee_devices").doc(deviceRecordId);
+  const pendingDoc = await pendingRef.get();
 
-  const pending = pendingRows[0];
-  if (!pending) {
+  if (!pendingDoc.exists) {
     badRequest("승인할 기기 변경 요청을 찾을 수 없습니다.");
   }
 
-  await sql`
-    update employee_devices
-    set status = 'replaced'
-    where employee_id = ${pending.employee_id}
-      and status = 'approved'
-  `;
+  const pending = pendingDoc.data() as DeviceData;
+  if (pending.status !== "pending_replacement") {
+    badRequest("승인할 기기 변경 요청을 찾을 수 없습니다.");
+  }
 
-  const rows = await sql<DeviceRow[]>`
-    update employee_devices
-    set status = 'approved',
-        approved_at = now(),
-        approved_by = ${auth.employee.id},
-        last_seen_at = now()
-    where id = ${pending.id}
-    returning *
-  `;
+  const approvedSnapshot = await db
+    .collection("employee_devices")
+    .where("employee_id", "==", pending.employee_id)
+    .where("status", "==", "approved")
+    .get();
 
-  return mapDevice(rows[0]);
+  const batch = db.batch();
+  for (const doc of approvedSnapshot.docs) {
+    batch.update(doc.ref, {
+      status: "replaced",
+      updated_at: nowTimestamp(),
+    });
+  }
+
+  batch.update(pendingRef, {
+    status: "approved",
+    approved_at: nowTimestamp(),
+    approved_by: auth.employee.id,
+    last_seen_at: nowTimestamp(),
+    updated_at: nowTimestamp(),
+  });
+  await batch.commit();
+
+  const updated = await pendingRef.get();
+  return mapDevice(updated.id, updated.data() as DeviceData);
 }
 
 function validateDeviceId(deviceId: string) {
@@ -263,19 +259,17 @@ function validateDeviceId(deviceId: string) {
   return normalized;
 }
 
-function mapDevice(row: DeviceRow): EmployeeDevice {
+function mapDevice(id: string, data: DeviceData): EmployeeDevice {
   return {
-    id: row.id,
-    employeeId: row.employee_id,
-    employeeNo: row.employee_no,
-    employeeName: row.employee_name,
-    deviceId: row.device_id,
-    userAgentHash: row.user_agent_hash,
-    status: row.status,
-    requestedAt: row.requested_at,
-    approvedAt: row.approved_at,
-    firstIp: row.first_ip,
-    lastIp: row.last_ip,
-    lastSeenAt: row.last_seen_at,
+    id,
+    employeeId: data.employee_id,
+    deviceId: data.device_id,
+    userAgentHash: data.user_agent_hash,
+    status: data.status,
+    requestedAt: timestampToIso(data.requested_at) ?? new Date().toISOString(),
+    approvedAt: timestampToIso(data.approved_at),
+    firstIp: data.first_ip ?? null,
+    lastIp: data.last_ip ?? null,
+    lastSeenAt: timestampToIso(data.last_seen_at),
   };
 }

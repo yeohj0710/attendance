@@ -9,16 +9,16 @@ export async function POST(request: Request) {
     assertOfficeDesktopRequest(request);
 
     const body = (await request.json()) as {
-      employeeNo?: string;
+      employeeName?: string;
       pin?: string;
       deviceId?: string;
     };
-    const employeeNo = body.employeeNo?.trim();
+    const employeeName = body.employeeName?.trim();
     const pin = body.pin?.trim();
     const deviceId = body.deviceId?.trim();
 
-    if (!employeeNo) {
-      badRequest("사번을 입력하세요.");
+    if (!employeeName) {
+      badRequest("이름을 입력하세요.");
     }
 
     if (!pin || !/^\d{4}$/.test(pin)) {
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     }
 
     const result = await loginWithPin({
-      employeeNo,
+      employeeName,
       pin,
       deviceId,
       request,

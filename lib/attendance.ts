@@ -1,6 +1,6 @@
-import { getSql } from "@/lib/db";
+import { getDb, nowTimestamp, timestampToIso, toTimestamp } from "@/lib/db";
 import { badRequest, conflict } from "@/lib/http";
-import { getKstDateString, parseKstDateTimeInput } from "@/lib/time";
+import { getWorkDateString, parseKstDateTimeInput } from "@/lib/time";
 import type { AuthContext } from "@/lib/auth";
 
 export type WorkType = "office" | "remote" | "offsite" | "business_trip";
@@ -24,25 +24,6 @@ export type AttendanceRecord = {
   updatedAt: string;
 };
 
-type AttendanceRow = {
-  id: string;
-  employee_id: string;
-  employee_no?: string;
-  employee_name?: string;
-  work_date: string;
-  check_in_at: string | null;
-  check_out_at: string | null;
-  check_in_ip: string | null;
-  check_out_ip: string | null;
-  check_in_device_id?: string | null;
-  check_out_device_id?: string | null;
-  work_type: WorkType;
-  note: string | null;
-  source: "employee" | "admin";
-  created_at: string;
-  updated_at: string;
-};
-
 export type AdminAttendanceInput = {
   employeeId: string;
   workDate: string;
@@ -53,30 +34,37 @@ export type AdminAttendanceInput = {
   reason?: string | null;
 };
 
+type AttendanceData = {
+  employee_id: string;
+  work_date: string;
+  check_in_at?: unknown;
+  check_out_at?: unknown;
+  check_in_ip?: string | null;
+  check_out_ip?: string | null;
+  check_in_session_id?: string | null;
+  check_out_session_id?: string | null;
+  work_type: WorkType;
+  note?: string | null;
+  source: "employee" | "admin";
+  created_by?: string | null;
+  updated_by?: string | null;
+  created_at: unknown;
+  updated_at: unknown;
+};
+
+type EmployeeData = {
+  employee_no?: string;
+  name?: string;
+};
+
+type SessionData = {
+  device_id?: string;
+};
+
 export async function getAttendanceStatus(auth: AuthContext) {
-  const sql = getSql();
-  const today = getKstDateString();
-
-  const todayRows = await sql<AttendanceRow[]>`
-    select *
-    from attendance_records
-    where employee_id = ${auth.employee.id}
-      and work_date = ${today}
-    limit 1
-  `;
-
-  const openRows = await sql<AttendanceRow[]>`
-    select *
-    from attendance_records
-    where employee_id = ${auth.employee.id}
-      and check_in_at is not null
-      and check_out_at is null
-    order by work_date desc, check_in_at desc
-    limit 1
-  `;
-
-  const todayRecord = todayRows[0] ? mapAttendance(todayRows[0]) : null;
-  const openRecord = openRows[0] ? mapAttendance(openRows[0]) : null;
+  const today = getWorkDateString();
+  const todayRecord = await getRecordByEmployeeDate(auth.employee.id, today);
+  const openRecord = await getOpenRecord(auth.employee.id);
   const hasPreviousOpen =
     openRecord !== null && openRecord.workDate !== today && !openRecord.checkOutAt;
 
@@ -91,21 +79,21 @@ export async function getAttendanceStatus(auth: AuthContext) {
 }
 
 export async function getRecentAttendance(employeeId: string, limit: number) {
-  const sql = getSql();
-  const rows = await sql<AttendanceRow[]>`
-    select *
-    from attendance_records
-    where employee_id = ${employeeId}
-    order by work_date desc
-    limit ${limit}
-  `;
+  const db = getDb();
+  const snapshot = await db
+    .collection("attendance_records")
+    .where("employee_id", "==", employeeId)
+    .get();
 
-  return rows.map(mapAttendance);
+  return snapshot.docs
+    .map((doc) => mapAttendance(doc.id, doc.data() as AttendanceData))
+    .sort((a, b) => b.workDate.localeCompare(a.workDate))
+    .slice(0, limit);
 }
 
 export async function checkIn(auth: AuthContext, ip: string | null) {
-  const sql = getSql();
-  const today = getKstDateString();
+  const db = getDb();
+  const today = getWorkDateString();
   const status = await getAttendanceStatus(auth);
 
   if (status.hasPreviousOpen) {
@@ -116,80 +104,52 @@ export async function checkIn(auth: AuthContext, ip: string | null) {
     conflict("이미 오늘 출근 처리되었습니다.");
   }
 
-  const rows = await sql<AttendanceRow[]>`
-    insert into attendance_records (
-      employee_id,
-      work_date,
-      check_in_at,
-      check_in_ip,
-      check_in_session_id,
-      work_type,
-      source,
-      created_by,
-      updated_by
-    )
-    values (
-      ${auth.employee.id},
-      ${today},
-      now(),
-      ${ip},
-      ${auth.session.id},
-      'office',
-      'employee',
-      ${auth.employee.id},
-      ${auth.employee.id}
-    )
-    on conflict (employee_id, work_date)
-    do update set
-      check_in_at = excluded.check_in_at,
-      check_in_ip = excluded.check_in_ip,
-      check_in_session_id = excluded.check_in_session_id,
-      source = 'employee',
-      updated_by = excluded.updated_by
-    where attendance_records.check_in_at is null
-    returning *
-  `;
+  const ref = db.collection("attendance_records").doc(attendanceDocId(auth.employee.id, today));
+  const now = nowTimestamp();
+  const data: AttendanceData = {
+    employee_id: auth.employee.id,
+    work_date: today,
+    check_in_at: now,
+    check_out_at: null,
+    check_in_ip: ip,
+    check_out_ip: null,
+    check_in_session_id: auth.session.id,
+    check_out_session_id: null,
+    work_type: "office",
+    note: null,
+    source: "employee",
+    created_by: auth.employee.id,
+    updated_by: auth.employee.id,
+    created_at: now,
+    updated_at: now,
+  };
 
-  if (!rows[0]) {
-    conflict("이미 오늘 출근 처리되었습니다.");
-  }
-
-  return mapAttendance(rows[0]);
+  await ref.set(data, { merge: true });
+  return mapAttendance(ref.id, data);
 }
 
 export async function checkOut(auth: AuthContext, ip: string | null) {
-  const sql = getSql();
-  const openRows = await sql<AttendanceRow[]>`
-    select *
-    from attendance_records
-    where employee_id = ${auth.employee.id}
-      and check_in_at is not null
-      and check_out_at is null
-    order by work_date desc, check_in_at desc
-    limit 1
-  `;
+  const db = getDb();
+  const workDate = getWorkDateString();
+  const openRecord =
+    (await getOpenRecord(auth.employee.id)) ??
+    (await getRecordByEmployeeDate(auth.employee.id, workDate));
 
-  const openRecord = openRows[0];
-  if (!openRecord) {
+  if (!openRecord?.checkInAt) {
     conflict("퇴근 처리할 출근 기록이 없습니다.");
   }
 
-  const rows = await sql<AttendanceRow[]>`
-    update attendance_records
-    set check_out_at = now(),
-        check_out_ip = ${ip},
-        check_out_session_id = ${auth.session.id},
-        updated_by = ${auth.employee.id}
-    where id = ${openRecord.id}
-      and check_out_at is null
-    returning *
-  `;
+  const ref = db.collection("attendance_records").doc(openRecord.id);
+  await ref.update({
+    check_out_at: nowTimestamp(),
+    check_out_ip: ip,
+    check_out_session_id: auth.session.id,
+    updated_by: auth.employee.id,
+    updated_at: nowTimestamp(),
+  });
 
-  if (!rows[0]) {
-    conflict("이미 퇴근 처리되었습니다.");
-  }
-
-  return mapAttendance(rows[0]);
+  const updated = await ref.get();
+  return mapAttendance(updated.id, updated.data() as AttendanceData);
 }
 
 export async function listAdminAttendance({
@@ -201,104 +161,83 @@ export async function listAdminAttendance({
   endDate: string | null;
   employeeId: string | null;
 }) {
-  const sql = getSql();
-  const rows = await sql<AttendanceRow[]>`
-    select
-      ar.*,
-      e.employee_no,
-      e.name as employee_name,
-      cis.device_id as check_in_device_id,
-      cos.device_id as check_out_device_id
-    from attendance_records ar
-    join employees e on e.id = ar.employee_id
-    left join sessions cis on cis.id = ar.check_in_session_id
-    left join sessions cos on cos.id = ar.check_out_session_id
-    where (${startDate}::date is null or ar.work_date >= ${startDate}::date)
-      and (${endDate}::date is null or ar.work_date <= ${endDate}::date)
-      and (${employeeId}::uuid is null or ar.employee_id = ${employeeId}::uuid)
-    order by ar.work_date desc, e.name asc
-  `;
+  const db = getDb();
+  const [attendanceSnapshot, employeesSnapshot, sessionsSnapshot] = await Promise.all([
+    db.collection("attendance_records").get(),
+    db.collection("employees").get(),
+    db.collection("sessions").get(),
+  ]);
 
-  return rows.map(mapAttendance);
+  const employees = new Map(
+    employeesSnapshot.docs.map((doc) => [doc.id, doc.data() as EmployeeData]),
+  );
+  const sessions = new Map(
+    sessionsSnapshot.docs.map((doc) => [doc.id, doc.data() as SessionData]),
+  );
+
+  return attendanceSnapshot.docs
+    .map((doc) =>
+      mapAttendance(
+        doc.id,
+        doc.data() as AttendanceData,
+        employees,
+        sessions,
+      ),
+    )
+    .filter((record) => !startDate || record.workDate >= startDate)
+    .filter((record) => !endDate || record.workDate <= endDate)
+    .filter((record) => !employeeId || record.employeeId === employeeId)
+    .sort((a, b) => {
+      const dateCompare = b.workDate.localeCompare(a.workDate);
+      return dateCompare || (a.employeeName ?? "").localeCompare(b.employeeName ?? "");
+    });
 }
 
 export async function createAdminAttendance(
   auth: AuthContext,
   input: AdminAttendanceInput,
 ) {
-  const sql = getSql();
+  const db = getDb();
   const checkInAt = parseKstDateTimeInput(input.checkInAt);
   const checkOutAt = parseKstDateTimeInput(input.checkOutAt);
   validateChronology(checkInAt, checkOutAt);
-  const existingRows = await sql<{ id: string }[]>`
-    select id
-    from attendance_records
-    where employee_id = ${input.employeeId}
-      and work_date = ${input.workDate}
-    limit 1
-  `;
 
-  if (existingRows[0]) {
+  const existing = await getRecordByEmployeeDate(input.employeeId, input.workDate);
+  if (existing) {
     conflict("이미 해당 날짜 기록이 있습니다. 기존 기록을 수정하세요.");
   }
 
-  const after = {
+  const ref = db.collection("attendance_records").doc(attendanceDocId(input.employeeId, input.workDate));
+  const now = nowTimestamp();
+  const data: AttendanceData = {
     employee_id: input.employeeId,
     work_date: input.workDate,
-    check_in_at: checkInAt?.toISOString() ?? null,
-    check_out_at: checkOutAt?.toISOString() ?? null,
+    check_in_at: toTimestamp(checkInAt),
+    check_out_at: toTimestamp(checkOutAt),
+    check_in_ip: null,
+    check_out_ip: null,
+    check_in_session_id: null,
+    check_out_session_id: null,
     work_type: input.workType,
     note: input.note ?? null,
     source: "admin",
+    created_by: auth.employee.id,
+    updated_by: auth.employee.id,
+    created_at: now,
+    updated_at: now,
   };
 
-  const rows = await sql<AttendanceRow[]>`
-    insert into attendance_records (
-      employee_id,
-      work_date,
-      check_in_at,
-      check_out_at,
-      work_type,
-      note,
-      source,
-      created_by,
-      updated_by
-    )
-    values (
-      ${input.employeeId},
-      ${input.workDate},
-      ${checkInAt?.toISOString() ?? null},
-      ${checkOutAt?.toISOString() ?? null},
-      ${input.workType},
-      ${input.note ?? null},
-      'admin',
-      ${auth.employee.id},
-      ${auth.employee.id}
-    )
-    returning *
-  `;
+  await ref.set(data);
+  await createAuditLog({
+    attendanceRecordId: ref.id,
+    action: "create",
+    changedBy: auth.employee.id,
+    beforeData: null,
+    afterData: serializeAttendance(data),
+    reason: input.reason ?? null,
+  });
 
-  const record = rows[0];
-  await sql`
-    insert into attendance_audit_logs (
-      attendance_record_id,
-      action,
-      changed_by,
-      before_data,
-      after_data,
-      reason
-    )
-    values (
-      ${record.id},
-      'create',
-      ${auth.employee.id},
-      null,
-      ${JSON.stringify(after)}::jsonb,
-      ${input.reason ?? null}
-    )
-  `;
-
-  return mapAttendance(record);
+  return mapAttendance(ref.id, data);
 }
 
 export async function updateAdminAttendance(
@@ -306,70 +245,147 @@ export async function updateAdminAttendance(
   id: string,
   input: AdminAttendanceInput,
 ) {
-  const sql = getSql();
-  const beforeRows = await sql<AttendanceRow[]>`
-    select *
-    from attendance_records
-    where id = ${id}
-    limit 1
-  `;
-
-  const before = beforeRows[0];
-  if (!before) {
+  const db = getDb();
+  const beforeDoc = await db.collection("attendance_records").doc(id).get();
+  if (!beforeDoc.exists) {
     conflict("수정할 기록을 찾을 수 없습니다.");
   }
 
   const checkInAt = parseKstDateTimeInput(input.checkInAt);
   const checkOutAt = parseKstDateTimeInput(input.checkOutAt);
   validateChronology(checkInAt, checkOutAt);
-  const duplicateRows = await sql<{ id: string }[]>`
-    select id
-    from attendance_records
-    where employee_id = ${input.employeeId}
-      and work_date = ${input.workDate}
-      and id <> ${id}
-    limit 1
-  `;
 
-  if (duplicateRows[0]) {
-    conflict("해당 직원의 같은 날짜 기록이 이미 있습니다.");
+  const targetId = attendanceDocId(input.employeeId, input.workDate);
+  if (targetId !== id) {
+    const duplicate = await db.collection("attendance_records").doc(targetId).get();
+    if (duplicate.exists) {
+      conflict("해당 직원의 같은 날짜 기록이 이미 있습니다.");
+    }
   }
 
-  const rows = await sql<AttendanceRow[]>`
-    update attendance_records
-    set employee_id = ${input.employeeId},
-        work_date = ${input.workDate},
-        check_in_at = ${checkInAt?.toISOString() ?? null},
-        check_out_at = ${checkOutAt?.toISOString() ?? null},
-        work_type = ${input.workType},
-        note = ${input.note ?? null},
-        source = 'admin',
-        updated_by = ${auth.employee.id}
-    where id = ${id}
-    returning *
-  `;
+  const before = beforeDoc.data() as AttendanceData;
+  const data: AttendanceData = {
+    ...before,
+    employee_id: input.employeeId,
+    work_date: input.workDate,
+    check_in_at: toTimestamp(checkInAt),
+    check_out_at: toTimestamp(checkOutAt),
+    work_type: input.workType,
+    note: input.note ?? null,
+    source: "admin",
+    updated_by: auth.employee.id,
+    updated_at: nowTimestamp(),
+  };
 
-  const record = rows[0];
-  await sql`
-    insert into attendance_audit_logs (
-      attendance_record_id,
-      action,
-      changed_by,
-      before_data,
-      after_data,
-      reason
-    )
-    values (
-      ${record.id},
-      'update',
-      ${auth.employee.id},
-      ${JSON.stringify(before)}::jsonb,
-      ${JSON.stringify(record)}::jsonb,
-      ${input.reason ?? null}
-    )
-  `;
+  const batch = db.batch();
+  const currentRef = db.collection("attendance_records").doc(id);
+  const targetRef = db.collection("attendance_records").doc(targetId);
+  if (targetId !== id) {
+    batch.delete(currentRef);
+    batch.set(targetRef, data);
+  } else {
+    batch.set(currentRef, data, { merge: true });
+  }
+  await batch.commit();
 
-  return mapAttendance(record);
+  await createAuditLog({
+    attendanceRecordId: targetId,
+    action: "update",
+    changedBy: auth.employee.id,
+    beforeData: serializeAttendance(before),
+    afterData: serializeAttendance(data),
+    reason: input.reason ?? null,
+  });
+
+  return mapAttendance(targetId, data);
+}
+
+export function mapAttendance(
+  id: string,
+  data: AttendanceData,
+  employees?: Map<string, EmployeeData>,
+  sessions?: Map<string, SessionData>,
+): AttendanceRecord {
+  const employee = employees?.get(data.employee_id);
+  const checkInAt = timestampToIso(data.check_in_at);
+  const checkOutAt = timestampToIso(data.check_out_at);
+
+  return {
+    id,
+    employeeId: data.employee_id,
+    employeeNo: employee?.employee_no,
+    employeeName: employee?.name,
+    workDate: data.work_date,
+    checkInAt,
+    checkOutAt,
+    checkInIp: data.check_in_ip ?? null,
+    checkOutIp: data.check_out_ip ?? null,
+    checkInDeviceId: data.check_in_session_id
+      ? sessions?.get(data.check_in_session_id)?.device_id ?? null
+      : null,
+    checkOutDeviceId: data.check_out_session_id
+      ? sessions?.get(data.check_out_session_id)?.device_id ?? null
+      : null,
+    workType: data.work_type,
+    note: data.note ?? null,
+    source: data.source,
+    createdAt: timestampToIso(data.created_at) ?? "",
+    updatedAt: timestampToIso(data.updated_at) ?? "",
+  };
+}
+
+async function getRecordByEmployeeDate(employeeId: string, workDate: string) {
+  const db = getDb();
+  const doc = await db.collection("attendance_records").doc(attendanceDocId(employeeId, workDate)).get();
+  return doc.exists ? mapAttendance(doc.id, doc.data() as AttendanceData) : null;
+}
+
+async function getOpenRecord(employeeId: string) {
+  const records = await getRecentAttendance(employeeId, 500);
+  return (
+    records.find((record) => record.checkInAt && !record.checkOutAt) ?? null
+  );
+}
+
+async function createAuditLog({
+  attendanceRecordId,
+  action,
+  changedBy,
+  beforeData,
+  afterData,
+  reason,
+}: {
+  attendanceRecordId: string;
+  action: "create" | "update";
+  changedBy: string;
+  beforeData: unknown;
+  afterData: unknown;
+  reason: string | null;
+}) {
+  const db = getDb();
+  await db.collection("attendance_audit_logs").add({
+    attendance_record_id: attendanceRecordId,
+    action,
+    changed_by: changedBy,
+    changed_at: nowTimestamp(),
+    before_data: beforeData,
+    after_data: afterData,
+    reason,
+  });
+}
+
+function attendanceDocId(employeeId: string, workDate: string) {
+  return `${employeeId}_${workDate}`;
+}
+
+function serializeAttendance(data: AttendanceData) {
+  return {
+    ...data,
+    check_in_at: timestampToIso(data.check_in_at),
+    check_out_at: timestampToIso(data.check_out_at),
+    created_at: timestampToIso(data.created_at),
+    updated_at: timestampToIso(data.updated_at),
+  };
 }
 
 function validateChronology(checkInAt: Date | null, checkOutAt: Date | null) {
@@ -384,25 +400,4 @@ function validateChronology(checkInAt: Date | null, checkOutAt: Date | null) {
   if (checkInAt && checkOutAt && checkOutAt < checkInAt) {
     badRequest("퇴근시각은 출근시각 이후여야 합니다.");
   }
-}
-
-export function mapAttendance(row: AttendanceRow): AttendanceRecord {
-  return {
-    id: row.id,
-    employeeId: row.employee_id,
-    employeeNo: row.employee_no,
-    employeeName: row.employee_name,
-    workDate: row.work_date,
-    checkInAt: row.check_in_at,
-    checkOutAt: row.check_out_at,
-    checkInIp: row.check_in_ip,
-    checkOutIp: row.check_out_ip,
-    checkInDeviceId: row.check_in_device_id,
-    checkOutDeviceId: row.check_out_device_id,
-    workType: row.work_type,
-    note: row.note,
-    source: row.source,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
 }

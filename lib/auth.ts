@@ -1,4 +1,4 @@
-import { getSql } from "@/lib/db";
+import { getDb, nowTimestamp, timestampToIso, toTimestamp } from "@/lib/db";
 import { getClientIp } from "@/lib/ip";
 import {
   createSessionExpiry,
@@ -7,7 +7,7 @@ import {
   hashUserAgent,
   verifyPin,
 } from "@/lib/security";
-import { forbidden, unauthorized } from "@/lib/http";
+import { conflict, forbidden, unauthorized } from "@/lib/http";
 import { DeviceApprovalRequiredError, resolveLoginDevice } from "@/lib/device";
 
 export type EmployeeRole = "employee" | "admin";
@@ -42,55 +42,56 @@ export type LoginResult =
       message: string;
     };
 
-type EmployeeRow = {
-  id: string;
+type EmployeeData = {
   employee_no: string;
   name: string;
   role: EmployeeRole;
   pin_hash: string;
   pin_salt: string;
+  is_active: boolean;
 };
 
-type SessionRow = {
-  session_id: string;
+type SessionData = {
+  employee_id: string;
   device_record_id: string;
   device_id: string;
-  expires_at: string;
-  employee_id: string;
-  employee_no: string;
-  name: string;
-  role: EmployeeRole;
+  expires_at: unknown;
+  revoked_at?: unknown;
 };
 
 export async function loginWithPin({
-  employeeNo,
+  employeeName,
   pin,
   deviceId,
   request,
 }: {
-  employeeNo: string;
+  employeeName: string;
   pin: string;
   deviceId: string;
   request: Request;
 }): Promise<LoginResult> {
-  const sql = getSql();
-  const rows = await sql<EmployeeRow[]>`
-    select id, employee_no, name, role, pin_hash, pin_salt
-    from employees
-    where employee_no = ${employeeNo}
-      and is_active = true
-    limit 1
-  `;
+  const db = getDb();
+  const snapshot = await db
+    .collection("employees")
+    .where("name", "==", employeeName)
+    .where("is_active", "==", true)
+    .limit(2)
+    .get();
 
-  const employee = rows[0];
-  if (!employee || !verifyPin(pin, employee.pin_hash, employee.pin_salt)) {
-    unauthorized("사번 또는 PIN이 올바르지 않습니다.");
+  if (snapshot.size > 1) {
+    conflict("같은 이름의 직원이 2명 이상 있습니다. 관리자에게 이름 구분을 요청하세요.");
   }
 
-  let device: Awaited<ReturnType<typeof resolveLoginDevice>>;
+  const employeeDoc = snapshot.docs[0];
+  const employee = employeeDoc?.data() as EmployeeData | undefined;
+  if (!employee || !verifyPin(pin, employee.pin_hash, employee.pin_salt)) {
+    unauthorized("이름 또는 PIN이 올바르지 않습니다.");
+  }
+
+  let device;
   try {
     device = await resolveLoginDevice({
-      employeeId: employee.id,
+      employeeId: employeeDoc.id,
       deviceId,
       request,
     });
@@ -106,42 +107,31 @@ export async function loginWithPin({
 
     throw error;
   }
+
   const token = createSessionToken();
+  const tokenHash = hashToken(token);
   const expiresAt = createSessionExpiry();
   const clientIp = getClientIp(request);
-  const userAgentHash = hashUserAgent(request.headers.get("user-agent") ?? "");
 
-  const sessionRows = await sql<{ id: string; expires_at: string }[]>`
-    insert into sessions (
-      employee_id,
-      device_record_id,
-      token_hash,
-      device_id,
-      user_agent_hash,
-      first_ip,
-      last_ip,
-      expires_at,
-      last_used_at
-    )
-    values (
-      ${employee.id},
-      ${device.id},
-      ${hashToken(token)},
-      ${deviceId},
-      ${userAgentHash},
-      ${clientIp},
-      ${clientIp},
-      ${expiresAt.toISOString()},
-      now()
-    )
-    returning id, expires_at
-  `;
+  await db.collection("sessions").doc(tokenHash).set({
+    employee_id: employeeDoc.id,
+    device_record_id: device.id,
+    token_hash: tokenHash,
+    device_id: deviceId,
+    user_agent_hash: hashUserAgent(request.headers.get("user-agent") ?? ""),
+    first_ip: clientIp,
+    last_ip: clientIp,
+    expires_at: toTimestamp(expiresAt),
+    revoked_at: null,
+    created_at: nowTimestamp(),
+    last_used_at: nowTimestamp(),
+  });
 
   return {
     ok: true,
     token,
-    expiresAt: sessionRows[0].expires_at,
-    employee: mapEmployee(employee),
+    expiresAt: expiresAt.toISOString(),
+    employee: mapEmployee(employeeDoc.id, employee),
   };
 }
 
@@ -153,53 +143,50 @@ export async function authenticateRequest(request: Request) {
     return null;
   }
 
-  const sql = getSql();
-  const tokenHash = hashToken(token);
-  const rows = await sql<SessionRow[]>`
-    select
-      s.id as session_id,
-      s.device_record_id,
-      s.device_id,
-      s.expires_at,
-      e.id as employee_id,
-      e.employee_no,
-      e.name,
-      e.role
-    from sessions s
-    join employees e on e.id = s.employee_id
-    join employee_devices d on d.id = s.device_record_id
-    where s.token_hash = ${tokenHash}
-      and s.revoked_at is null
-      and s.expires_at > now()
-      and d.status = 'approved'
-      and e.is_active = true
-    limit 1
-  `;
-
-  const row = rows[0];
-  if (!row || row.device_id !== deviceId) {
+  const db = getDb();
+  const sessionDoc = await db.collection("sessions").doc(hashToken(token)).get();
+  if (!sessionDoc.exists) {
     return null;
   }
 
-  await sql`
-    update sessions
-    set last_used_at = now(),
-        last_ip = ${getClientIp(request)}
-    where id = ${row.session_id}
-  `;
+  const session = sessionDoc.data() as SessionData;
+  const expiresAt = timestampToIso(session.expires_at);
+  if (
+    session.revoked_at ||
+    session.device_id !== deviceId ||
+    !expiresAt ||
+    new Date(expiresAt) <= new Date()
+  ) {
+    return null;
+  }
+
+  const [employeeDoc, deviceDoc] = await Promise.all([
+    db.collection("employees").doc(session.employee_id).get(),
+    db.collection("employee_devices").doc(session.device_record_id).get(),
+  ]);
+
+  if (!employeeDoc.exists || !deviceDoc.exists) {
+    return null;
+  }
+
+  const employee = employeeDoc.data() as EmployeeData;
+  const device = deviceDoc.data() as { status?: string };
+  if (!employee.is_active || device.status !== "approved") {
+    return null;
+  }
+
+  await sessionDoc.ref.update({
+    last_used_at: nowTimestamp(),
+    last_ip: getClientIp(request),
+  });
 
   return {
-    employee: {
-      id: row.employee_id,
-      employeeNo: row.employee_no,
-      name: row.name,
-      role: row.role,
-    },
+    employee: mapEmployee(employeeDoc.id, employee),
     session: {
-      id: row.session_id,
-      deviceId: row.device_id,
-      deviceRecordId: row.device_record_id,
-      expiresAt: row.expires_at,
+      id: sessionDoc.id,
+      deviceId: session.device_id,
+      deviceRecordId: session.device_record_id,
+      expiresAt,
     },
   } satisfies AuthContext;
 }
@@ -229,14 +216,17 @@ export async function logoutCurrentDevice(request: Request) {
     return;
   }
 
-  const sql = getSql();
-  await sql`
-    update sessions
-    set revoked_at = now()
-    where token_hash = ${hashToken(token)}
-      and device_id = ${deviceId}
-      and revoked_at is null
-  `;
+  const db = getDb();
+  const sessionRef = db.collection("sessions").doc(hashToken(token));
+  const sessionDoc = await sessionRef.get();
+  if (!sessionDoc.exists) {
+    return;
+  }
+
+  const session = sessionDoc.data() as SessionData;
+  if (session.device_id === deviceId) {
+    await sessionRef.update({ revoked_at: nowTimestamp() });
+  }
 }
 
 function getBearerToken(request: Request) {
@@ -248,9 +238,9 @@ function getBearerToken(request: Request) {
   return authHeader.slice("Bearer ".length).trim();
 }
 
-function mapEmployee(employee: EmployeeRow): AuthEmployee {
+function mapEmployee(id: string, employee: EmployeeData): AuthEmployee {
   return {
-    id: employee.id,
+    id,
     employeeNo: employee.employee_no,
     name: employee.name,
     role: employee.role,

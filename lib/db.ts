@@ -1,22 +1,64 @@
-import { neon } from "@neondatabase/serverless";
+import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { getFirestore, Timestamp } from "firebase-admin/firestore";
 
-type Sql = <T extends unknown[] = Record<string, unknown>[]>(
-  strings: TemplateStringsArray,
-  ...values: unknown[]
-) => Promise<T>;
+export function getDb() {
+  if (!getApps().length) {
+    const projectId = process.env.FIREBASE_PROJECT_ID;
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+    const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
 
-let sql: Sql | null = null;
+    if (!projectId || !clientEmail || !privateKey) {
+      throw new Error("Firebase environment variables are not configured.");
+    }
 
-export function getSql() {
-  if (sql) {
-    return sql;
+    initializeApp({
+      credential: cert({
+        project_id: projectId,
+        client_email: clientEmail,
+        private_key: privateKey,
+      } as Record<string, string>),
+    });
   }
 
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    throw new Error("DATABASE_URL is not configured.");
+  return getFirestore();
+}
+
+export function toTimestamp(value: Date | string | null | undefined) {
+  if (!value) {
+    return null;
   }
 
-  sql = neon(databaseUrl) as unknown as Sql;
-  return sql;
+  return Timestamp.fromDate(value instanceof Date ? value : new Date(value));
+}
+
+export function nowTimestamp() {
+  return Timestamp.now();
+}
+
+export function timestampToIso(value: unknown) {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Timestamp) {
+    return value.toDate().toISOString();
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (
+    typeof value === "object" &&
+    "toDate" in value &&
+    typeof value.toDate === "function"
+  ) {
+    return value.toDate().toISOString();
+  }
+
+  return null;
 }

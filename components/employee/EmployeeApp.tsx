@@ -156,6 +156,8 @@ export function EmployeeApp() {
     : currentRecord?.checkInAt
       ? "근무 중"
       : "출근 전";
+  const canPressCheckOut =
+    Boolean(status?.canCheckOut || status?.todayRecord?.checkInAt) && !isMutating;
 
   return (
     <main className="mx-auto min-h-dvh w-full max-w-xl px-3 py-4 sm:px-5">
@@ -181,7 +183,7 @@ export function EmployeeApp() {
           </button>
           <button
             className="secondary-button min-h-14 text-base"
-            disabled={!status?.canCheckOut || isMutating}
+            disabled={!canPressCheckOut}
             onClick={() => runAction("/api/attendance/check-out")}
             type="button"
           >
