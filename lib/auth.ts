@@ -3,6 +3,7 @@ import { getClientIp } from "@/lib/ip";
 import {
   createSessionExpiry,
   createSessionToken,
+  hashPin,
   hashToken,
   hashUserAgent,
   verifyPin,
@@ -46,8 +47,8 @@ type EmployeeData = {
   employee_no: string;
   name: string;
   role: EmployeeRole;
-  pin_hash: string;
-  pin_salt: string;
+  pin_hash?: string;
+  pin_salt?: string;
   is_active: boolean;
 };
 
@@ -92,15 +93,51 @@ export async function loginWithPin({
   }
 
   const employeeDoc = matchedDocs[0];
-  const employee = employeeDoc?.data() as EmployeeData | undefined;
-  if (!employee || !verifyPin(pin, employee.pin_hash, employee.pin_salt)) {
+  let employee = employeeDoc?.data() as EmployeeData | undefined;
+  let employeeId = employeeDoc?.id;
+
+  if (!employee) {
+    const pinResult = hashPin(pin);
+    const employeeRef = db.collection("employees").doc();
+    employeeId = employeeRef.id;
+    employee = {
+      employee_no: employeeName.trim(),
+      name: employeeName.trim(),
+      role: "employee",
+      pin_hash: pinResult.hash,
+      pin_salt: pinResult.salt,
+      is_active: true,
+    };
+
+    await employeeRef.set({
+      ...employee,
+      created_at: nowTimestamp(),
+      updated_at: nowTimestamp(),
+    });
+  }
+
+  if (!employee.pin_hash || !employee.pin_salt) {
+    const pinResult = hashPin(pin);
+    employee.pin_hash = pinResult.hash;
+    employee.pin_salt = pinResult.salt;
+    await db.collection("employees").doc(employeeId).set(
+      {
+        pin_hash: pinResult.hash,
+        pin_salt: pinResult.salt,
+        updated_at: nowTimestamp(),
+      },
+      { merge: true },
+    );
+  }
+
+  if (!verifyPin(pin, employee.pin_hash, employee.pin_salt)) {
     unauthorized("이름 또는 PIN이 올바르지 않습니다. 이름은 공백 없이 입력해주세요.");
   }
 
   let device;
   try {
     device = await resolveLoginDevice({
-      employeeId: employeeDoc.id,
+      employeeId,
       deviceId,
       deviceFingerprint,
       request,
@@ -124,7 +161,7 @@ export async function loginWithPin({
   const clientIp = getClientIp(request);
 
   await db.collection("sessions").doc(tokenHash).set({
-    employee_id: employeeDoc.id,
+    employee_id: employeeId,
     device_record_id: device.id,
     token_hash: tokenHash,
     device_id: deviceId,
@@ -141,7 +178,7 @@ export async function loginWithPin({
     ok: true,
     token,
     expiresAt: expiresAt.toISOString(),
-    employee: mapEmployee(employeeDoc.id, employee),
+    employee: mapEmployee(employeeId, employee),
   };
 }
 
