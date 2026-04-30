@@ -394,8 +394,18 @@ export async function updateAdminAttendance(
     conflict("수정할 기록을 찾을 수 없습니다.");
   }
 
+  const before = beforeDoc.data() as AttendanceData;
   const checkInAt = parseKstDateTimeInput(input.checkInAt);
-  const checkOutAt = parseKstDateTimeInput(input.checkOutAt);
+  let checkOutAt = parseKstDateTimeInput(input.checkOutAt);
+
+  if (isEmployeeCheckOutLocked(before)) {
+    const originalCheckOutAt = timestampToIso(before.check_out_at);
+    if (!isSameMinute(checkOutAt, originalCheckOutAt)) {
+      conflict("직원이 퇴근 버튼으로 남긴 퇴근시각은 수정할 수 없습니다.");
+    }
+    checkOutAt = originalCheckOutAt ? new Date(originalCheckOutAt) : null;
+  }
+
   validateChronology(checkInAt, checkOutAt);
 
   const targetId = attendanceDocId(input.employeeId, input.workDate);
@@ -406,7 +416,6 @@ export async function updateAdminAttendance(
     }
   }
 
-  const before = beforeDoc.data() as AttendanceData;
   const data: AttendanceData = {
     ...before,
     employee_id: input.employeeId,
@@ -608,6 +617,23 @@ function getCurrentKstMonthRange() {
 
 function getEndOfWorkDate(workDate: string) {
   return new Date(`${workDate}T23:59:00+09:00`);
+}
+
+function isEmployeeCheckOutLocked(data: AttendanceData) {
+  return Boolean(data.check_out_at && data.check_out_session_id);
+}
+
+function isSameMinute(value: Date | null, isoValue: string | null) {
+  if (!value || !isoValue) {
+    return value === null && isoValue === null;
+  }
+
+  const original = new Date(isoValue);
+  if (Number.isNaN(value.getTime()) || Number.isNaN(original.getTime())) {
+    return false;
+  }
+
+  return Math.floor(value.getTime() / 60000) === Math.floor(original.getTime() / 60000);
 }
 
 function serializeAttendance(data: AttendanceData) {

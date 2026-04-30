@@ -32,6 +32,7 @@ type AttendanceRecord = {
   checkOutDeviceId: string | null;
   workType: WorkType;
   note: string | null;
+  source: "employee" | "admin";
 };
 
 type DeviceRequest = {
@@ -51,6 +52,7 @@ type AttendanceForm = {
   workDate: string;
   checkInAt: string;
   checkOutAt: string;
+  checkOutLocked: boolean;
   workType: WorkType;
   note: string;
   reason: string;
@@ -382,7 +384,7 @@ export function AdminApp() {
   }
 
   return (
-    <main className="mx-auto min-h-dvh w-full max-w-7xl px-4 py-5 sm:py-7">
+    <main className="mx-auto min-h-dvh w-full max-w-7xl px-4 pb-7 pt-[calc(env(safe-area-inset-top)+1.25rem)] sm:pt-7">
       <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <img
@@ -413,8 +415,8 @@ export function AdminApp() {
       ) : null}
 
       <section className="mb-4 rounded-lg border border-line bg-white/95 p-4 shadow-panel">
-        <div className="grid gap-3 md:grid-cols-[1fr_1fr_1.3fr_auto_auto_auto]">
-          <label>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.3fr)_auto_auto_auto]">
+          <label className="min-w-0">
             <span className="label">시작일</span>
             <input
               className="field mt-1"
@@ -423,7 +425,7 @@ export function AdminApp() {
               value={startDate}
             />
           </label>
-          <label>
+          <label className="min-w-0">
             <span className="label">종료일</span>
             <input
               className="field mt-1"
@@ -432,7 +434,7 @@ export function AdminApp() {
               value={endDate}
             />
           </label>
-          <label>
+          <label className="min-w-0">
             <span className="label">직원</span>
             <select
               className="field mt-1"
@@ -712,10 +714,16 @@ export function AdminApp() {
               <span className="label">퇴근시각</span>
               <input
                 className="field mt-1"
+                disabled={form.checkOutLocked}
                 onChange={(event) => setForm({ ...form, checkOutAt: event.target.value })}
                 type="datetime-local"
                 value={form.checkOutAt}
               />
+              {form.checkOutLocked ? (
+                <p className="mt-1 text-xs text-muted">
+                  직원이 퇴근 버튼으로 남긴 시각은 수정할 수 없습니다.
+                </p>
+              ) : null}
             </label>
 
             <label className="block">
@@ -801,6 +809,7 @@ function emptyForm(): AttendanceForm {
     workDate: getKstDate(0),
     checkInAt: "",
     checkOutAt: "",
+    checkOutLocked: false,
     workType: "office",
     note: "",
     reason: "",
@@ -814,10 +823,15 @@ function formFromRecord(record: AttendanceRecord): AttendanceForm {
     workDate: record.workDate,
     checkInAt: toKstDateTimeInput(record.checkInAt),
     checkOutAt: toKstDateTimeInput(record.checkOutAt),
+    checkOutLocked: isEmployeeCheckOutLocked(record),
     workType: record.workType,
     note: record.note ?? "",
     reason: "",
   };
+}
+
+function isEmployeeCheckOutLocked(record: AttendanceRecord) {
+  return Boolean(record.checkOutAt && record.source === "employee" && record.checkOutIp !== "auto");
 }
 
 function getKstDate(offsetDays: number) {

@@ -116,19 +116,24 @@ export function EmployeeApp() {
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [encouragement, setEncouragement] = useState("");
   const [selectedWorkRecord, setSelectedWorkRecord] = useState<TeamAttendanceRecord | null>(null);
+  const [deleteTaskRequest, setDeleteTaskRequest] = useState<{
+    scope: "today" | "work";
+    task: WorkTask;
+  } | null>(null);
+  const [skipDeleteConfirm, setSkipDeleteConfirm] = useState(false);
+  const [deleteWithoutAskingAgain, setDeleteWithoutAskingAgain] = useState(false);
   const [workLog, setWorkLog] = useState<WorkLog | null>(null);
   const [workLogMessage, setWorkLogMessage] = useState("");
   const [isWorkLogLoading, setIsWorkLogLoading] = useState(false);
   const [isWorkLogSaving, setIsWorkLogSaving] = useState(false);
+  const [pendingWorkTaskId, setPendingWorkTaskId] = useState<string | null>(null);
   const [newTaskText, setNewTaskText] = useState("");
-  const [newTaskSection, setNewTaskSection] = useState<WorkTaskSection>("today");
-  const [isTodayWorkOpen, setIsTodayWorkOpen] = useState(false);
   const [todayWorkLog, setTodayWorkLog] = useState<WorkLog | null>(null);
   const [todayWorkMessage, setTodayWorkMessage] = useState("");
   const [isTodayWorkLoading, setIsTodayWorkLoading] = useState(false);
   const [isTodayWorkSaving, setIsTodayWorkSaving] = useState(false);
+  const [pendingTodayTaskId, setPendingTodayTaskId] = useState<string | null>(null);
   const [todayTaskText, setTodayTaskText] = useState("");
-  const [todayTaskSection, setTodayTaskSection] = useState<WorkTaskSection>("today");
 
   const load = useCallback(async (storedAuth: StoredAuth, knownEmployee?: Employee) => {
     setMessage("");
@@ -177,6 +182,11 @@ export function EmployeeApp() {
     const timer = window.setInterval(() => setClock(new Date()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!auth || !employee || !status?.kstDate) return;
+    void loadTodayWorkLog();
+  }, [auth, employee, status?.kstDate]);
 
   async function refresh(loginEmployee?: Employee) {
     const storedAuth = getStoredAuth();
@@ -294,7 +304,6 @@ export function EmployeeApp() {
     setWorkLog(null);
     setWorkLogMessage("");
     setNewTaskText("");
-    setNewTaskSection("today");
     setIsWorkLogLoading(true);
 
     try {
@@ -311,16 +320,6 @@ export function EmployeeApp() {
     } finally {
       setIsWorkLogLoading(false);
     }
-  }
-
-  async function toggleTodayWorkPanel() {
-    if (isTodayWorkOpen) {
-      setIsTodayWorkOpen(false);
-      return;
-    }
-
-    setIsTodayWorkOpen(true);
-    await loadTodayWorkLog();
   }
 
   async function loadTodayWorkLog() {
@@ -431,26 +430,6 @@ export function EmployeeApp() {
     });
   }
 
-  function updateWorkLogSummary(summary: string) {
-    setWorkLog((currentLog) => (currentLog ? { ...currentLog, summary } : currentLog));
-  }
-
-  function updateTodayWorkSummary(summary: string) {
-    setTodayWorkLog((currentLog) => (currentLog ? { ...currentLog, summary } : currentLog));
-  }
-
-  async function saveCurrentWorkLog() {
-    if (workLog) {
-      await persistWorkLog(workLog);
-    }
-  }
-
-  async function saveTodayWorkLog() {
-    if (todayWorkLog) {
-      await persistTodayWorkLog(todayWorkLog);
-    }
-  }
-
   async function addWorkTask() {
     if (!workLog || !newTaskText.trim()) return;
 
@@ -458,15 +437,15 @@ export function EmployeeApp() {
     const nextLog = {
       ...workLog,
       tasks: [
-        ...workLog.tasks,
         {
           id: crypto.randomUUID(),
           text: newTaskText.trim(),
           done: false,
-          section: newTaskSection,
+          section: "today" as WorkTaskSection,
           createdAt: now,
           updatedAt: now,
         },
+        ...workLog.tasks,
       ],
     };
     setNewTaskText("");
@@ -480,15 +459,15 @@ export function EmployeeApp() {
     const nextLog = {
       ...todayWorkLog,
       tasks: [
-        ...todayWorkLog.tasks,
         {
           id: crypto.randomUUID(),
           text: todayTaskText.trim(),
           done: false,
-          section: todayTaskSection,
+          section: "today" as WorkTaskSection,
           createdAt: now,
           updatedAt: now,
         },
+        ...todayWorkLog.tasks,
       ],
     };
     setTodayTaskText("");
@@ -496,47 +475,143 @@ export function EmployeeApp() {
   }
 
   async function toggleWorkTask(taskId: string) {
-    if (!workLog) return;
+    if (!workLog || isWorkLogSaving) return;
 
-    await persistWorkLog({
-      ...workLog,
-      tasks: workLog.tasks.map((task) =>
-        task.id === taskId
-          ? { ...task, done: !task.done, updatedAt: new Date().toISOString() }
-          : task,
-      ),
-    });
+    setPendingWorkTaskId(taskId);
+    try {
+      await persistWorkLog({
+        ...workLog,
+        tasks: workLog.tasks.map((task) =>
+          task.id === taskId
+            ? { ...task, done: !task.done, updatedAt: new Date().toISOString() }
+            : task,
+        ),
+      });
+    } finally {
+      setPendingWorkTaskId(null);
+    }
   }
 
   async function toggleTodayTask(taskId: string) {
-    if (!todayWorkLog) return;
+    if (!todayWorkLog || isTodayWorkSaving) return;
 
-    await persistTodayWorkLog({
-      ...todayWorkLog,
-      tasks: todayWorkLog.tasks.map((task) =>
-        task.id === taskId
-          ? { ...task, done: !task.done, updatedAt: new Date().toISOString() }
-          : task,
-      ),
-    });
+    setPendingTodayTaskId(taskId);
+    try {
+      await persistTodayWorkLog({
+        ...todayWorkLog,
+        tasks: todayWorkLog.tasks.map((task) =>
+          task.id === taskId
+            ? { ...task, done: !task.done, updatedAt: new Date().toISOString() }
+            : task,
+        ),
+      });
+    } finally {
+      setPendingTodayTaskId(null);
+    }
+  }
+
+  async function updateWorkTask(taskId: string, text: string) {
+    const nextText = text.trim();
+    if (!workLog || isWorkLogSaving || !nextText) return;
+
+    setPendingWorkTaskId(taskId);
+    try {
+      await persistWorkLog({
+        ...workLog,
+        tasks: workLog.tasks.map((task) =>
+          task.id === taskId
+            ? { ...task, text: nextText, updatedAt: new Date().toISOString() }
+            : task,
+        ),
+      });
+    } finally {
+      setPendingWorkTaskId(null);
+    }
+  }
+
+  async function updateTodayTask(taskId: string, text: string) {
+    const nextText = text.trim();
+    if (!todayWorkLog || isTodayWorkSaving || !nextText) return;
+
+    setPendingTodayTaskId(taskId);
+    try {
+      await persistTodayWorkLog({
+        ...todayWorkLog,
+        tasks: todayWorkLog.tasks.map((task) =>
+          task.id === taskId
+            ? { ...task, text: nextText, updatedAt: new Date().toISOString() }
+            : task,
+        ),
+      });
+    } finally {
+      setPendingTodayTaskId(null);
+    }
+  }
+
+  function requestRemoveWorkTask(task: WorkTask) {
+    if (skipDeleteConfirm) {
+      void removeWorkTask(task.id);
+      return;
+    }
+
+    setDeleteWithoutAskingAgain(false);
+    setDeleteTaskRequest({ scope: "work", task });
+  }
+
+  function requestRemoveTodayTask(task: WorkTask) {
+    if (skipDeleteConfirm) {
+      void removeTodayTask(task.id);
+      return;
+    }
+
+    setDeleteWithoutAskingAgain(false);
+    setDeleteTaskRequest({ scope: "today", task });
+  }
+
+  async function confirmRemoveTask() {
+    if (!deleteTaskRequest) return;
+
+    if (deleteWithoutAskingAgain) {
+      setSkipDeleteConfirm(true);
+    }
+
+    const request = deleteTaskRequest;
+    setDeleteTaskRequest(null);
+
+    if (request.scope === "today") {
+      await removeTodayTask(request.task.id);
+      return;
+    }
+
+    await removeWorkTask(request.task.id);
   }
 
   async function removeWorkTask(taskId: string) {
-    if (!workLog) return;
+    if (!workLog || isWorkLogSaving) return;
 
-    await persistWorkLog({
-      ...workLog,
-      tasks: workLog.tasks.filter((task) => task.id !== taskId),
-    });
+    setPendingWorkTaskId(taskId);
+    try {
+      await persistWorkLog({
+        ...workLog,
+        tasks: workLog.tasks.filter((task) => task.id !== taskId),
+      });
+    } finally {
+      setPendingWorkTaskId(null);
+    }
   }
 
   async function removeTodayTask(taskId: string) {
-    if (!todayWorkLog) return;
+    if (!todayWorkLog || isTodayWorkSaving) return;
 
-    await persistTodayWorkLog({
-      ...todayWorkLog,
-      tasks: todayWorkLog.tasks.filter((task) => task.id !== taskId),
-    });
+    setPendingTodayTaskId(taskId);
+    try {
+      await persistTodayWorkLog({
+        ...todayWorkLog,
+        tasks: todayWorkLog.tasks.filter((task) => task.id !== taskId),
+      });
+    } finally {
+      setPendingTodayTaskId(null);
+    }
   }
 
   async function logout() {
@@ -586,7 +661,7 @@ export function EmployeeApp() {
 
   return (
     <>
-    <main className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col justify-center px-3 py-8 sm:px-5">
+    <main className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col justify-start px-3 pb-16 pt-6 sm:px-5 sm:pt-8">
       <section className="w-full max-w-xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -692,38 +767,27 @@ export function EmployeeApp() {
         </dl>
 
         <div className="mt-5 rounded border border-line bg-field/60">
-          <button
-            className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left"
-            onClick={toggleTodayWorkPanel}
-            type="button"
-          >
+          <div className="px-3 py-3">
             <span>
               <span className="block text-sm font-bold text-ink">오늘 할 일 / 한 일</span>
               <span className="mt-0.5 block text-xs text-muted">
-                출퇴근하면서 바로 적고, 나중에 펼쳐볼 수 있어요.
+                오늘 할 일을 적어두고 끝난 항목은 체크하세요.
               </span>
             </span>
-            <span className="shrink-0 rounded bg-white px-2 py-1 text-xs font-bold text-accent ring-1 ring-line">
-              {isTodayWorkOpen ? "접기" : "펼치기"}
-            </span>
-          </button>
-          {isTodayWorkOpen ? (
-            <QuickWorkLogPanel
-              isLoading={isTodayWorkLoading}
-              isSaving={isTodayWorkSaving}
-              message={todayWorkMessage}
-              newTaskSection={todayTaskSection}
-              newTaskText={todayTaskText}
-              onAddTask={addTodayTask}
-              onRemoveTask={removeTodayTask}
-              onSaveSummary={saveTodayWorkLog}
-              onSummaryChange={updateTodayWorkSummary}
-              onTaskSectionChange={setTodayTaskSection}
-              onTaskTextChange={setTodayTaskText}
-              onToggleTask={toggleTodayTask}
-              workLog={todayWorkLog}
-            />
-          ) : null}
+          </div>
+          <QuickWorkLogPanel
+            isLoading={isTodayWorkLoading}
+            isSaving={isTodayWorkSaving}
+            message={todayWorkMessage}
+            newTaskText={todayTaskText}
+            onAddTask={addTodayTask}
+            onRemoveTask={requestRemoveTodayTask}
+            onTaskTextChange={setTodayTaskText}
+            onToggleTask={toggleTodayTask}
+            onUpdateTask={updateTodayTask}
+            processingTaskId={pendingTodayTaskId}
+            workLog={todayWorkLog}
+          />
         </div>
       </section>
 
@@ -776,7 +840,27 @@ export function EmployeeApp() {
         </div>
       </section>
 
-      <section className="mt-4 w-full max-w-xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
+      <section className="mt-4 w-full max-w-4xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-ink">이번 달 팀 달력 🗓️</h2>
+            <p className="mt-1 text-xs text-muted">날짜별로 서로의 하루 흐름을 가볍게 볼 수 있어요.</p>
+          </div>
+          {isRefreshing ? (
+            <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted">
+              <Spinner className="h-3 w-3" />
+              갱신 중
+            </span>
+          ) : null}
+        </div>
+        <TeamMonthCalendar
+          currentEmployeeId={employee.id}
+          onSelectRecord={openWorkLog}
+          teamMonth={teamMonth}
+        />
+      </section>
+
+      <section className="mt-4 w-full max-w-4xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-base font-bold text-ink">나의 최근 발자국 👣</h2>
           {isRefreshing ? (
@@ -820,26 +904,6 @@ export function EmployeeApp() {
         </div>
       </section>
 
-      <section className="mt-4 w-full max-w-4xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-bold text-ink">이번 달 팀 달력 🗓️</h2>
-            <p className="mt-1 text-xs text-muted">날짜별로 서로의 하루 흐름을 가볍게 볼 수 있어요.</p>
-          </div>
-          {isRefreshing ? (
-            <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted">
-              <Spinner className="h-3 w-3" />
-              갱신 중
-            </span>
-          ) : null}
-        </div>
-        <TeamMonthCalendar
-          currentEmployeeId={employee.id}
-          onSelectRecord={openWorkLog}
-          teamMonth={teamMonth}
-        />
-      </section>
-
       <div className="mt-5 flex items-center justify-center gap-3 text-xs">
         <button
           className="text-xs text-muted underline-offset-4 hover:text-ink hover:underline"
@@ -860,18 +924,25 @@ export function EmployeeApp() {
         isLoading={isWorkLogLoading}
         isSaving={isWorkLogSaving}
         message={workLogMessage}
-        newTaskSection={newTaskSection}
         newTaskText={newTaskText}
         onAddTask={addWorkTask}
         onClose={closeWorkLog}
-        onRemoveTask={removeWorkTask}
-        onSaveSummary={saveCurrentWorkLog}
-        onSummaryChange={updateWorkLogSummary}
-        onTaskSectionChange={setNewTaskSection}
+        onRemoveTask={requestRemoveWorkTask}
         onTaskTextChange={setNewTaskText}
         onToggleTask={toggleWorkTask}
+        onUpdateTask={updateWorkTask}
+        processingTaskId={pendingWorkTaskId}
         record={selectedWorkRecord}
         workLog={workLog}
+      />
+    ) : null}
+    {deleteTaskRequest ? (
+      <DeleteTaskConfirmModal
+        dontAskAgain={deleteWithoutAskingAgain}
+        onCancel={() => setDeleteTaskRequest(null)}
+        onConfirm={confirmRemoveTask}
+        onDontAskAgainChange={setDeleteWithoutAskingAgain}
+        taskText={deleteTaskRequest.task.text}
       />
     ) : null}
     </>
@@ -912,8 +983,11 @@ function TeamMonthCalendar({
     <div className="mt-3 overflow-hidden rounded border-l border-t border-line">
       <div className="w-full">
         <div className="grid grid-cols-7 text-center text-[10px] font-bold text-muted sm:text-xs">
-          {weekdayLabels.map((weekday) => (
-            <div className="border-b border-r border-line bg-field/80 py-2" key={weekday}>
+          {weekdayLabels.map((weekday, index) => (
+            <div
+              className={`border-b border-r border-line bg-field/80 py-2 ${weekendTextClass(index)}`}
+              key={weekday}
+            >
               {weekday}
             </div>
           ))}
@@ -921,6 +995,7 @@ function TeamMonthCalendar({
         <div className="grid grid-cols-7">
           {days.map((day) => {
             const dayRecords = day.date ? recordsByDate.get(day.date) ?? [] : [];
+            const dayOfWeek = day.date ? dateStringToUtcDate(day.date).getUTCDay() : null;
 
             return (
               <div
@@ -929,7 +1004,7 @@ function TeamMonthCalendar({
               >
                 {day.date ? (
                   <>
-                    <div className="mb-1 text-right text-[10px] font-bold text-muted sm:mb-2 sm:text-xs">
+                    <div className={`mb-1 text-right text-[10px] font-bold sm:mb-2 sm:text-xs ${weekendTextClass(dayOfWeek) || "text-muted"}`}>
                       {Number(day.date.slice(8, 10))}
                     </div>
                     <div className="max-h-28 space-y-1 overflow-y-auto pr-0.5 sm:max-h-32">
@@ -977,7 +1052,7 @@ function TeamCalendarRecord({
 
   return (
     <button
-      className={`min-w-0 rounded border px-1.5 py-1 text-left text-[10px] leading-tight transition hover:-translate-y-0.5 hover:shadow-sm sm:px-2 sm:py-1.5 sm:text-xs ${cardClassName}`}
+      className={`w-full min-w-0 rounded border px-1.5 py-1 text-left text-[10px] leading-tight transition hover:border-accent/50 hover:shadow-md hover:ring-1 hover:ring-inset hover:ring-accent/20 sm:px-2 sm:py-1.5 sm:text-xs ${cardClassName}`}
       onClick={() => onSelect(record)}
       title={`${record.employeeName} ${timeText}${durationText ? ` · ${durationText}` : ""}`}
       type="button"
@@ -1004,33 +1079,28 @@ function QuickWorkLogPanel({
   isLoading,
   isSaving,
   message,
-  newTaskSection,
   newTaskText,
   onAddTask,
   onRemoveTask,
-  onSaveSummary,
-  onSummaryChange,
-  onTaskSectionChange,
   onTaskTextChange,
   onToggleTask,
+  onUpdateTask,
+  processingTaskId,
   workLog,
 }: {
   isLoading: boolean;
   isSaving: boolean;
   message: string;
-  newTaskSection: WorkTaskSection;
   newTaskText: string;
   onAddTask: () => void;
-  onRemoveTask: (taskId: string) => void;
-  onSaveSummary: () => void;
-  onSummaryChange: (summary: string) => void;
-  onTaskSectionChange: (section: WorkTaskSection) => void;
+  onRemoveTask: (task: WorkTask) => void;
   onTaskTextChange: (text: string) => void;
   onToggleTask: (taskId: string) => void;
+  onUpdateTask: (taskId: string, text: string) => void;
+  processingTaskId: string | null;
   workLog: WorkLog | null;
 }) {
-  const todayTasks = workLog?.tasks.filter((task) => task.section === "today") ?? [];
-  const laterTasks = workLog?.tasks.filter((task) => task.section === "later") ?? [];
+  const tasks = workLog?.tasks ?? [];
 
   return (
     <div className="border-t border-line px-3 pb-3">
@@ -1043,32 +1113,24 @@ function QuickWorkLogPanel({
 
       {!isLoading && workLog ? (
         <div className="space-y-3 pt-3">
-          <textarea
-            className="field min-h-16 resize-y text-sm"
-            disabled={isSaving}
-            onChange={(event) => onSummaryChange(event.target.value)}
-            placeholder="오늘 한 일, 공유할 내용, 기억할 메모를 적어두세요."
-            value={workLog.summary}
+          <TaskSection
+            canEdit
+            isSaving={isSaving}
+            onRemoveTask={onRemoveTask}
+            onToggleTask={onToggleTask}
+            onUpdateTask={onUpdateTask}
+            processingTaskId={processingTaskId}
+            tasks={tasks}
+            title="오늘의 업무"
           />
-          <div className="flex justify-end">
-            <button
-              className="secondary-button px-3 py-2 text-xs"
-              disabled={isSaving}
-              onClick={onSaveSummary}
-              type="button"
-            >
-              {isSaving ? (
-                <span className="inline-flex items-center gap-1">
-                  <Spinner className="h-3 w-3" />
-                  저장 중
-                </span>
-              ) : (
-                "메모 저장"
-              )}
-            </button>
-          </div>
 
-          <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+          {tasks.length === 0 ? (
+            <p className="rounded border border-line bg-white/70 px-3 py-4 text-center text-sm text-muted">
+              아직 적힌 업무가 없어요. 하나만 적어도 퇴근할 때 훨씬 편해져요.
+            </p>
+          ) : null}
+
+          <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
             <input
               className="field text-sm"
               disabled={isSaving}
@@ -1082,15 +1144,6 @@ function QuickWorkLogPanel({
               placeholder="할 일 또는 한 일을 입력하세요"
               value={newTaskText}
             />
-            <select
-              className="field text-sm"
-              disabled={isSaving}
-              onChange={(event) => onTaskSectionChange(event.target.value as WorkTaskSection)}
-              value={newTaskSection}
-            >
-              <option value="today">오늘의 업무</option>
-              <option value="later">후순위 업무</option>
-            </select>
             <button
               className="primary-button px-4 py-2 text-sm"
               disabled={isSaving || !newTaskText.trim()}
@@ -1100,29 +1153,6 @@ function QuickWorkLogPanel({
               추가
             </button>
           </div>
-
-          <TaskSection
-            canEdit
-            isSaving={isSaving}
-            onRemoveTask={onRemoveTask}
-            onToggleTask={onToggleTask}
-            tasks={todayTasks}
-            title="오늘의 업무"
-          />
-          <TaskSection
-            canEdit
-            isSaving={isSaving}
-            onRemoveTask={onRemoveTask}
-            onToggleTask={onToggleTask}
-            tasks={laterTasks}
-            title="후순위 업무"
-          />
-
-          {workLog.tasks.length === 0 ? (
-            <p className="rounded border border-line bg-white/70 px-3 py-4 text-center text-sm text-muted">
-              아직 적힌 업무가 없어요. 하나만 적어도 퇴근할 때 훨씬 편해져요.
-            </p>
-          ) : null}
         </div>
       ) : null}
 
@@ -1140,16 +1170,14 @@ function WorkLogModal({
   isLoading,
   isSaving,
   message,
-  newTaskSection,
   newTaskText,
   onAddTask,
   onClose,
   onRemoveTask,
-  onSaveSummary,
-  onSummaryChange,
-  onTaskSectionChange,
   onTaskTextChange,
   onToggleTask,
+  onUpdateTask,
+  processingTaskId,
   record,
   workLog,
 }: {
@@ -1157,25 +1185,29 @@ function WorkLogModal({
   isLoading: boolean;
   isSaving: boolean;
   message: string;
-  newTaskSection: WorkTaskSection;
   newTaskText: string;
   onAddTask: () => void;
   onClose: () => void;
-  onRemoveTask: (taskId: string) => void;
-  onSaveSummary: () => void;
-  onSummaryChange: (summary: string) => void;
-  onTaskSectionChange: (section: WorkTaskSection) => void;
+  onRemoveTask: (task: WorkTask) => void;
   onTaskTextChange: (text: string) => void;
   onToggleTask: (taskId: string) => void;
+  onUpdateTask: (taskId: string, text: string) => void;
+  processingTaskId: string | null;
   record: TeamAttendanceRecord;
   workLog: WorkLog | null;
 }) {
-  const todayTasks = workLog?.tasks.filter((task) => task.section === "today") ?? [];
-  const laterTasks = workLog?.tasks.filter((task) => task.section === "later") ?? [];
+  const tasks = workLog?.tasks ?? [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/35 px-3 py-6">
-      <div className="max-h-full w-full max-w-2xl overflow-hidden rounded-lg border border-line bg-white shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/35 px-3 py-6"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="max-h-full w-full max-w-2xl overflow-hidden rounded-lg border border-line bg-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="flex items-start justify-between gap-4 border-b border-line px-4 py-3">
           <div className="min-w-0">
             <p className="text-xs font-semibold text-muted">{record.workDate}</p>
@@ -1205,41 +1237,27 @@ function WorkLogModal({
 
           {!isLoading && workLog ? (
             <div className="space-y-5">
-              <div className="rounded border border-line bg-field/60 p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-bold text-ink">오늘 메모</p>
-                  {isSaving ? (
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted">
-                      <Spinner className="h-3 w-3" />
-                      저장 중
-                    </span>
-                  ) : null}
-                </div>
-                <textarea
-                  className="field mt-2 min-h-20 resize-y"
-                  disabled={!canEdit || isSaving}
-                  onChange={(event) => onSummaryChange(event.target.value)}
-                  placeholder={canEdit ? "오늘 한 일이나 공유할 메모를 가볍게 적어두세요." : "아직 메모가 없어요."}
-                  value={workLog.summary}
-                />
-                {canEdit ? (
-                  <div className="mt-2 text-right">
-                    <button
-                      className="secondary-button px-3 py-2 text-xs"
-                      disabled={isSaving}
-                      onClick={onSaveSummary}
-                      type="button"
-                    >
-                      메모 저장
-                    </button>
-                  </div>
-                ) : null}
-              </div>
+              <TaskSection
+                canEdit={canEdit}
+                isSaving={isSaving}
+                onRemoveTask={onRemoveTask}
+                onToggleTask={onToggleTask}
+                onUpdateTask={onUpdateTask}
+                processingTaskId={processingTaskId}
+                tasks={tasks}
+                title="오늘의 업무"
+              />
+
+              {tasks.length === 0 ? (
+                <p className="rounded border border-line py-8 text-center text-sm text-muted">
+                  아직 업무 체크리스트가 없어요. 오늘 할 일을 하나씩 적어두면 하루가 조금 선명해져요.
+                </p>
+              ) : null}
 
               {canEdit ? (
                 <div className="rounded border border-line p-3">
                   <p className="text-sm font-bold text-ink">업무 추가</p>
-                  <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+                  <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
                     <input
                       className="field"
                       disabled={isSaving}
@@ -1253,15 +1271,6 @@ function WorkLogModal({
                       placeholder="할 일을 입력하세요"
                       value={newTaskText}
                     />
-                    <select
-                      className="field"
-                      disabled={isSaving}
-                      onChange={(event) => onTaskSectionChange(event.target.value as WorkTaskSection)}
-                      value={newTaskSection}
-                    >
-                      <option value="today">오늘의 업무</option>
-                      <option value="later">후순위 업무</option>
-                    </select>
                     <button
                       className="primary-button px-4 py-2 text-sm"
                       disabled={isSaving || !newTaskText.trim()}
@@ -1277,29 +1286,6 @@ function WorkLogModal({
                   다른 사람의 업무 기록은 참고용으로만 볼 수 있어요.
                 </p>
               )}
-
-              <TaskSection
-                canEdit={canEdit}
-                isSaving={isSaving}
-                onRemoveTask={onRemoveTask}
-                onToggleTask={onToggleTask}
-                tasks={todayTasks}
-                title="오늘의 업무"
-              />
-              <TaskSection
-                canEdit={canEdit}
-                isSaving={isSaving}
-                onRemoveTask={onRemoveTask}
-                onToggleTask={onToggleTask}
-                tasks={laterTasks}
-                title="후순위 업무"
-              />
-
-              {workLog.tasks.length === 0 ? (
-                <p className="rounded border border-line py-8 text-center text-sm text-muted">
-                  아직 업무 체크리스트가 없어요. 오늘 할 일을 하나씩 적어두면 하루가 조금 선명해져요.
-                </p>
-              ) : null}
             </div>
           ) : null}
 
@@ -1319,53 +1305,235 @@ function TaskSection({
   isSaving,
   onRemoveTask,
   onToggleTask,
+  onUpdateTask,
+  processingTaskId,
   tasks,
   title,
 }: {
   canEdit: boolean;
   isSaving: boolean;
-  onRemoveTask: (taskId: string) => void;
+  onRemoveTask: (task: WorkTask) => void;
   onToggleTask: (taskId: string) => void;
+  onUpdateTask: (taskId: string, text: string) => void;
+  processingTaskId: string | null;
   tasks: WorkTask[];
   title: string;
 }) {
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
+
   if (tasks.length === 0) {
     return null;
+  }
+
+  function startEditing(task: WorkTask) {
+    setEditingTaskId(task.id);
+    setEditingText(task.text);
+  }
+
+  function cancelEditing() {
+    setEditingTaskId(null);
+    setEditingText("");
+  }
+
+  function saveEditing(task: WorkTask) {
+    const nextText = editingText.trim();
+    if (!nextText) return;
+
+    if (nextText !== task.text) {
+      onUpdateTask(task.id, nextText);
+    }
+    cancelEditing();
   }
 
   return (
     <section>
       <h4 className="mb-2 text-sm font-bold text-ink">{title}</h4>
       <div className="space-y-2">
-        {tasks.map((task) => (
-          <div
-            className="grid grid-cols-[auto_1fr_auto] items-start gap-2 rounded border border-line bg-white px-3 py-2 text-sm"
-            key={task.id}
-          >
-            <input
-              checked={task.done}
-              className="mt-1 h-4 w-4 accent-accent"
-              disabled={!canEdit || isSaving}
-              onChange={() => onToggleTask(task.id)}
-              type="checkbox"
-            />
-            <span className={task.done ? "text-muted line-through" : "text-ink"}>
-              {task.text}
-            </span>
-            {canEdit ? (
-              <button
-                className="text-xs font-semibold text-muted hover:text-danger"
-                disabled={isSaving}
-                onClick={() => onRemoveTask(task.id)}
-                type="button"
-              >
-                삭제
-              </button>
-            ) : null}
-          </div>
-        ))}
+        {tasks.map((task) => {
+          const isProcessing = processingTaskId === task.id;
+          const isEditing = editingTaskId === task.id;
+
+          return (
+            <div
+              className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2 rounded border px-3 py-2 text-sm transition ${
+                isProcessing ? "border-accent/30 bg-accentSoft/60" : "border-line bg-white"
+              }`}
+              key={task.id}
+            >
+              <input
+                checked={task.done}
+                className="mt-1 h-4 w-4 accent-accent"
+                disabled={!canEdit || isProcessing}
+                onChange={() => onToggleTask(task.id)}
+                type="checkbox"
+              />
+              <div className="min-w-0">
+                {isEditing ? (
+                  <div className="space-y-2">
+                    <textarea
+                      autoFocus
+                      className="field min-h-20 resize-y text-sm"
+                      disabled={isProcessing}
+                      onChange={(event) => setEditingText(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          cancelEditing();
+                        }
+                        if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                          event.preventDefault();
+                          saveEditing(task);
+                        }
+                      }}
+                      value={editingText}
+                    />
+                    <div className="flex justify-end gap-2">
+                      <button
+                        className="secondary-button px-3 py-1.5 text-xs"
+                        onClick={cancelEditing}
+                        type="button"
+                      >
+                        취소
+                      </button>
+                      <button
+                        className="primary-button px-3 py-1.5 text-xs"
+                        disabled={!editingText.trim() || isProcessing}
+                        onClick={() => saveEditing(task)}
+                        type="button"
+                      >
+                        저장
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <span
+                    className={`block whitespace-pre-wrap break-words leading-relaxed ${
+                      task.done ? "text-muted line-through" : "text-ink"
+                    }`}
+                  >
+                    {task.text}
+                  </span>
+                )}
+              </div>
+              {canEdit ? (
+                <div className="flex items-center gap-1">
+                  <button
+                    aria-label={`${task.text} 수정`}
+                    className="rounded p-1 text-muted transition hover:bg-accent/10 hover:text-accent disabled:hover:bg-transparent disabled:hover:text-muted"
+                    disabled={isProcessing || isEditing}
+                    onClick={() => startEditing(task)}
+                    type="button"
+                  >
+                    <PencilIcon />
+                  </button>
+                  <button
+                    aria-label={`${task.text} 삭제`}
+                    className="rounded p-1 text-muted transition hover:bg-danger/10 hover:text-danger disabled:hover:bg-transparent disabled:hover:text-muted"
+                    disabled={isProcessing || isEditing}
+                    onClick={() => onRemoveTask(task)}
+                    type="button"
+                  >
+                    <TrashIcon />
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
     </section>
+  );
+}
+
+function DeleteTaskConfirmModal({
+  dontAskAgain,
+  onCancel,
+  onConfirm,
+  onDontAskAgainChange,
+  taskText,
+}: {
+  dontAskAgain: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+  onDontAskAgainChange: (value: boolean) => void;
+  taskText: string;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/35 px-3 py-6"
+      onClick={onCancel}
+      role="presentation"
+    >
+      <div
+        className="w-full max-w-sm rounded-lg border border-line bg-white p-4 shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h3 className="text-base font-bold text-ink">업무를 삭제할까요?</h3>
+        <p className="mt-2 break-words rounded border border-line bg-field/70 px-3 py-2 text-sm text-muted">
+          {taskText}
+        </p>
+        <label className="mt-3 flex items-center gap-2 text-sm text-muted">
+          <input
+            checked={dontAskAgain}
+            className="h-4 w-4 accent-accent"
+            onChange={(event) => onDontAskAgainChange(event.target.checked)}
+            type="checkbox"
+          />
+          이 화면에서는 다시 묻지 않기
+        </label>
+        <div className="mt-4 flex justify-end gap-2">
+          <button className="secondary-button px-3 py-2 text-sm" onClick={onCancel} type="button">
+            취소
+          </button>
+          <button
+            className="inline-flex items-center justify-center rounded bg-danger px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#991b1b]"
+            onClick={onConfirm}
+            type="button"
+          >
+            삭제
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      viewBox="0 0 24 24"
+    >
+      <path
+        d="m16.9 4.6 2.5 2.5m-1.2-3.8a1.8 1.8 0 0 1 2.5 2.5L8.7 17.8 4.8 19.2l1.4-3.9 12-12Z"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      viewBox="0 0 24 24"
+    >
+      <path
+        d="M14.7 6.3v-.8c0-.9-.7-1.5-1.5-1.5h-2.4c-.9 0-1.5.7-1.5 1.5v.8m-3.6 0h12.6m-10.8 0 .8 12.2c.1.9.8 1.5 1.7 1.5h4c.9 0 1.6-.7 1.7-1.5l.8-12.2M10 10v6m4-6v6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
@@ -1421,6 +1589,18 @@ function dateStringToUtcDate(value: string) {
 
 function isDateInRange(date: string, range: { startDate: string; endDate: string }) {
   return date >= range.startDate && date <= range.endDate;
+}
+
+function weekendTextClass(dayOfWeek: number | null) {
+  if (dayOfWeek === 0) {
+    return "text-danger";
+  }
+
+  if (dayOfWeek === 6) {
+    return "text-accent";
+  }
+
+  return "";
 }
 
 function getWorkedMinutes(record: Pick<AttendanceRecord, "checkInAt" | "checkOutAt">) {

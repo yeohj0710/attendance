@@ -101,17 +101,7 @@ export async function resolveLoginDevice({
     .where("device_id", "==", normalizedDeviceId)
     .limit(1)
     .get();
-  let existingDoc = existingByDeviceSnapshot.docs[0];
-
-  if (!existingDoc && normalizedFingerprint) {
-    const existingByFingerprintSnapshot = await db
-      .collection("employee_devices")
-      .where("employee_id", "==", employeeId)
-      .where("device_fingerprint", "==", normalizedFingerprint)
-      .limit(1)
-      .get();
-    existingDoc = existingByFingerprintSnapshot.docs[0];
-  }
+  const existingDoc = existingByDeviceSnapshot.docs[0];
 
   if (!existingDoc) {
     const ref = db.collection("employee_devices").doc();
@@ -156,6 +146,20 @@ export async function resolveLoginDevice({
 export async function verifyApprovedDevice(auth: AuthContext, request: Request) {
   const db = getDb();
   const ref = db.collection("employee_devices").doc(auth.session.deviceRecordId);
+  const doc = await ref.get();
+
+  if (!doc.exists) {
+    forbidden("?깅줉???뚯궗 而댄벂?곗뿉?쒕쭔 異쒗눜洹?泥댄겕媛 媛?ν빀?덈떎.");
+  }
+
+  const device = doc.data() as DeviceData;
+  if (
+    device.employee_id !== auth.employee.id ||
+    device.device_id !== auth.session.deviceId ||
+    device.status !== "approved"
+  ) {
+    forbidden("?깅줉???뚯궗 而댄벂?곗뿉?쒕쭔 異쒗눜洹?泥댄겕媛 媛?ν빀?덈떎.");
+  }
 
   try {
     await ref.update({
@@ -171,27 +175,7 @@ export async function verifyApprovedDevice(auth: AuthContext, request: Request) 
 }
 
 export async function listPendingDeviceRequests() {
-  const db = getDb();
-  const [devicesSnapshot, employeesSnapshot] = await Promise.all([
-    db.collection("employee_devices").where("status", "==", "pending_replacement").get(),
-    db.collection("employees").get(),
-  ]);
-
-  const employees = new Map(
-    employeesSnapshot.docs.map((doc) => [doc.id, doc.data() as { employee_no?: string; name?: string }]),
-  );
-
-  return devicesSnapshot.docs
-    .map((doc) => {
-      const data = doc.data() as DeviceData;
-      const employee = employees.get(data.employee_id);
-      return {
-        ...mapDevice(doc.id, data),
-        employeeNo: employee?.employee_no,
-        employeeName: employee?.name,
-      };
-    })
-    .sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
+  return [];
 }
 
 export async function approveDeviceRequest(auth: AuthContext, deviceRecordId: string) {

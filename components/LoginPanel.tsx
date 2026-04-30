@@ -64,13 +64,14 @@ export function LoginPanel({
     setIsSubmitting(true);
 
     try {
+      const loginDeviceId = getDeviceId(employeeName);
       const result = await apiFetch<LoginResponse>("/api/auth/login", {
         method: "POST",
         body: JSON.stringify({
           employeeName,
           pin,
           pinConfirm,
-          deviceId: getDeviceId(),
+          deviceId: loginDeviceId,
           deviceFingerprint: await getDeviceFingerprint(),
         }),
       });
@@ -80,7 +81,7 @@ export function LoginPanel({
         return;
       }
 
-      storeToken(result.token);
+      storeToken(result.token, loginDeviceId);
       onLogin(result.employee);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "로그인에 실패했습니다.");

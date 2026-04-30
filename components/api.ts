@@ -7,12 +7,14 @@ export type StoredAuth = {
 
 const TOKEN_KEY = "attendance.token";
 const DEVICE_KEY = "attendance.deviceId";
+const ACTIVE_DEVICE_KEY = "attendance.activeDeviceId";
 
-export function getDeviceId() {
-  let deviceId = localStorage.getItem(DEVICE_KEY);
+export function getDeviceId(owner?: string) {
+  const storageKey = getDeviceStorageKey(owner);
+  let deviceId = localStorage.getItem(storageKey);
   if (!deviceId) {
     deviceId = crypto.randomUUID();
-    localStorage.setItem(DEVICE_KEY, deviceId);
+    localStorage.setItem(storageKey, deviceId);
   }
 
   return deviceId;
@@ -43,16 +45,18 @@ export async function getDeviceFingerprint() {
 
 export function getStoredAuth(): StoredAuth | null {
   const token = localStorage.getItem(TOKEN_KEY);
-  const deviceId = getDeviceId();
+  const deviceId = localStorage.getItem(ACTIVE_DEVICE_KEY) ?? getDeviceId();
   return token ? { token, deviceId } : null;
 }
 
-export function storeToken(token: string) {
+export function storeToken(token: string, deviceId = getDeviceId()) {
   localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(ACTIVE_DEVICE_KEY, deviceId);
 }
 
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(ACTIVE_DEVICE_KEY);
 }
 
 export async function apiFetch<T>(
@@ -114,4 +118,13 @@ export function formatKstClock(date: Date) {
     second: "2-digit",
     hour12: false,
   }).format(date);
+}
+
+function getDeviceStorageKey(owner?: string) {
+  const normalizedOwner = owner?.normalize("NFC").replace(/\s+/g, "").trim();
+  if (!normalizedOwner) {
+    return DEVICE_KEY;
+  }
+
+  return `${DEVICE_KEY}:${encodeURIComponent(normalizedOwner.toLowerCase())}`;
 }

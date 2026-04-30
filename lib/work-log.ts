@@ -76,7 +76,13 @@ export async function getWorkLog(employeeId: string, workDate: string) {
   }
 
   if (!logDoc.exists) {
-    return emptyWorkLog(employeeId, employee.name ?? "", workDate);
+    const carryoverTasks = await getCarryoverTasks(employeeId, workDate);
+    const workLog = emptyWorkLog(employeeId, employee.name ?? "", workDate);
+    return {
+      ...workLog,
+      tasks: carryoverTasks,
+      taskCount: carryoverTasks.length,
+    };
   }
 
   return mapWorkLog(logDoc.data() as WorkLogData, employee.name ?? "");
@@ -201,6 +207,49 @@ function normalizeTasks(tasks: WorkTaskInput[], now: string) {
     })
     .filter((task): task is WorkTask => task !== null)
     .slice(0, 80);
+}
+
+async function getCarryoverTasks(employeeId: string, workDate: string) {
+  const snapshot = await getDb()
+    .collection("work_logs")
+    .where("employee_id", "==", employeeId)
+    .get();
+  const now = new Date().toISOString();
+  const seenTexts = new Set<string>();
+  const carryoverTasks: WorkTask[] = [];
+
+  const previousLogs = snapshot.docs
+    .map((doc) => doc.data() as WorkLogData)
+    .filter((data) => data.work_date < workDate)
+    .sort((a, b) => b.work_date.localeCompare(a.work_date));
+
+  for (const log of previousLogs) {
+    const tasks = normalizeTasks(log.tasks ?? [], now);
+    for (const task of tasks) {
+      const key = task.text.trim();
+      if (!key || seenTexts.has(key)) {
+        continue;
+      }
+
+      seenTexts.add(key);
+      if (!task.done) {
+        carryoverTasks.push({
+          ...task,
+          id: randomUUID(),
+          done: false,
+          section: "today",
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+
+      if (carryoverTasks.length >= 80) {
+        return carryoverTasks;
+      }
+    }
+  }
+
+  return carryoverTasks;
 }
 
 function emptyWorkLog(employeeId: string, employeeName: string, workDate: string): WorkLog {
