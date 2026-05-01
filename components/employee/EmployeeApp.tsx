@@ -812,9 +812,7 @@ export function EmployeeApp() {
                   <span className="truncate font-bold text-ink">{record.employeeName}</span>
                   <TeamStatusBadge record={record} />
                 </div>
-                <p className="mt-1 text-xs text-muted">
-                  시작 {formatKstTime(record.checkInAt)} · 마무리 {formatKstTime(record.checkOutAt)}
-                </p>
+                <p className="mt-1 text-xs text-muted">{formatKstTimeRange(record)}</p>
               </div>
               {record.employeeId === employee.id ? (
                 <span className="self-start rounded bg-white px-2 py-1 text-xs font-bold text-accent ring-1 ring-line">
@@ -1007,7 +1005,7 @@ function TeamMonthCalendar({
                     <div className={`mb-1 text-right text-[10px] font-bold sm:mb-2 sm:text-xs ${weekendTextClass(dayOfWeek) || "text-muted"}`}>
                       {Number(day.date.slice(8, 10))}
                     </div>
-                    <div className="scrollbar-none max-h-28 space-y-1 overflow-y-auto sm:max-h-32">
+                    <div className="space-y-1">
                       {dayRecords.map((record) => (
                         <TeamCalendarRecord
                           currentEmployeeId={currentEmployeeId}
@@ -1038,7 +1036,8 @@ function TeamCalendarRecord({
   record: TeamAttendanceRecord;
 }) {
   const isMe = record.employeeId === currentEmployeeId;
-  const timeText = `${formatKstTime(record.checkInAt)}~${formatKstTime(record.checkOutAt)}`;
+  const checkInText = formatKstTime(record.checkInAt);
+  const timeRangeText = formatKstTimeRange(record);
   const workedMinutes = getWorkedMinutes(record);
   const durationText = workedMinutes === null ? "" : formatWorkedDuration(workedMinutes);
   const isLongDay = workedMinutes !== null && workedMinutes >= 10 * 60;
@@ -1048,29 +1047,16 @@ function TeamCalendarRecord({
     : isLongDay || isMe
       ? "border-accent/30 bg-accentSoft text-accent"
       : "border-line bg-field/80 text-ink";
-  const hasTasks = Boolean(record.taskCount);
 
   return (
     <button
-      className={`w-full min-w-0 rounded border px-1.5 py-1 text-left text-[10px] leading-tight transition hover:border-accent/50 hover:shadow-md hover:ring-1 hover:ring-inset hover:ring-accent/20 sm:px-2 sm:py-1.5 sm:text-xs ${cardClassName}`}
+      className={`flex h-7 w-full min-w-0 items-center justify-between gap-1 rounded border px-1.5 text-left text-[10px] leading-none transition hover:border-accent/50 hover:shadow-md hover:ring-1 hover:ring-inset hover:ring-accent/20 sm:h-8 sm:px-2 sm:text-xs ${cardClassName}`}
       onClick={() => onSelect(record)}
-      title={`${record.employeeName} ${timeText}${durationText ? ` · ${durationText}` : ""}`}
+      title={`${record.employeeName} ${timeRangeText}${durationText ? ` · ${durationText}` : ""}`}
       type="button"
     >
-      <div className="truncate font-bold">
-        {record.employeeName} {isMe ? "나" : ""} {isLongDay ? "🔥" : ""}
-      </div>
-      <div className="mt-0.5 break-words text-[10px] opacity-80 sm:text-[11px]">{timeText}</div>
-      {durationText ? (
-        <div className="mt-1 inline-flex rounded bg-white/70 px-1.5 py-0.5 text-[10px] font-bold opacity-90">
-          {durationText}
-        </div>
-      ) : null}
-      {hasTasks ? (
-        <div className="mt-1 rounded bg-white/80 px-1.5 py-0.5 text-[10px] font-bold opacity-90">
-          업무 {record.doneCount ?? 0}/{record.taskCount}
-        </div>
-      ) : null}
+      <span className="min-w-0 truncate font-bold">{record.employeeName}</span>
+      <span className="shrink-0 text-[10px] font-semibold opacity-80 sm:text-[11px]">{checkInText}</span>
     </button>
   );
 }
@@ -1215,7 +1201,7 @@ function WorkLogModal({
               {record.employeeName} 업무 기록
             </h3>
             <p className="mt-1 text-xs text-muted">
-              {formatKstTime(record.checkInAt)} ~ {formatKstTime(record.checkOutAt)}
+              {formatKstTimeRange(record)}
             </p>
           </div>
           <button
@@ -1673,6 +1659,16 @@ function formatKstTime(value: string | null | undefined) {
     minute: "2-digit",
     hour12: false,
   }).format(new Date(value));
+}
+
+function formatKstTimeRange(record: Pick<AttendanceRecord, "checkInAt" | "checkOutAt">) {
+  const checkInText = formatKstTime(record.checkInAt);
+
+  if (!record.checkOutAt) {
+    return checkInText;
+  }
+
+  return `${checkInText} ~ ${formatKstTime(record.checkOutAt)}`;
 }
 
 function RecentLoadingRows() {
