@@ -1,11 +1,12 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   apiFetch,
   clearToken,
   formatKstDateTime,
   getStoredAuth,
+  isAuthError,
   type StoredAuth,
 } from "@/components/api";
 import { LoginPanel } from "@/components/LoginPanel";
@@ -58,6 +59,23 @@ type AttendanceForm = {
   reason: string;
 };
 
+type AdminUsage = {
+  collections: {
+    employees: number;
+    attendanceRecords: number;
+    workLogs: number;
+    sessions: number;
+    employeeDevices: number;
+  };
+  freeTier: {
+    readsPerDay: number;
+    writesPerDay: number;
+    deletesPerDay: number;
+    storageGiB: number;
+  };
+  measuredAt: string;
+};
+
 const workTypeLabels: Record<WorkType, string> = {
   office: "사무실",
   remote: "재택",
@@ -66,6 +84,7 @@ const workTypeLabels: Record<WorkType, string> = {
 };
 
 const weekdayLabels = ["일", "월", "화", "수", "목", "금", "토"];
+const hiddenAdminEmployeeNames = new Set(["홍현석"]);
 
 export function AdminApp() {
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
@@ -77,6 +96,7 @@ export function AdminApp() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [devices, setDevices] = useState<DeviceRequest[]>([]);
+  const [usage, setUsage] = useState<AdminUsage | null>(null);
   const [startDate, setStartDate] = useState(() => getMonthStart());
   const [endDate, setEndDate] = useState(() => getMonthEnd());
   const [employeeId, setEmployeeId] = useState("");
@@ -87,6 +107,8 @@ export function AdminApp() {
   const [isMutating, setIsMutating] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [approvingDeviceId, setApprovingDeviceId] = useState<string | null>(null);
+  const loadRequestIdRef = useRef(0);
+  const hasLoadedAdminRef = useRef(false);
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
@@ -96,14 +118,28 @@ export function AdminApp() {
     return params.toString();
   }, [employeeId, endDate, startDate]);
 
-  const monthlySummary = useMemo(
-    () => buildMonthlySummary(employees, records, startDate, endDate),
-    [employees, endDate, records, startDate],
+  const visibleEmployees = useMemo(
+    () => employees.filter((employee) => !isHiddenAdminEmployee(employee.name)),
+    [employees],
   );
-  const groupedRecords = useMemo(() => groupRecordsByEmployee(records), [records]);
+  const visibleRecords = useMemo(
+    () => records.filter((record) => !isHiddenAdminEmployee(record.employeeName)),
+    [records],
+  );
+  const visibleDevices = useMemo(
+    () => devices.filter((device) => !isHiddenAdminEmployee(device.employeeName)),
+    [devices],
+  );
+  const monthlySummary = useMemo(
+    () => buildMonthlySummary(visibleEmployees, visibleRecords, startDate, endDate),
+    [endDate, startDate, visibleEmployees, visibleRecords],
+  );
+  const groupedRecords = useMemo(() => groupRecordsByEmployee(visibleRecords), [visibleRecords]);
 
   const load = useCallback(
     async (storedAuth: StoredAuth) => {
+      const requestId = loadRequestIdRef.current + 1;
+      loadRequestIdRef.current = requestId;
       setMessage("");
       setIsRefreshing(true);
 
@@ -116,7 +152,7 @@ export function AdminApp() {
           throw new Error("관리자만 접근할 수 있습니다.");
         }
 
-        const [employeesResult, recordsResult, devicesResult] = await Promise.all([
+        const [employeesResult, recordsResult, devicesResult, usageResult] = await Promise.all([
           apiFetch<{ employees: Employee[] }>("/api/admin/employees", {
             auth: storedAuth,
           }),
@@ -126,14 +162,25 @@ export function AdminApp() {
           apiFetch<{ devices: DeviceRequest[] }>("/api/admin/devices", {
             auth: storedAuth,
           }),
+          apiFetch<{ usage: AdminUsage }>("/api/admin/usage", {
+            auth: storedAuth,
+          }).catch(() => null),
         ]);
 
-        setAdmin(me.employee);
-        setEmployees(employeesResult.employees);
-        setRecords(recordsResult.records);
-        setDevices(devicesResult.devices);
+        if (loadRequestIdRef.current === requestId) {
+          setAdmin(me.employee);
+          setEmployees(employeesResult.employees);
+          setRecords(recordsResult.records);
+          setDevices(devicesResult.devices);
+          if (usageResult) {
+            setUsage(usageResult.usage);
+          }
+          hasLoadedAdminRef.current = true;
+        }
       } finally {
-        setIsRefreshing(false);
+        if (loadRequestIdRef.current === requestId) {
+          setIsRefreshing(false);
+        }
       }
     },
     [query],
@@ -149,7 +196,10 @@ export function AdminApp() {
       return;
     }
 
-    setIsLoading(true);
+    const isInitialLoad = !hasLoadedAdminRef.current;
+    if (isInitialLoad) {
+      setIsLoading(true);
+    }
     const storedAuth = getStoredAuth();
     setAuth(storedAuth);
 
@@ -165,14 +215,25 @@ export function AdminApp() {
             ? error.message
             : "관리자 정보를 불러오지 못했습니다.",
         );
-        clearToken();
-        setAuth(null);
+        if (isAuthError(error)) {
+          clearToken();
+          setAuth(null);
+        }
       })
       .finally(() => {
-        setIsLoading(false);
+        if (isInitialLoad) {
+          setIsLoading(false);
+        }
         setIsRefreshing(false);
       });
   }, [isAdminUnlocked, load]);
+
+  useEffect(() => {
+    if (!employeeId) return;
+    if (!visibleEmployees.some((employee) => employee.id === employeeId)) {
+      setEmployeeId("");
+    }
+  }, [employeeId, visibleEmployees]);
 
   async function unlockAdmin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -220,7 +281,7 @@ export function AdminApp() {
         : "/api/admin/attendance";
       const method = form.id ? "PATCH" : "POST";
 
-      await apiFetch(path, {
+      const result = await apiFetch<{ record: AttendanceRecord }>(path, {
         method,
         auth,
         body: JSON.stringify({
@@ -234,8 +295,20 @@ export function AdminApp() {
         }),
       });
 
+      const nextRecord = hydrateAdminRecord(result.record, employees);
+      setRecords((currentRecords) => {
+        const recordsWithoutTarget = currentRecords.filter((record) => record.id !== nextRecord.id);
+        const nextRecords = isRecordInAdminQuery(nextRecord, startDate, endDate, employeeId)
+          ? [nextRecord, ...recordsWithoutTarget]
+          : recordsWithoutTarget;
+        return nextRecords.sort(
+          (a, b) =>
+            b.workDate.localeCompare(a.workDate) ||
+            a.employeeName.localeCompare(b.employeeName),
+        );
+      });
       setForm(emptyForm());
-      await refresh();
+      void refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "저장하지 못했습니다.");
     } finally {
@@ -246,6 +319,8 @@ export function AdminApp() {
   async function approveDevice(id: string) {
     if (!auth) return;
 
+    const previousDevices = devices;
+    setDevices((currentDevices) => currentDevices.filter((device) => device.id !== id));
     setIsMutating(true);
     setApprovingDeviceId(id);
     setMessage("");
@@ -254,8 +329,9 @@ export function AdminApp() {
         method: "POST",
         auth,
       });
-      await refresh();
+      void refresh();
     } catch (error) {
+      setDevices(previousDevices);
       setMessage(
         error instanceof Error ? error.message : "기기 변경을 승인하지 못했습니다.",
       );
@@ -307,6 +383,7 @@ export function AdminApp() {
 
     clearToken();
     sessionStorage.removeItem("attendance.adminUnlocked");
+    hasLoadedAdminRef.current = false;
     setAuth(null);
     setAdmin(null);
     setIsAdminUnlocked(false);
@@ -442,7 +519,7 @@ export function AdminApp() {
               value={employeeId}
             >
               <option value="">전체</option>
-              {employees.map((employee) => (
+              {visibleEmployees.map((employee) => (
                 <option key={employee.id} value={employee.id}>
                   {displayEmployee(employee)}
                 </option>
@@ -483,9 +560,28 @@ export function AdminApp() {
             )}
           </button>
         </div>
+        {usage ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-muted">
+            <span className="rounded border border-line bg-field px-2 py-1">
+              Firebase DB
+            </span>
+            <span className="rounded border border-line bg-white px-2 py-1">
+              출퇴근 {usage.collections.attendanceRecords.toLocaleString("ko-KR")}건
+            </span>
+            <span className="rounded border border-line bg-white px-2 py-1">
+              업무 {usage.collections.workLogs.toLocaleString("ko-KR")}건
+            </span>
+            <span className="rounded border border-line bg-white px-2 py-1">
+              기기 {usage.collections.employeeDevices.toLocaleString("ko-KR")}건
+            </span>
+            <span className="rounded border border-line bg-white px-2 py-1">
+              Spark 읽기 {usage.freeTier.readsPerDay.toLocaleString("ko-KR")}/일
+            </span>
+          </div>
+        ) : null}
       </section>
 
-      {devices.length > 0 ? (
+      {visibleDevices.length > 0 ? (
         <section className="mb-4 rounded-lg border border-line bg-white/95 p-4 shadow-panel">
           <h2 className="text-base font-bold text-ink">기기 변경 요청</h2>
           <div className="mt-3 overflow-x-auto">
@@ -500,7 +596,7 @@ export function AdminApp() {
                 </tr>
               </thead>
               <tbody>
-                {devices.map((device) => (
+                {visibleDevices.map((device) => (
                   <tr key={device.id} className="border-b border-line last:border-0">
                     <td className="py-2 pr-3 font-semibold">{displayEmployee(device)}</td>
                     <td className="py-2 pr-3">{formatKstDateTime(device.requestedAt)}</td>
@@ -587,7 +683,7 @@ export function AdminApp() {
         </div>
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <section className="rounded-lg border border-line bg-white/95 p-4 shadow-panel">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h2 className="text-base font-bold text-ink">직원별 상세 기록</h2>
@@ -606,7 +702,7 @@ export function AdminApp() {
                   <span className="text-xs font-semibold text-muted">{group.records.length}건</span>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[820px] text-left text-sm">
+                  <table className="w-full min-w-[660px] text-left text-sm">
                     <thead>
                       <tr className="border-b border-line text-xs text-muted">
                         <th className="py-2 pl-3 pr-3">날짜</th>
@@ -614,7 +710,7 @@ export function AdminApp() {
                         <th className="py-2 pr-3">출근</th>
                         <th className="py-2 pr-3">퇴근</th>
                         <th className="py-2 pr-3">유형</th>
-                        <th className="py-2 pr-3">IP</th>
+                        <th className="hidden py-2 pr-3 2xl:table-cell">IP</th>
                         <th className="py-2 pr-3">메모</th>
                         <th className="py-2 pr-3 text-right">수정</th>
                       </tr>
@@ -629,7 +725,7 @@ export function AdminApp() {
                           <td className="py-2 pr-3">{formatTimeOnly(record.checkInAt)}</td>
                           <td className="py-2 pr-3">{formatTimeOnly(record.checkOutAt)}</td>
                           <td className="py-2 pr-3">{workTypeLabels[record.workType]}</td>
-                          <td className="py-2 pr-3 text-xs text-muted">
+                          <td className="hidden py-2 pr-3 text-xs text-muted 2xl:table-cell">
                             {formatIpPair(record.checkInIp, record.checkOutIp)}
                           </td>
                           <td className="max-w-48 truncate py-2 pr-3">{record.note ?? "-"}</td>
@@ -682,7 +778,7 @@ export function AdminApp() {
                 value={form.employeeId}
               >
                 <option value="">선택</option>
-                {employees.map((employee) => (
+                {visibleEmployees.map((employee) => (
                   <option key={employee.id} value={employee.id}>
                     {displayEmployee(employee)}
                   </option>
@@ -830,6 +926,28 @@ function formFromRecord(record: AttendanceRecord): AttendanceForm {
   };
 }
 
+function hydrateAdminRecord(record: AttendanceRecord, employees: Employee[]) {
+  const employee = employees.find((item) => item.id === record.employeeId);
+  return {
+    ...record,
+    employeeNo: record.employeeNo ?? employee?.employeeNo ?? "",
+    employeeName: record.employeeName ?? employee?.name ?? "",
+  };
+}
+
+function isRecordInAdminQuery(
+  record: AttendanceRecord,
+  startDate: string,
+  endDate: string,
+  employeeId: string,
+) {
+  return (
+    (!startDate || record.workDate >= startDate) &&
+    (!endDate || record.workDate <= endDate) &&
+    (!employeeId || record.employeeId === employeeId)
+  );
+}
+
 function isEmployeeCheckOutLocked(record: AttendanceRecord) {
   return Boolean(record.checkOutAt && record.source === "employee" && record.checkOutIp !== "auto");
 }
@@ -901,6 +1019,10 @@ function displayEmployee(employee: {
   return employee.employeeNo && employee.employeeNo !== name
     ? `${name} (${employee.employeeNo})`
     : name;
+}
+
+function isHiddenAdminEmployee(name: string) {
+  return hiddenAdminEmployeeNames.has(name.trim());
 }
 
 function groupRecordsByEmployee(records: AttendanceRecord[]) {

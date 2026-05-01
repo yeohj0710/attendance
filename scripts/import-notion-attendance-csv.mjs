@@ -91,7 +91,6 @@ for (const row of rows) {
         employee_id: employeeId,
         work_date: date,
         summary: text,
-        tasks: [],
         created_at: now,
         updated_at: now,
         imported_from: "notion_csv",

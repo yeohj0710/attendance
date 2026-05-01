@@ -5,6 +5,16 @@ export type StoredAuth = {
   deviceId: string;
 };
 
+export class ApiClientError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiClientError";
+    this.status = status;
+  }
+}
+
 const TOKEN_KEY = "attendance.token";
 const DEVICE_KEY = "attendance.deviceId";
 const ACTIVE_DEVICE_KEY = "attendance.activeDeviceId";
@@ -85,10 +95,14 @@ export async function apiFetch<T>(
   const body = isJson ? await response.json() : null;
 
   if (!response.ok) {
-    throw new Error(body?.error ?? "요청 처리에 실패했습니다.");
+    throw new ApiClientError(body?.error ?? "요청 처리에 실패했습니다.", response.status);
   }
 
   return body as T;
+}
+
+export function isAuthError(error: unknown) {
+  return error instanceof ApiClientError && (error.status === 401 || error.status === 403);
 }
 
 export function formatKstDateTime(value: string | null | undefined) {

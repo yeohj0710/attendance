@@ -1,7 +1,11 @@
 import { getDb, nowTimestamp, timestampToIso, toTimestamp } from "@/lib/db";
 import { badRequest, conflict } from "@/lib/http";
-import { getWorkDateString, parseKstDateTimeInput } from "@/lib/time";
-import { getWorkLogSummariesForRange } from "@/lib/work-log";
+import { getWorkDateString, isValidDateString, parseKstDateTimeInput } from "@/lib/time";
+import {
+  ensureCarryoverWorkLog,
+  getWorkLogSummariesForRange,
+  getWorkLogsForDate,
+} from "@/lib/work-log";
 import type { AuthContext } from "@/lib/auth";
 
 export type WorkType = "office" | "remote" | "offsite" | "business_trip";
@@ -63,6 +67,8 @@ type SessionData = {
   device_id?: string;
 };
 
+const formerTeamMemberNames = new Set(["홍현석"]);
+
 export async function getAttendanceStatus(auth: AuthContext) {
   await autoCloseForgottenCheckOuts(auth);
 
@@ -100,9 +106,10 @@ export async function getRecentAttendance(employeeId: string, limit: number) {
 export async function getTeamTodayAttendance() {
   const db = getDb();
   const today = getWorkDateString();
-  const [employeesSnapshot, attendanceSnapshot] = await Promise.all([
+  const [employeesSnapshot, attendanceSnapshot, workLogs] = await Promise.all([
     db.collection("employees").where("is_active", "==", true).get(),
     db.collection("attendance_records").where("work_date", "==", today).get(),
+    getWorkLogsForDate(today),
   ]);
 
   const attendanceByEmployee = new Map(
@@ -111,6 +118,7 @@ export async function getTeamTodayAttendance() {
       return [record.employeeId, record];
     }),
   );
+  const workLogByEmployee = new Map(workLogs.map((workLog) => [workLog.employeeId, workLog]));
 
   return employeesSnapshot.docs
     .map((doc) => {
@@ -126,26 +134,36 @@ export async function getTeamTodayAttendance() {
         checkOutAt: record?.checkOutAt ?? null,
         workType: record?.workType ?? "office",
         note: record?.note ?? null,
+        taskCount: workLogByEmployee.get(doc.id)?.taskCount ?? 0,
+        doneCount: workLogByEmployee.get(doc.id)?.doneCount ?? 0,
+        commentCount: workLogByEmployee.get(doc.id)?.commentCount ?? 0,
+        tasks: workLogByEmployee.get(doc.id)?.tasks ?? [],
       };
     })
+    .filter(
+      (record) =>
+        Boolean(record.checkInAt) &&
+        !formerTeamMemberNames.has(record.employeeName.normalize("NFC").replace(/\s+/g, "")),
+    )
     .sort((a, b) => {
       const statusCompare = teamStatusRank(a) - teamStatusRank(b);
       return statusCompare || a.employeeName.localeCompare(b.employeeName);
     });
 }
 
-export async function getTeamMonthAttendance() {
+export async function getTeamMonthAttendance(monthValue?: string | null) {
   const db = getDb();
-  const { startDate, endDate } = getCurrentKstMonthRange();
+  const { startDate, endDate, month } = getKstMonthRange(monthValue);
+  const { calendarStartDate, calendarEndDate } = getCalendarRange(startDate, endDate);
   const [employeesSnapshot, attendanceSnapshot] = await Promise.all([
     db.collection("employees").where("is_active", "==", true).get(),
     db
       .collection("attendance_records")
-      .where("work_date", ">=", startDate)
-      .where("work_date", "<=", endDate)
+      .where("work_date", ">=", calendarStartDate)
+      .where("work_date", "<=", calendarEndDate)
       .get(),
   ]);
-  const workLogSummaries = await getWorkLogSummariesForRange(startDate, endDate);
+  const workLogSummaries = await getWorkLogSummariesForRange(calendarStartDate, calendarEndDate);
 
   const employees = new Map(
     employeesSnapshot.docs.map((doc) => [doc.id, doc.data() as EmployeeData]),
@@ -171,6 +189,7 @@ export async function getTeamMonthAttendance() {
       note: record.note,
       taskCount: workSummaryByKey.get(`${record.employeeId}:${record.workDate}`)?.taskCount ?? 0,
       doneCount: workSummaryByKey.get(`${record.employeeId}:${record.workDate}`)?.doneCount ?? 0,
+      commentCount: workSummaryByKey.get(`${record.employeeId}:${record.workDate}`)?.commentCount ?? 0,
     }))
     .sort(
       (a, b) =>
@@ -179,8 +198,11 @@ export async function getTeamMonthAttendance() {
     );
 
   return {
+    month,
     startDate,
     endDate,
+    calendarStartDate,
+    calendarEndDate,
     records,
   };
 }
@@ -223,6 +245,7 @@ export async function checkIn(auth: AuthContext, ip: string | null) {
   };
 
   await ref.set(data, { merge: true });
+  await ensureCarryoverWorkLog(auth.employee.id, today);
   return mapAttendance(ref.id, data);
 }
 
@@ -604,15 +627,49 @@ function teamStatusRank(record: {
   return 2;
 }
 
-function getCurrentKstMonthRange() {
+function getKstMonthRange(value?: string | null) {
+  if (value && !/^\d{4}-\d{2}$/.test(value)) {
+    badRequest("달 형식이 올바르지 않습니다.");
+  }
+
   const now = new Date();
   const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const year = kstNow.getUTCFullYear();
-  const month = kstNow.getUTCMonth() + 1;
-  const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+  const year = value ? Number(value.slice(0, 4)) : kstNow.getUTCFullYear();
+  const month = value ? Number(value.slice(5, 7)) : kstNow.getUTCMonth() + 1;
+
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    badRequest("달 형식이 올바르지 않습니다.");
+  }
+
+  const monthText = `${year}-${String(month).padStart(2, "0")}`;
+  const startDate = `${monthText}-01`;
   const endDate = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
 
-  return { startDate, endDate };
+  return { month: monthText, startDate, endDate };
+}
+
+function getCalendarRange(startDate: string, endDate: string) {
+  if (!isValidDateString(startDate) || !isValidDateString(endDate)) {
+    badRequest("날짜 형식이 올바르지 않습니다.");
+  }
+
+  const start = dateStringToUtcDate(startDate);
+  const calendarStart = new Date(start);
+  calendarStart.setUTCDate(calendarStart.getUTCDate() - calendarStart.getUTCDay());
+
+  const end = dateStringToUtcDate(endDate);
+  const calendarEnd = new Date(end);
+  calendarEnd.setUTCDate(calendarEnd.getUTCDate() + (6 - calendarEnd.getUTCDay()));
+
+  return {
+    calendarStartDate: calendarStart.toISOString().slice(0, 10),
+    calendarEndDate: calendarEnd.toISOString().slice(0, 10),
+  };
+}
+
+function dateStringToUtcDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
 }
 
 function getEndOfWorkDate(workDate: string) {

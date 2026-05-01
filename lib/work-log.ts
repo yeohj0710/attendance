@@ -11,8 +11,17 @@ export type WorkTask = {
   text: string;
   done: boolean;
   section: WorkTaskSection;
+  order?: number;
   createdAt: string;
   updatedAt: string;
+};
+
+export type WorkComment = {
+  id: string;
+  authorEmployeeId: string;
+  authorName: string;
+  text: string;
+  createdAt: string;
 };
 
 export type WorkLog = {
@@ -23,6 +32,8 @@ export type WorkLog = {
   tasks: WorkTask[];
   taskCount: number;
   doneCount: number;
+  comments: WorkComment[];
+  commentCount: number;
   createdAt: string | null;
   updatedAt: string | null;
 };
@@ -32,6 +43,7 @@ export type WorkLogSummary = {
   workDate: string;
   taskCount: number;
   doneCount: number;
+  commentCount: number;
 };
 
 type WorkLogData = {
@@ -43,8 +55,16 @@ type WorkLogData = {
     text?: string;
     done?: boolean;
     section?: WorkTaskSection;
+    order?: number;
     created_at?: string;
     updated_at?: string;
+  }>;
+  comments?: Array<{
+    id?: string;
+    author_employee_id?: string;
+    author_name?: string;
+    text?: string;
+    created_at?: string;
   }>;
   created_at?: unknown;
   updated_at?: unknown;
@@ -61,6 +81,8 @@ type WorkTaskInput = Partial<WorkTask> & {
   updated_at?: string;
 };
 
+const CARRYOVER_START_DATE = "2026-05-01";
+
 export async function getWorkLog(employeeId: string, workDate: string) {
   validateWorkLogKey(employeeId, workDate);
 
@@ -76,7 +98,8 @@ export async function getWorkLog(employeeId: string, workDate: string) {
   }
 
   if (!logDoc.exists) {
-    const carryoverTasks = await getCarryoverTasks(employeeId, workDate);
+    const carryoverTasks =
+      workDate >= CARRYOVER_START_DATE ? await getCarryoverTasks(employeeId, workDate) : [];
     const workLog = emptyWorkLog(employeeId, employee.name ?? "", workDate);
     return {
       ...workLog,
@@ -99,7 +122,7 @@ export async function saveWorkLog(
 ) {
   validateWorkLogKey(input.employeeId, input.workDate);
 
-  if (auth.employee.id !== input.employeeId && auth.employee.role !== "admin") {
+  if (auth.employee.id !== input.employeeId) {
     forbidden("본인의 업무 기록만 수정할 수 있습니다.");
   }
 
@@ -114,6 +137,7 @@ export async function saveWorkLog(
   const tasks = normalizeTasks(input.tasks ?? [], now);
   const docRef = db.collection("work_logs").doc(getWorkLogDocId(input.employeeId, input.workDate));
   const currentDoc = await docRef.get();
+  const currentData = currentDoc.data() as WorkLogData | undefined;
 
   const data: WorkLogData = {
     employee_id: input.employeeId,
@@ -124,10 +148,12 @@ export async function saveWorkLog(
       text: task.text,
       done: task.done,
       section: task.section,
+      order: task.order,
       created_at: task.createdAt,
       updated_at: task.updatedAt,
     })),
-    created_at: currentDoc.exists ? currentDoc.data()?.created_at : nowTimestamp(),
+    comments: normalizeComments(currentData?.comments ?? []),
+    created_at: currentDoc.exists ? currentData?.created_at : nowTimestamp(),
     updated_at: nowTimestamp(),
   };
 
@@ -154,8 +180,243 @@ export async function getWorkLogSummariesForRange(startDate: string, endDate: st
       workDate: data.work_date,
       taskCount: tasks.length,
       doneCount: tasks.filter((task) => task.done).length,
+      commentCount: normalizeComments(data.comments ?? []).length,
     } satisfies WorkLogSummary;
   });
+}
+
+export async function addWorkLogComment(
+  auth: AuthContext,
+  input: {
+    employeeId: string;
+    workDate: string;
+    text?: string;
+  },
+) {
+  validateWorkLogKey(input.employeeId, input.workDate);
+
+  const text = normalizeCommentText(input.text);
+  if (!text) {
+    badRequest("댓글을 입력하세요.");
+  }
+
+  const db = getDb();
+  const employeeDoc = await db.collection("employees").doc(input.employeeId).get();
+  const employee = employeeDoc.data() as EmployeeData | undefined;
+  if (!employeeDoc.exists || !employee?.is_active) {
+    badRequest("직원 정보를 찾을 수 없습니다.");
+  }
+
+  const now = new Date().toISOString();
+  const docRef = db.collection("work_logs").doc(getWorkLogDocId(input.employeeId, input.workDate));
+  const currentDoc = await docRef.get();
+  const currentData = currentDoc.data() as WorkLogData | undefined;
+  const comments = [
+    ...normalizeComments(currentData?.comments ?? []),
+    {
+      id: randomUUID(),
+      authorEmployeeId: auth.employee.id,
+      authorName: auth.employee.name,
+      text,
+      createdAt: now,
+    },
+  ];
+
+  const data: WorkLogData = {
+    employee_id: input.employeeId,
+    work_date: input.workDate,
+    summary: currentData?.summary ?? "",
+    tasks: currentData?.tasks ?? [],
+    comments: comments.map((comment) => ({
+      id: comment.id,
+      author_employee_id: comment.authorEmployeeId,
+      author_name: comment.authorName,
+      text: comment.text,
+      created_at: comment.createdAt,
+    })),
+    created_at: currentDoc.exists ? currentData?.created_at : nowTimestamp(),
+    updated_at: nowTimestamp(),
+  };
+
+  await docRef.set(data, { merge: true });
+  return mapWorkLog(data, employee.name ?? "");
+}
+
+export async function updateWorkLogComment(
+  auth: AuthContext,
+  input: {
+    employeeId: string;
+    workDate: string;
+    commentId: string;
+    text?: string;
+  },
+) {
+  validateWorkLogKey(input.employeeId, input.workDate);
+  const text = normalizeCommentText(input.text);
+  if (!text) {
+    badRequest("댓글을 입력하세요.");
+  }
+
+  return mutateWorkLogComment(auth, input, (comments) =>
+    comments.map((comment) =>
+      comment.id === input.commentId ? { ...comment, text } : comment,
+    ),
+  );
+}
+
+export async function deleteWorkLogComment(
+  auth: AuthContext,
+  input: {
+    employeeId: string;
+    workDate: string;
+    commentId: string;
+  },
+) {
+  validateWorkLogKey(input.employeeId, input.workDate);
+  return mutateWorkLogComment(auth, input, (comments) =>
+    comments.filter((comment) => comment.id !== input.commentId),
+  );
+}
+
+export async function getWorkLogsForKeys(
+  records: Array<{ employeeId?: string; workDate?: string }>,
+) {
+  const seen = new Set<string>();
+  const validRecords = records
+    .map((record) => ({
+      employeeId: record.employeeId?.trim() ?? "",
+      workDate: record.workDate?.trim() ?? "",
+    }))
+    .filter((record) => record.employeeId && isValidDateString(record.workDate))
+    .filter((record) => {
+      const key = `${record.employeeId}:${record.workDate}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 80);
+
+  return Promise.all(
+    validRecords.map((record) => getWorkLog(record.employeeId, record.workDate)),
+  );
+}
+
+async function mutateWorkLogComment(
+  auth: AuthContext,
+  input: {
+    employeeId: string;
+    workDate: string;
+    commentId: string;
+  },
+  mutate: (comments: WorkComment[]) => WorkComment[],
+) {
+  if (!input.commentId.trim()) {
+    badRequest("댓글을 선택하세요.");
+  }
+
+  const db = getDb();
+  const employeeDoc = await db.collection("employees").doc(input.employeeId).get();
+  const employee = employeeDoc.data() as EmployeeData | undefined;
+  if (!employeeDoc.exists || !employee?.is_active) {
+    badRequest("직원 정보를 찾을 수 없습니다.");
+  }
+
+  const docRef = db.collection("work_logs").doc(getWorkLogDocId(input.employeeId, input.workDate));
+  const currentDoc = await docRef.get();
+  if (!currentDoc.exists) {
+    badRequest("업무 기록을 찾을 수 없습니다.");
+  }
+
+  const currentData = currentDoc.data() as WorkLogData;
+  const comments = normalizeComments(currentData.comments ?? []);
+  const targetComment = comments.find((comment) => comment.id === input.commentId);
+  if (!targetComment) {
+    badRequest("댓글을 찾을 수 없습니다.");
+  }
+
+  if (targetComment.authorEmployeeId !== auth.employee.id) {
+    forbidden("본인이 작성한 댓글만 수정하거나 삭제할 수 있습니다.");
+  }
+
+  const nextComments = mutate(comments);
+  const data: WorkLogData = {
+    ...currentData,
+    employee_id: input.employeeId,
+    work_date: input.workDate,
+    comments: nextComments.map((comment) => ({
+      id: comment.id,
+      author_employee_id: comment.authorEmployeeId,
+      author_name: comment.authorName,
+      text: comment.text,
+      created_at: comment.createdAt,
+    })),
+    updated_at: nowTimestamp(),
+  };
+
+  await docRef.set(data, { merge: true });
+  return mapWorkLog(data, employee.name ?? "");
+}
+
+export async function getWorkLogsForDate(workDate: string) {
+  if (!isValidDateString(workDate)) {
+    return [];
+  }
+
+  const db = getDb();
+  const [employeesSnapshot, workLogsSnapshot] = await Promise.all([
+    db.collection("employees").where("is_active", "==", true).get(),
+    db.collection("work_logs").where("work_date", "==", workDate).get(),
+  ]);
+  const employees = new Map(
+    employeesSnapshot.docs.map((doc) => [doc.id, doc.data() as EmployeeData]),
+  );
+
+  return workLogsSnapshot.docs
+    .map((doc) => doc.data() as WorkLogData)
+    .filter((data) => employees.has(data.employee_id))
+    .map((data) => mapWorkLog(data, employees.get(data.employee_id)?.name ?? ""))
+    .sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+}
+
+export async function ensureCarryoverWorkLog(employeeId: string, workDate: string) {
+  validateWorkLogKey(employeeId, workDate);
+  if (workDate < CARRYOVER_START_DATE) {
+    return null;
+  }
+
+  const db = getDb();
+  const docRef = db.collection("work_logs").doc(getWorkLogDocId(employeeId, workDate));
+  const existingDoc = await docRef.get();
+  if (existingDoc.exists) {
+    return null;
+  }
+
+  const carryoverTasks = await getCarryoverTasks(employeeId, workDate);
+  if (!carryoverTasks.length) {
+    return null;
+  }
+
+  const data: WorkLogData = {
+    employee_id: employeeId,
+    work_date: workDate,
+    summary: "",
+    tasks: carryoverTasks.map((task) => ({
+      id: task.id,
+      text: task.text,
+      done: task.done,
+      section: task.section,
+      order: task.order,
+      created_at: task.createdAt,
+      updated_at: task.updatedAt,
+    })),
+    created_at: nowTimestamp(),
+    updated_at: nowTimestamp(),
+  };
+
+  await docRef.set(data);
+  return data;
 }
 
 function getWorkLogDocId(employeeId: string, workDate: string) {
@@ -176,9 +437,40 @@ function normalizeSummary(value: string | null | undefined) {
   return (value ?? "").trim().slice(0, 2000);
 }
 
-function normalizeTasks(tasks: WorkTaskInput[], now: string) {
+function normalizeCommentText(value: string | null | undefined) {
+  return (value ?? "").trim().slice(0, 500);
+}
+
+function normalizeComments(comments: WorkLogData["comments"]): WorkComment[] {
+  return (comments ?? [])
+    .map((comment) => {
+      const text = normalizeCommentText(comment.text);
+      if (!text) {
+        return null;
+      }
+
+      const rawCreatedAt = comment.created_at;
+      const createdAt =
+        rawCreatedAt && !Number.isNaN(new Date(rawCreatedAt).getTime())
+          ? rawCreatedAt
+          : new Date().toISOString();
+
+      return {
+        id: comment.id && comment.id.length <= 80 ? comment.id : randomUUID(),
+        authorEmployeeId: comment.author_employee_id ?? "",
+        authorName: comment.author_name ?? "익명",
+        text,
+        createdAt,
+      } satisfies WorkComment;
+    })
+    .filter((comment): comment is WorkComment => comment !== null)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .slice(0, 200);
+}
+
+function normalizeTasks(tasks: WorkTaskInput[], now: string): WorkTask[] {
   return tasks
-    .map((task) => {
+    .map((task, index) => {
       const text = (task.text ?? "").trim().slice(0, 300);
       if (!text) {
         return null;
@@ -195,15 +487,19 @@ function normalizeTasks(tasks: WorkTaskInput[], now: string) {
         rawUpdatedAt && !Number.isNaN(new Date(rawUpdatedAt).getTime())
           ? rawUpdatedAt
           : now;
+      const order = Number.isFinite(task.order) ? Number(task.order) : index;
 
-      return {
+      const normalizedTask: WorkTask = {
         id: task.id && task.id.length <= 80 ? task.id : randomUUID(),
         text,
         done: Boolean(task.done),
         section,
+        order,
         createdAt,
         updatedAt,
-      } satisfies WorkTask;
+      };
+
+      return normalizedTask;
     })
     .filter((task): task is WorkTask => task !== null)
     .slice(0, 80);
@@ -220,7 +516,7 @@ async function getCarryoverTasks(employeeId: string, workDate: string) {
 
   const previousLogs = snapshot.docs
     .map((doc) => doc.data() as WorkLogData)
-    .filter((data) => data.work_date < workDate)
+    .filter((data) => data.work_date >= CARRYOVER_START_DATE && data.work_date < workDate)
     .sort((a, b) => b.work_date.localeCompare(a.work_date));
 
   for (const log of previousLogs) {
@@ -238,6 +534,7 @@ async function getCarryoverTasks(employeeId: string, workDate: string) {
           id: randomUUID(),
           done: false,
           section: "today",
+          order: carryoverTasks.length,
           createdAt: now,
           updatedAt: now,
         });
@@ -261,13 +558,25 @@ function emptyWorkLog(employeeId: string, employeeName: string, workDate: string
     tasks: [],
     taskCount: 0,
     doneCount: 0,
+    comments: [],
+    commentCount: 0,
     createdAt: null,
     updatedAt: null,
   };
 }
 
 function mapWorkLog(data: WorkLogData, employeeName: string): WorkLog {
-  const tasks = normalizeTasks(data.tasks ?? [], new Date().toISOString());
+  const rawTasks = data.tasks ?? [];
+  const hasStoredOrder = rawTasks.some((task) => Number.isFinite(task.order));
+  const tasks = normalizeTasks(rawTasks, new Date().toISOString())
+    .sort((a, b) =>
+      Number(b.done) - Number(a.done) ||
+      (hasStoredOrder
+        ? (a.order ?? 0) - (b.order ?? 0)
+        : a.createdAt.localeCompare(b.createdAt)),
+    )
+    .map((task, index) => ({ ...task, order: index }));
+  const comments = normalizeComments(data.comments ?? []);
 
   return {
     employeeId: data.employee_id,
@@ -277,6 +586,8 @@ function mapWorkLog(data: WorkLogData, employeeName: string): WorkLog {
     tasks,
     taskCount: tasks.length,
     doneCount: tasks.filter((task) => task.done).length,
+    comments,
+    commentCount: comments.length,
     createdAt: timestampToIso(data.created_at),
     updatedAt: timestampToIso(data.updated_at),
   };

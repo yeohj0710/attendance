@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { DragEvent } from "react";
 import {
   apiFetch,
   clearToken,
   formatKstClock,
   formatKstDateTime,
   getStoredAuth,
+  isAuthError,
   type StoredAuth,
 } from "@/components/api";
 import { LoginPanel } from "@/components/LoginPanel";
@@ -50,6 +52,35 @@ type DashboardResponse = {
   teamMonth: TeamMonthAttendance;
 };
 
+type TeamMonthAttendance = {
+  month: string;
+  startDate: string;
+  endDate: string;
+  calendarStartDate?: string;
+  calendarEndDate?: string;
+  records: TeamAttendanceRecord[];
+};
+
+type WorkTaskSection = "today" | "later";
+
+type WorkTask = {
+  id: string;
+  text: string;
+  done: boolean;
+  section: WorkTaskSection;
+  order?: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type WorkComment = {
+  id: string;
+  authorEmployeeId: string;
+  authorName: string;
+  text: string;
+  createdAt: string;
+};
+
 type TeamAttendanceRecord = {
   employeeId: string;
   employeeNo: string;
@@ -61,23 +92,8 @@ type TeamAttendanceRecord = {
   note: string | null;
   taskCount?: number;
   doneCount?: number;
-};
-
-type TeamMonthAttendance = {
-  startDate: string;
-  endDate: string;
-  records: TeamAttendanceRecord[];
-};
-
-type WorkTaskSection = "today" | "later";
-
-type WorkTask = {
-  id: string;
-  text: string;
-  done: boolean;
-  section: WorkTaskSection;
-  createdAt: string;
-  updatedAt: string;
+  commentCount?: number;
+  tasks?: WorkTask[];
 };
 
 type WorkLog = {
@@ -88,6 +104,8 @@ type WorkLog = {
   tasks: WorkTask[];
   taskCount: number;
   doneCount: number;
+  comments: WorkComment[];
+  commentCount: number;
   createdAt: string | null;
   updatedAt: string | null;
 };
@@ -100,6 +118,7 @@ const workTypeLabels: Record<AttendanceRecord["workType"], string> = {
 };
 
 const weekdayLabels = ["일", "월", "화", "수", "목", "금", "토"];
+const formerTeamMemberNames = new Set(["홍현석"]);
 
 export function EmployeeApp() {
   const [auth, setAuth] = useState<StoredAuth | null>(null);
@@ -112,6 +131,7 @@ export function EmployeeApp() {
   const [clock, setClock] = useState(new Date());
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isTeamMonthLoading, setIsTeamMonthLoading] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [encouragement, setEncouragement] = useState("");
@@ -126,14 +146,29 @@ export function EmployeeApp() {
   const [workLogMessage, setWorkLogMessage] = useState("");
   const [isWorkLogLoading, setIsWorkLogLoading] = useState(false);
   const [isWorkLogSaving, setIsWorkLogSaving] = useState(false);
+  const [isCommentSaving, setIsCommentSaving] = useState(false);
+  const [pendingCommentId, setPendingCommentId] = useState<string | null>(null);
   const [pendingWorkTaskId, setPendingWorkTaskId] = useState<string | null>(null);
   const [newTaskText, setNewTaskText] = useState("");
+  const [newCommentText, setNewCommentText] = useState("");
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentText, setEditingCommentText] = useState("");
   const [todayWorkLog, setTodayWorkLog] = useState<WorkLog | null>(null);
   const [todayWorkMessage, setTodayWorkMessage] = useState("");
   const [isTodayWorkLoading, setIsTodayWorkLoading] = useState(false);
   const [isTodayWorkSaving, setIsTodayWorkSaving] = useState(false);
   const [pendingTodayTaskId, setPendingTodayTaskId] = useState<string | null>(null);
   const [todayTaskText, setTodayTaskText] = useState("");
+  const workLogCacheRef = useRef(new Map<string, WorkLog>());
+  const teamMonthCacheRef = useRef(new Map<string, TeamMonthAttendance>());
+  const workLogLoadRequestIdRef = useRef(0);
+  const todayWorkLogLoadRequestIdRef = useRef(0);
+  const teamMonthLoadRequestIdRef = useRef(0);
+  const workLogSaveSeqRef = useRef(0);
+  const todayWorkLogSaveSeqRef = useRef(0);
+  const workLogSaveChainRef = useRef<Promise<void>>(Promise.resolve());
+  const todayWorkLogSaveChainRef = useRef<Promise<void>>(Promise.resolve());
+  const prefetchingWorkLogKeysRef = useRef(new Set<string>());
 
   const load = useCallback(async (storedAuth: StoredAuth, knownEmployee?: Employee) => {
     setMessage("");
@@ -150,6 +185,7 @@ export function EmployeeApp() {
       setRecords(dashboard.records);
       setTeamRecords(dashboard.teamRecords);
       setTeamMonth(dashboard.teamMonth);
+      teamMonthCacheRef.current.set(dashboard.teamMonth.month, dashboard.teamMonth);
     } finally {
       setIsRefreshing(false);
     }
@@ -169,8 +205,10 @@ export function EmployeeApp() {
         setMessage(
           error instanceof Error ? error.message : "정보를 불러오지 못했습니다.",
         );
-        clearToken();
-        setAuth(null);
+        if (isAuthError(error)) {
+          clearToken();
+          setAuth(null);
+        }
       })
       .finally(() => {
         setIsLoading(false);
@@ -187,6 +225,22 @@ export function EmployeeApp() {
     if (!auth || !employee || !status?.kstDate) return;
     void loadTodayWorkLog();
   }, [auth, employee, status?.kstDate]);
+
+  useEffect(() => {
+    if (!auth || !teamMonth?.month) return;
+    prefetchTeamMonth(shiftMonth(teamMonth.month, -1));
+    prefetchTeamMonth(shiftMonth(teamMonth.month, 1));
+  }, [auth, teamMonth?.month]);
+
+  useEffect(() => {
+    if (!auth || !teamMonth?.records.length) return;
+
+    const recordsToPrefetch = teamMonth.records.filter(
+      (record) => record.workDate >= teamMonth.startDate && record.workDate <= teamMonth.endDate,
+    );
+    const timer = window.setTimeout(() => prefetchWorkLogs(recordsToPrefetch), 250);
+    return () => window.clearTimeout(timer);
+  }, [auth, teamMonth?.month, teamMonth?.records]);
 
   async function refresh(loginEmployee?: Employee) {
     const storedAuth = getStoredAuth();
@@ -247,19 +301,30 @@ export function EmployeeApp() {
       };
     });
 
-    setTeamRecords((currentRecords) =>
-      currentRecords.map((item) =>
-        item.employeeId === employee?.id
-          ? {
-              ...item,
-              checkInAt: record.checkInAt,
-              checkOutAt: record.checkOutAt,
-              workType: record.workType,
-              note: record.note,
-            }
-          : item,
-      ),
-    );
+    setTeamRecords((currentRecords) => {
+      if (!employee?.id || record.workDate !== status?.kstDate) {
+        return currentRecords;
+      }
+
+      const nextRecord: TeamAttendanceRecord = {
+        employeeId: employee.id,
+        employeeNo: employee.employeeNo,
+        employeeName: employee.name,
+        workDate: record.workDate,
+        checkInAt: record.checkInAt,
+        checkOutAt: record.checkOutAt,
+        workType: record.workType,
+        note: record.note,
+        taskCount: todayWorkLog?.taskCount ?? 0,
+        doneCount: todayWorkLog?.doneCount ?? 0,
+        commentCount: todayWorkLog?.commentCount ?? 0,
+        tasks: todayWorkLog?.tasks ?? [],
+      };
+      const recordsWithoutMe = currentRecords.filter((item) => item.employeeId !== employee.id);
+      return record.checkInAt
+        ? [...recordsWithoutMe, nextRecord].sort((a, b) => a.employeeName.localeCompare(b.employeeName))
+        : recordsWithoutMe;
+    });
 
     setTeamMonth((currentMonth) => {
       if (!currentMonth || !employee?.id || !isDateInRange(record.workDate, currentMonth)) {
@@ -280,13 +345,14 @@ export function EmployeeApp() {
         note: record.note,
         taskCount: existingRecord?.taskCount ?? 0,
         doneCount: existingRecord?.doneCount ?? 0,
+        commentCount: existingRecord?.commentCount ?? 0,
       };
 
       const recordsWithoutMe = currentMonth.records.filter(
         (item) => !(item.employeeId === employee.id && item.workDate === record.workDate),
       );
 
-      return {
+      const nextMonth = {
         ...currentMonth,
         records: [...recordsWithoutMe, nextRecord].sort(
           (a, b) =>
@@ -294,119 +360,488 @@ export function EmployeeApp() {
             a.employeeName.localeCompare(b.employeeName),
         ),
       };
+      teamMonthCacheRef.current.set(nextMonth.month, nextMonth);
+      return nextMonth;
     });
   }
 
   async function openWorkLog(record: TeamAttendanceRecord) {
     if (!auth) return;
 
+    const cacheKey = getWorkLogCacheKey(record.employeeId, record.workDate);
+    const cachedWorkLog = workLogCacheRef.current.get(cacheKey) ?? null;
+    const requestId = workLogLoadRequestIdRef.current + 1;
+    workLogLoadRequestIdRef.current = requestId;
     setSelectedWorkRecord(record);
-    setWorkLog(null);
+    setWorkLog(cachedWorkLog);
     setWorkLogMessage("");
     setNewTaskText("");
-    setIsWorkLogLoading(true);
+    setNewCommentText("");
+    setIsWorkLogLoading(!cachedWorkLog);
 
     try {
-      const params = new URLSearchParams({
-        employeeId: record.employeeId,
-        workDate: record.workDate,
-      });
-      const result = await apiFetch<{ workLog: WorkLog }>(`/api/work-log?${params.toString()}`, {
-        auth,
-      });
-      setWorkLog(result.workLog);
+      const freshWorkLog = await fetchWorkLog(record, auth, { force: true });
+      if (workLogLoadRequestIdRef.current === requestId) {
+        setWorkLog(freshWorkLog);
+      }
     } catch (error) {
-      setWorkLogMessage(error instanceof Error ? error.message : "업무 기록을 불러오지 못했습니다.");
+      if (workLogLoadRequestIdRef.current === requestId) {
+        setWorkLogMessage(error instanceof Error ? error.message : "업무 기록을 불러오지 못했습니다.");
+      }
     } finally {
-      setIsWorkLogLoading(false);
+      if (workLogLoadRequestIdRef.current === requestId) {
+        setIsWorkLogLoading(false);
+      }
     }
+  }
+
+  async function loadTeamMonth(month: string) {
+    if (!auth) return;
+
+    const cachedMonth = teamMonthCacheRef.current.get(month) ?? null;
+    const requestId = teamMonthLoadRequestIdRef.current + 1;
+    teamMonthLoadRequestIdRef.current = requestId;
+    if (cachedMonth) {
+      setTeamMonth(cachedMonth);
+    }
+    setIsTeamMonthLoading(!cachedMonth);
+    setMessage("");
+    try {
+      const freshMonth = await fetchTeamMonth(month, auth);
+      if (teamMonthLoadRequestIdRef.current === requestId) {
+        setTeamMonth(freshMonth);
+      }
+    } catch (error) {
+      if (teamMonthLoadRequestIdRef.current === requestId) {
+        setMessage(error instanceof Error ? error.message : "달력을 불러오지 못했습니다.");
+      }
+    } finally {
+      if (teamMonthLoadRequestIdRef.current === requestId) {
+        setIsTeamMonthLoading(false);
+      }
+    }
+  }
+
+  function moveTeamMonth(delta: number) {
+    const month = teamMonth?.month ?? getMonthFromDate(status?.kstDate);
+    void loadTeamMonth(shiftMonth(month, delta));
+  }
+
+  function openAttendanceWorkLog(record: AttendanceRecord) {
+    if (!employee) return;
+
+    void openWorkLog({
+      employeeId: record.employeeId ?? employee.id,
+      employeeNo: employee.employeeNo,
+      employeeName: employee.name,
+      workDate: record.workDate,
+      checkInAt: record.checkInAt,
+      checkOutAt: record.checkOutAt,
+      workType: record.workType,
+      note: record.note,
+    });
   }
 
   async function loadTodayWorkLog() {
     if (!auth || !employee || !status?.kstDate) return;
 
+    const cacheKey = getWorkLogCacheKey(employee.id, status.kstDate);
+    const cachedWorkLog = workLogCacheRef.current.get(cacheKey) ?? null;
+    const requestId = todayWorkLogLoadRequestIdRef.current + 1;
+    todayWorkLogLoadRequestIdRef.current = requestId;
+    if (cachedWorkLog) {
+      setTodayWorkLog(cachedWorkLog);
+    }
     setTodayWorkMessage("");
-    setIsTodayWorkLoading(true);
+    setIsTodayWorkLoading(!cachedWorkLog);
+    try {
+      const freshWorkLog = await fetchWorkLog(
+        {
+          employeeId: employee.id,
+          workDate: status.kstDate,
+        },
+        auth,
+        { force: true },
+      );
+      if (todayWorkLogLoadRequestIdRef.current === requestId) {
+        setTodayWorkLog(freshWorkLog);
+      }
+    } catch (error) {
+      if (todayWorkLogLoadRequestIdRef.current === requestId) {
+        setTodayWorkMessage(error instanceof Error ? error.message : "오늘 업무를 불러오지 못했습니다.");
+      }
+    } finally {
+      if (todayWorkLogLoadRequestIdRef.current === requestId) {
+        setIsTodayWorkLoading(false);
+      }
+    }
+  }
+
+  async function fetchWorkLog(
+    record: Pick<TeamAttendanceRecord, "employeeId" | "workDate">,
+    requestAuth: StoredAuth,
+    options: { force?: boolean } = {},
+  ) {
+    const cacheKey = getWorkLogCacheKey(record.employeeId, record.workDate);
+    const cachedWorkLog = workLogCacheRef.current.get(cacheKey);
+    if (cachedWorkLog && !options.force) {
+      return cachedWorkLog;
+    }
+
+    const params = new URLSearchParams({
+      employeeId: record.employeeId,
+      workDate: record.workDate,
+    });
+    const result = await apiFetch<{ workLog: WorkLog }>(`/api/work-log?${params.toString()}`, {
+      auth: requestAuth,
+    });
+    const workLogWithCounts = normalizeWorkLogCounts(result.workLog);
+    rememberWorkLog(workLogWithCounts);
+    return workLogWithCounts;
+  }
+
+  function prefetchWorkLog(record: Pick<TeamAttendanceRecord, "employeeId" | "workDate">) {
+    if (!auth) return;
+    const cacheKey = getWorkLogCacheKey(record.employeeId, record.workDate);
+    if (workLogCacheRef.current.has(cacheKey) || prefetchingWorkLogKeysRef.current.has(cacheKey)) return;
+    prefetchingWorkLogKeysRef.current.add(cacheKey);
+    void fetchWorkLog(record, auth)
+      .catch(() => undefined)
+      .finally(() => {
+        prefetchingWorkLogKeysRef.current.delete(cacheKey);
+      });
+  }
+
+  function prefetchWorkLogs(records: Array<Pick<TeamAttendanceRecord, "employeeId" | "workDate">>) {
+    if (!auth) return;
+
+    const seen = new Set<string>();
+    const recordsToLoad = records
+      .filter((record) => {
+        const cacheKey = getWorkLogCacheKey(record.employeeId, record.workDate);
+        if (
+          seen.has(cacheKey) ||
+          workLogCacheRef.current.has(cacheKey) ||
+          prefetchingWorkLogKeysRef.current.has(cacheKey)
+        ) {
+          return false;
+        }
+        seen.add(cacheKey);
+        prefetchingWorkLogKeysRef.current.add(cacheKey);
+        return true;
+      })
+      .slice(0, 80);
+
+    if (!recordsToLoad.length) return;
+
+    void apiFetch<{ workLogs: WorkLog[] }>("/api/work-log/batch", {
+      method: "POST",
+      auth,
+      body: JSON.stringify({ records: recordsToLoad }),
+    })
+      .then((result) => {
+        for (const workLog of result.workLogs) {
+          rememberWorkLog(normalizeWorkLogCounts(workLog));
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        for (const record of recordsToLoad) {
+          prefetchingWorkLogKeysRef.current.delete(
+            getWorkLogCacheKey(record.employeeId, record.workDate),
+          );
+        }
+      });
+  }
+
+  async function fetchTeamMonth(month: string, requestAuth: StoredAuth) {
+    const params = new URLSearchParams({ month });
+    const result = await apiFetch<{ teamMonth: TeamMonthAttendance }>(
+      `/api/attendance/team-month?${params.toString()}`,
+      { auth: requestAuth },
+    );
+    teamMonthCacheRef.current.set(result.teamMonth.month, result.teamMonth);
+    return result.teamMonth;
+  }
+
+  function prefetchTeamMonth(month: string) {
+    if (!auth || teamMonthCacheRef.current.has(month)) return;
+    void fetchTeamMonth(month, auth).catch(() => undefined);
+  }
+
+  async function saveWorkLogRequest(nextLog: WorkLog, requestAuth: StoredAuth) {
+    const result = await apiFetch<{ workLog: WorkLog }>("/api/work-log", {
+      method: "PUT",
+      auth: requestAuth,
+      body: JSON.stringify({
+        employeeId: nextLog.employeeId,
+        workDate: nextLog.workDate,
+        summary: nextLog.summary,
+        tasks: nextLog.tasks,
+      }),
+    });
+    return normalizeWorkLogCounts(result.workLog);
+  }
+
+  async function addWorkComment() {
+    if (!auth || !employee || !workLog || !newCommentText.trim()) return;
+
+    const now = new Date().toISOString();
+    const optimisticComment: WorkComment = {
+      id: crypto.randomUUID(),
+      authorEmployeeId: employee.id,
+      authorName: employee.name,
+      text: newCommentText.trim().slice(0, 500),
+      createdAt: now,
+    };
+    const optimisticLog = normalizeWorkLogCounts({
+      ...workLog,
+      comments: [...workLog.comments, optimisticComment],
+    });
+    setNewCommentText("");
+    setWorkLog(optimisticLog);
+    rememberWorkLog(optimisticLog);
+    updateTeamMonthWorkSummary(optimisticLog);
+    updateTeamTodayWorkLog(optimisticLog);
+    setIsCommentSaving(true);
+
+    try {
+      const result = await apiFetch<{ workLog: WorkLog }>("/api/work-log", {
+        method: "POST",
+        auth,
+        body: JSON.stringify({
+          employeeId: workLog.employeeId,
+          workDate: workLog.workDate,
+          text: optimisticComment.text,
+        }),
+      });
+      const savedLog = normalizeWorkLogCounts(result.workLog);
+      setWorkLog(savedLog);
+      rememberWorkLog(savedLog);
+      updateTeamMonthWorkSummary(savedLog);
+      updateTeamTodayWorkLog(savedLog);
+    } catch (error) {
+      setWorkLogMessage(error instanceof Error ? error.message : "댓글을 저장하지 못했습니다.");
+      void refreshWorkLogFromServer(optimisticLog, auth, "modal");
+    } finally {
+      setIsCommentSaving(false);
+    }
+  }
+
+  async function updateWorkComment(commentId: string, text: string) {
+    const nextText = text.trim().slice(0, 500);
+    if (!auth || !workLog || !nextText) return;
+
+    const optimisticLog = normalizeWorkLogCounts({
+      ...workLog,
+      comments: workLog.comments.map((comment) =>
+        comment.id === commentId ? { ...comment, text: nextText } : comment,
+      ),
+    });
+    setPendingCommentId(commentId);
+    setEditingCommentId(null);
+    setEditingCommentText("");
+    setWorkLog(optimisticLog);
+    rememberWorkLog(optimisticLog);
+    updateTeamMonthWorkSummary(optimisticLog);
+    updateTeamTodayWorkLog(optimisticLog);
+
+    try {
+      const result = await apiFetch<{ workLog: WorkLog }>(
+        `/api/work-log/comments/${encodeURIComponent(commentId)}`,
+        {
+          method: "PATCH",
+          auth,
+          body: JSON.stringify({
+            employeeId: workLog.employeeId,
+            workDate: workLog.workDate,
+            text: nextText,
+          }),
+        },
+      );
+      const savedLog = normalizeWorkLogCounts(result.workLog);
+      setWorkLog(savedLog);
+      rememberWorkLog(savedLog);
+      updateTeamMonthWorkSummary(savedLog);
+      updateTeamTodayWorkLog(savedLog);
+    } catch (error) {
+      setWorkLogMessage(error instanceof Error ? error.message : "댓글을 수정하지 못했습니다.");
+      void refreshWorkLogFromServer(optimisticLog, auth, "modal");
+    } finally {
+      setPendingCommentId(null);
+    }
+  }
+
+  async function deleteWorkComment(commentId: string) {
+    if (!auth || !workLog) return;
+
+    const optimisticLog = normalizeWorkLogCounts({
+      ...workLog,
+      comments: workLog.comments.filter((comment) => comment.id !== commentId),
+    });
+    setPendingCommentId(commentId);
+    setWorkLog(optimisticLog);
+    rememberWorkLog(optimisticLog);
+    updateTeamMonthWorkSummary(optimisticLog);
+    updateTeamTodayWorkLog(optimisticLog);
+
     try {
       const params = new URLSearchParams({
-        employeeId: employee.id,
-        workDate: status.kstDate,
+        employeeId: workLog.employeeId,
+        workDate: workLog.workDate,
       });
-      const result = await apiFetch<{ workLog: WorkLog }>(`/api/work-log?${params.toString()}`, {
-        auth,
-      });
-      setTodayWorkLog(result.workLog);
+      const result = await apiFetch<{ workLog: WorkLog }>(
+        `/api/work-log/comments/${encodeURIComponent(commentId)}?${params.toString()}`,
+        {
+          method: "DELETE",
+          auth,
+        },
+      );
+      const savedLog = normalizeWorkLogCounts(result.workLog);
+      setWorkLog(savedLog);
+      rememberWorkLog(savedLog);
+      updateTeamMonthWorkSummary(savedLog);
+      updateTeamTodayWorkLog(savedLog);
     } catch (error) {
-      setTodayWorkMessage(error instanceof Error ? error.message : "오늘 업무를 불러오지 못했습니다.");
+      setWorkLogMessage(error instanceof Error ? error.message : "댓글을 삭제하지 못했습니다.");
+      void refreshWorkLogFromServer(optimisticLog, auth, "modal");
     } finally {
-      setIsTodayWorkLoading(false);
+      setPendingCommentId(null);
     }
+  }
+
+  async function refreshWorkLogFromServer(
+    currentLog: WorkLog,
+    requestAuth: StoredAuth,
+    target: "modal" | "today",
+  ) {
+    try {
+      const freshLog = await fetchWorkLog(currentLog, requestAuth, { force: true });
+      if (target === "today") {
+        setTodayWorkLog(freshLog);
+      } else {
+        setWorkLog(freshLog);
+      }
+      updateTeamMonthWorkSummary(freshLog);
+      updateTeamTodayWorkLog(freshLog);
+    } catch {
+      // Keep the optimistic state visible; the explicit save error message is already shown.
+    }
+  }
+
+  function rememberWorkLog(nextLog: WorkLog) {
+    workLogCacheRef.current.set(getWorkLogCacheKey(nextLog.employeeId, nextLog.workDate), nextLog);
   }
 
   async function persistTodayWorkLog(nextLog: WorkLog) {
     if (!auth) return;
 
-    setTodayWorkLog(nextLog);
+    const optimisticLog = normalizeWorkLogCounts(nextLog);
+    const seq = todayWorkLogSaveSeqRef.current + 1;
+    todayWorkLogSaveSeqRef.current = seq;
+    setTodayWorkLog(optimisticLog);
     setTodayWorkMessage("");
+    rememberWorkLog(optimisticLog);
+    updateTeamMonthWorkSummary(optimisticLog);
+    updateTeamTodayWorkLog(optimisticLog);
+    setWorkLog((currentLog) =>
+      currentLog?.employeeId === optimisticLog.employeeId &&
+      currentLog.workDate === optimisticLog.workDate
+        ? optimisticLog
+        : currentLog,
+    );
     setIsTodayWorkSaving(true);
-    try {
-      const result = await apiFetch<{ workLog: WorkLog }>("/api/work-log", {
-        method: "PUT",
-        auth,
-        body: JSON.stringify({
-          employeeId: nextLog.employeeId,
-          workDate: nextLog.workDate,
-          summary: nextLog.summary,
-          tasks: nextLog.tasks,
-        }),
+    const requestAuth = auth;
+    const saveJob = todayWorkLogSaveChainRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        try {
+          const savedLog = await saveWorkLogRequest(optimisticLog, requestAuth);
+          rememberWorkLog(savedLog);
+          if (todayWorkLogSaveSeqRef.current === seq) {
+            setTodayWorkLog(savedLog);
+            updateTeamMonthWorkSummary(savedLog);
+            updateTeamTodayWorkLog(savedLog);
+            setWorkLog((currentLog) =>
+              currentLog?.employeeId === savedLog.employeeId &&
+              currentLog.workDate === savedLog.workDate
+                ? savedLog
+                : currentLog,
+            );
+          }
+        } catch (error) {
+          if (todayWorkLogSaveSeqRef.current === seq) {
+            setTodayWorkMessage(error instanceof Error ? error.message : "오늘 업무를 저장하지 못했습니다.");
+            void refreshWorkLogFromServer(optimisticLog, requestAuth, "today");
+          }
+        } finally {
+          if (todayWorkLogSaveSeqRef.current === seq) {
+            setIsTodayWorkSaving(false);
+          }
+        }
       });
-      setTodayWorkLog(result.workLog);
-      updateTeamMonthWorkSummary(result.workLog);
-      setWorkLog((currentLog) =>
-        currentLog?.employeeId === result.workLog.employeeId &&
-        currentLog.workDate === result.workLog.workDate
-          ? result.workLog
-          : currentLog,
-      );
-    } catch (error) {
-      setTodayWorkMessage(error instanceof Error ? error.message : "오늘 업무를 저장하지 못했습니다.");
-    } finally {
-      setIsTodayWorkSaving(false);
-    }
+    todayWorkLogSaveChainRef.current = saveJob.catch(() => undefined);
   }
 
   function closeWorkLog() {
+    workLogLoadRequestIdRef.current += 1;
     setSelectedWorkRecord(null);
     setWorkLog(null);
     setWorkLogMessage("");
     setNewTaskText("");
+    setNewCommentText("");
+    setEditingCommentId(null);
+    setEditingCommentText("");
   }
 
   async function persistWorkLog(nextLog: WorkLog) {
     if (!auth) return;
 
-    setWorkLog(nextLog);
+    const optimisticLog = normalizeWorkLogCounts(nextLog);
+    const seq = workLogSaveSeqRef.current + 1;
+    workLogSaveSeqRef.current = seq;
+    setWorkLog(optimisticLog);
     setWorkLogMessage("");
+    rememberWorkLog(optimisticLog);
+    updateTeamMonthWorkSummary(optimisticLog);
+    updateTeamTodayWorkLog(optimisticLog);
+    setTodayWorkLog((currentLog) =>
+      currentLog?.employeeId === optimisticLog.employeeId &&
+      currentLog.workDate === optimisticLog.workDate
+        ? optimisticLog
+        : currentLog,
+    );
     setIsWorkLogSaving(true);
-
-    try {
-      const result = await apiFetch<{ workLog: WorkLog }>("/api/work-log", {
-        method: "PUT",
-        auth,
-        body: JSON.stringify({
-          employeeId: nextLog.employeeId,
-          workDate: nextLog.workDate,
-          summary: nextLog.summary,
-          tasks: nextLog.tasks,
-        }),
+    const requestAuth = auth;
+    const saveJob = workLogSaveChainRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        try {
+          const savedLog = await saveWorkLogRequest(optimisticLog, requestAuth);
+          rememberWorkLog(savedLog);
+          if (workLogSaveSeqRef.current === seq) {
+            setWorkLog(savedLog);
+            updateTeamMonthWorkSummary(savedLog);
+            updateTeamTodayWorkLog(savedLog);
+            setTodayWorkLog((currentLog) =>
+              currentLog?.employeeId === savedLog.employeeId &&
+              currentLog.workDate === savedLog.workDate
+                ? savedLog
+                : currentLog,
+            );
+          }
+        } catch (error) {
+          if (workLogSaveSeqRef.current === seq) {
+            setWorkLogMessage(error instanceof Error ? error.message : "업무 기록을 저장하지 못했습니다.");
+            void refreshWorkLogFromServer(optimisticLog, requestAuth, "modal");
+          }
+        } finally {
+          if (workLogSaveSeqRef.current === seq) {
+            setIsWorkLogSaving(false);
+          }
+        }
       });
-      setWorkLog(result.workLog);
-      updateTeamMonthWorkSummary(result.workLog);
-    } catch (error) {
-      setWorkLogMessage(error instanceof Error ? error.message : "업무 기록을 저장하지 못했습니다.");
-    } finally {
-      setIsWorkLogSaving(false);
-    }
+    workLogSaveChainRef.current = saveJob.catch(() => undefined);
   }
 
   function updateTeamMonthWorkSummary(nextLog: WorkLog) {
@@ -415,7 +850,7 @@ export function EmployeeApp() {
         return currentMonth;
       }
 
-      return {
+      const nextMonth = {
         ...currentMonth,
         records: currentMonth.records.map((record) =>
           record.employeeId === nextLog.employeeId && record.workDate === nextLog.workDate
@@ -423,11 +858,30 @@ export function EmployeeApp() {
                 ...record,
                 taskCount: nextLog.taskCount,
                 doneCount: nextLog.doneCount,
+                commentCount: nextLog.commentCount,
               }
             : record,
         ),
       };
+      teamMonthCacheRef.current.set(nextMonth.month, nextMonth);
+      return nextMonth;
     });
+  }
+
+  function updateTeamTodayWorkLog(nextLog: WorkLog) {
+    setTeamRecords((currentRecords) =>
+      currentRecords.map((record) =>
+        record.employeeId === nextLog.employeeId && record.workDate === nextLog.workDate
+          ? {
+              ...record,
+              taskCount: nextLog.taskCount,
+              doneCount: nextLog.doneCount,
+              commentCount: nextLog.commentCount,
+              tasks: nextLog.tasks,
+            }
+          : record,
+      ),
+    );
   }
 
   async function addWorkTask() {
@@ -436,7 +890,8 @@ export function EmployeeApp() {
     const now = new Date().toISOString();
     const nextLog = {
       ...workLog,
-      tasks: [
+      tasks: withTaskOrder([
+        ...workLog.tasks,
         {
           id: crypto.randomUUID(),
           text: newTaskText.trim(),
@@ -445,8 +900,7 @@ export function EmployeeApp() {
           createdAt: now,
           updatedAt: now,
         },
-        ...workLog.tasks,
-      ],
+      ]),
     };
     setNewTaskText("");
     await persistWorkLog(nextLog);
@@ -458,7 +912,8 @@ export function EmployeeApp() {
     const now = new Date().toISOString();
     const nextLog = {
       ...todayWorkLog,
-      tasks: [
+      tasks: withTaskOrder([
+        ...todayWorkLog.tasks,
         {
           id: crypto.randomUUID(),
           text: todayTaskText.trim(),
@@ -467,24 +922,25 @@ export function EmployeeApp() {
           createdAt: now,
           updatedAt: now,
         },
-        ...todayWorkLog.tasks,
-      ],
+      ]),
     };
     setTodayTaskText("");
     await persistTodayWorkLog(nextLog);
   }
 
   async function toggleWorkTask(taskId: string) {
-    if (!workLog || isWorkLogSaving) return;
+    if (!workLog) return;
 
     setPendingWorkTaskId(taskId);
     try {
       await persistWorkLog({
         ...workLog,
-        tasks: workLog.tasks.map((task) =>
-          task.id === taskId
-            ? { ...task, done: !task.done, updatedAt: new Date().toISOString() }
-            : task,
+        tasks: withTaskOrder(
+          workLog.tasks.map((task) =>
+            task.id === taskId
+              ? { ...task, done: !task.done, updatedAt: new Date().toISOString() }
+              : task,
+          ),
         ),
       });
     } finally {
@@ -493,16 +949,18 @@ export function EmployeeApp() {
   }
 
   async function toggleTodayTask(taskId: string) {
-    if (!todayWorkLog || isTodayWorkSaving) return;
+    if (!todayWorkLog) return;
 
     setPendingTodayTaskId(taskId);
     try {
       await persistTodayWorkLog({
         ...todayWorkLog,
-        tasks: todayWorkLog.tasks.map((task) =>
-          task.id === taskId
-            ? { ...task, done: !task.done, updatedAt: new Date().toISOString() }
-            : task,
+        tasks: withTaskOrder(
+          todayWorkLog.tasks.map((task) =>
+            task.id === taskId
+              ? { ...task, done: !task.done, updatedAt: new Date().toISOString() }
+              : task,
+          ),
         ),
       });
     } finally {
@@ -512,7 +970,7 @@ export function EmployeeApp() {
 
   async function updateWorkTask(taskId: string, text: string) {
     const nextText = text.trim();
-    if (!workLog || isWorkLogSaving || !nextText) return;
+    if (!workLog || !nextText) return;
 
     setPendingWorkTaskId(taskId);
     try {
@@ -531,7 +989,7 @@ export function EmployeeApp() {
 
   async function updateTodayTask(taskId: string, text: string) {
     const nextText = text.trim();
-    if (!todayWorkLog || isTodayWorkSaving || !nextText) return;
+    if (!todayWorkLog || !nextText) return;
 
     setPendingTodayTaskId(taskId);
     try {
@@ -587,7 +1045,7 @@ export function EmployeeApp() {
   }
 
   async function removeWorkTask(taskId: string) {
-    if (!workLog || isWorkLogSaving) return;
+    if (!workLog) return;
 
     setPendingWorkTaskId(taskId);
     try {
@@ -601,7 +1059,7 @@ export function EmployeeApp() {
   }
 
   async function removeTodayTask(taskId: string) {
-    if (!todayWorkLog || isTodayWorkSaving) return;
+    if (!todayWorkLog) return;
 
     setPendingTodayTaskId(taskId);
     try {
@@ -612,6 +1070,24 @@ export function EmployeeApp() {
     } finally {
       setPendingTodayTaskId(null);
     }
+  }
+
+  async function reorderWorkTasks(nextTasks: WorkTask[]) {
+    if (!workLog) return;
+
+    await persistWorkLog({
+      ...workLog,
+      tasks: withTaskOrder(nextTasks),
+    });
+  }
+
+  async function reorderTodayTasks(nextTasks: WorkTask[]) {
+    if (!todayWorkLog) return;
+
+    await persistTodayWorkLog({
+      ...todayWorkLog,
+      tasks: withTaskOrder(nextTasks),
+    });
   }
 
   async function logout() {
@@ -630,6 +1106,9 @@ export function EmployeeApp() {
     setTeamRecords([]);
     setTeamMonth(null);
     setTodayWorkLog(null);
+    setNewCommentText("");
+    setEditingCommentId(null);
+    setEditingCommentText("");
   }
 
   if (isLoading) {
@@ -658,6 +1137,12 @@ export function EmployeeApp() {
   const canPressCheckOut =
     Boolean(status?.canCheckOut || status?.todayRecord?.checkInAt) && !isMutating;
   const canCancelCheckOut = Boolean(status?.todayRecord?.checkOutAt) && !isMutating;
+  const visibleTeamRecords = teamRecords.filter(
+    (record) =>
+      record.checkInAt &&
+      record.employeeId !== employee.id &&
+      !formerTeamMemberNames.has(record.employeeName),
+  );
 
   return (
     <>
@@ -768,12 +1253,7 @@ export function EmployeeApp() {
 
         <div className="mt-5 rounded border border-line bg-field/60">
           <div className="px-3 py-3">
-            <span>
-              <span className="block text-sm font-bold text-ink">오늘 할 일 / 한 일</span>
-              <span className="mt-0.5 block text-xs text-muted">
-                오늘 할 일을 적어두고 끝난 항목은 체크하세요.
-              </span>
-            </span>
+            <span className="block text-sm font-bold text-ink">오늘 할 일 / 한 일</span>
           </div>
           <QuickWorkLogPanel
             isLoading={isTodayWorkLoading}
@@ -782,6 +1262,7 @@ export function EmployeeApp() {
             newTaskText={todayTaskText}
             onAddTask={addTodayTask}
             onRemoveTask={requestRemoveTodayTask}
+            onReorderTasks={reorderTodayTasks}
             onTaskTextChange={setTodayTaskText}
             onToggleTask={toggleTodayTask}
             onUpdateTask={updateTodayTask}
@@ -801,27 +1282,29 @@ export function EmployeeApp() {
             </span>
           ) : null}
         </div>
-        <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
-          {teamRecords.map((record) => (
-            <div
-              className="grid grid-cols-[1fr_auto] gap-3 rounded border border-line bg-field/70 px-3 py-2 text-sm"
+        <div className="mt-3 space-y-2">
+          {visibleTeamRecords.map((record) => (
+            <details
+              className="group rounded border border-line bg-field/70 px-3 py-2 text-sm"
               key={record.employeeId}
+              open
             >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="truncate font-bold text-ink">{record.employeeName}</span>
-                  <TeamStatusBadge record={record} />
+              <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate font-bold text-ink">{record.employeeName}</span>
+                    <TeamStatusBadge record={record} />
+                  </div>
+                  <p className="mt-1 text-xs text-muted">{formatKstTimeRange(record)}</p>
                 </div>
-                <p className="mt-1 text-xs text-muted">{formatKstTimeRange(record)}</p>
-              </div>
-              {record.employeeId === employee.id ? (
-                <span className="self-start rounded bg-white px-2 py-1 text-xs font-bold text-accent ring-1 ring-line">
-                  나
-                </span>
-              ) : null}
-            </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <ChevronDownIcon className="mt-1 h-4 w-4 text-muted transition group-open:rotate-180" />
+                </div>
+              </summary>
+              <TodayTeamTasks record={record} />
+            </details>
           ))}
-          {teamRecords.length === 0 && isRefreshing ? (
+          {visibleTeamRecords.length === 0 && isRefreshing ? (
             <div className="space-y-2">
               {[0, 1, 2].map((index) => (
                 <div className="rounded border border-line bg-field/70 px-3 py-3" key={index}>
@@ -830,29 +1313,55 @@ export function EmployeeApp() {
               ))}
             </div>
           ) : null}
-          {teamRecords.length === 0 && !isRefreshing ? (
+          {visibleTeamRecords.length === 0 && !isRefreshing ? (
             <p className="rounded border border-line py-5 text-center text-sm text-muted">
-              아직 오늘의 현황이 없어요. 첫 기록을 기다리는 중이에요.
+              아직 출근한 사람이 없어요. 첫 기록을 기다리는 중이에요.
             </p>
           ) : null}
         </div>
       </section>
 
       <section className="mt-4 w-full max-w-4xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-bold text-ink">이번 달 팀 달력 🗓️</h2>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <button
+                aria-label="이전 달"
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-line bg-white text-sm font-bold text-muted transition hover:border-slate-300 hover:bg-field hover:text-ink disabled:bg-slate-100 disabled:text-slate-400"
+                disabled={isTeamMonthLoading}
+                onClick={() => moveTeamMonth(-1)}
+                type="button"
+              >
+                ‹
+              </button>
+              <h2 className="min-w-0 truncate text-base font-bold text-ink">
+                {formatMonthLabel(teamMonth?.month)} 팀 달력 🗓️
+              </h2>
+              <button
+                aria-label="다음 달"
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-line bg-white text-sm font-bold text-muted transition hover:border-slate-300 hover:bg-field hover:text-ink disabled:bg-slate-100 disabled:text-slate-400"
+                disabled={isTeamMonthLoading}
+                onClick={() => moveTeamMonth(1)}
+                type="button"
+              >
+                ›
+              </button>
+            </div>
             <p className="mt-1 text-xs text-muted">날짜별로 서로의 하루 흐름을 가볍게 볼 수 있어요.</p>
           </div>
-          {isRefreshing ? (
-            <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted">
-              <Spinner className="h-3 w-3" />
-              갱신 중
-            </span>
-          ) : null}
+          <div className="flex shrink-0 items-center gap-2">
+            {isRefreshing || isTeamMonthLoading ? (
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted">
+                <Spinner className="h-3 w-3" />
+                갱신 중
+              </span>
+            ) : null}
+            <CalendarLegend />
+          </div>
         </div>
         <TeamMonthCalendar
           currentEmployeeId={employee.id}
+          onPrefetchRecord={prefetchWorkLog}
           onSelectRecord={openWorkLog}
           teamMonth={teamMonth}
         />
@@ -880,7 +1389,11 @@ export function EmployeeApp() {
             </thead>
             <tbody>
               {records.map((record) => (
-                <tr key={record.id} className="border-b border-line last:border-0">
+                <tr
+                  key={record.id}
+                  className="cursor-pointer border-b border-line transition hover:bg-field/70 last:border-0"
+                  onClick={() => openAttendanceWorkLog(record)}
+                >
                   <td className="py-2 pr-3 font-medium">{record.workDate}</td>
                   <td className="py-2 pr-3">{formatKstDateTime(record.checkInAt)}</td>
                   <td className="py-2 pr-3">{formatKstDateTime(record.checkOutAt)}</td>
@@ -918,17 +1431,37 @@ export function EmployeeApp() {
     </main>
     {selectedWorkRecord ? (
       <WorkLogModal
-        canEdit={selectedWorkRecord.employeeId === employee.id || employee.role === "admin"}
+        canEdit={selectedWorkRecord.employeeId === employee.id}
+        currentEmployeeId={employee.id}
+        editingCommentId={editingCommentId}
+        editingCommentText={editingCommentText}
+        isCommentSaving={isCommentSaving}
         isLoading={isWorkLogLoading}
         isSaving={isWorkLogSaving}
         message={workLogMessage}
+        newCommentText={newCommentText}
         newTaskText={newTaskText}
+        onAddComment={addWorkComment}
         onAddTask={addWorkTask}
         onClose={closeWorkLog}
+        onCommentTextChange={setNewCommentText}
+        onDeleteComment={deleteWorkComment}
+        onEditCommentCancel={() => {
+          setEditingCommentId(null);
+          setEditingCommentText("");
+        }}
+        onEditCommentStart={(comment) => {
+          setEditingCommentId(comment.id);
+          setEditingCommentText(comment.text);
+        }}
+        onEditCommentTextChange={setEditingCommentText}
         onRemoveTask={requestRemoveWorkTask}
+        onReorderTasks={reorderWorkTasks}
         onTaskTextChange={setNewTaskText}
         onToggleTask={toggleWorkTask}
+        onUpdateComment={updateWorkComment}
         onUpdateTask={updateWorkTask}
+        pendingCommentId={pendingCommentId}
         processingTaskId={pendingWorkTaskId}
         record={selectedWorkRecord}
         workLog={workLog}
@@ -951,12 +1484,69 @@ function LoadingLine() {
   return <span className="block h-4 w-20 animate-pulse rounded bg-line" />;
 }
 
+function TodayTeamTasks({ record }: { record: TeamAttendanceRecord }) {
+  const tasks = record.tasks ?? [];
+  const mainTasks = tasks.filter((task) => task.section !== "later");
+  const laterTasks = tasks.filter((task) => task.section === "later");
+
+  if (!tasks.length) {
+    return (
+      <p className="mt-3 rounded border border-dashed border-line bg-white/60 px-3 py-3 text-sm text-muted">
+        아직 공유된 업무가 없어요.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-3 space-y-3">
+      <TaskPreviewList tasks={mainTasks} />
+      {laterTasks.length ? (
+        <div>
+          <p className="mb-1 text-[11px] font-bold text-muted">후순위</p>
+          <TaskPreviewList tasks={laterTasks} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TaskPreviewList({ tasks }: { tasks: WorkTask[] }) {
+  if (!tasks.length) {
+    return null;
+  }
+
+  return (
+      <ul className="space-y-1.5">
+      {tasks.map((task) => (
+        <li
+          className="flex items-center gap-2 rounded bg-white/75 px-2.5 py-2 text-sm leading-relaxed text-ink ring-1 ring-line/70"
+          key={task.id}
+        >
+          <span
+            aria-hidden="true"
+            className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold ${
+              task.done
+                ? "border-accent bg-accent text-white"
+                : "border-slate-300 bg-white text-transparent"
+            }`}
+          >
+            ✓
+          </span>
+          <span className={task.done ? "text-muted line-through" : ""}>{task.text}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function TeamMonthCalendar({
   currentEmployeeId,
+  onPrefetchRecord,
   onSelectRecord,
   teamMonth,
 }: {
   currentEmployeeId: string;
+  onPrefetchRecord: (record: TeamAttendanceRecord) => void;
   onSelectRecord: (record: TeamAttendanceRecord) => void;
   teamMonth: TeamMonthAttendance | null;
 }) {
@@ -975,7 +1565,7 @@ function TeamMonthCalendar({
     recordsByDate.set(record.workDate, dayRecords);
   }
 
-  const days = getCalendarDays(teamMonth.startDate, teamMonth.endDate);
+  const days = getCalendarDays(teamMonth);
 
   return (
     <div className="mt-3 overflow-hidden rounded border-l border-t border-line">
@@ -992,31 +1582,34 @@ function TeamMonthCalendar({
         </div>
         <div className="grid grid-cols-7">
           {days.map((day) => {
-            const dayRecords = day.date ? recordsByDate.get(day.date) ?? [] : [];
-            const dayOfWeek = day.date ? dateStringToUtcDate(day.date).getUTCDay() : null;
+            const dayRecords = recordsByDate.get(day.date) ?? [];
+            const dayOfWeek = dateStringToUtcDate(day.date).getUTCDay();
 
             return (
               <div
-                className="min-h-32 min-w-0 border-b border-r border-line bg-white p-1.5 sm:min-h-36 sm:p-2"
+                className={`min-h-32 min-w-0 border-b border-r border-line p-1.5 sm:min-h-36 sm:p-2 ${
+                  day.isCurrentMonth ? "bg-white" : "bg-field/35"
+                }`}
                 key={day.key}
               >
-                {day.date ? (
-                  <>
-                    <div className={`mb-1 text-right text-[10px] font-bold sm:mb-2 sm:text-xs ${weekendTextClass(dayOfWeek) || "text-muted"}`}>
-                      {Number(day.date.slice(8, 10))}
-                    </div>
-                    <div className="space-y-1">
-                      {dayRecords.map((record) => (
-                        <TeamCalendarRecord
-                          currentEmployeeId={currentEmployeeId}
-                          key={`${record.employeeId}-${record.workDate}`}
-                          onSelect={onSelectRecord}
-                          record={record}
-                        />
-                      ))}
-                    </div>
-                  </>
-                ) : null}
+                <div
+                  className={`mb-1 text-right text-[10px] font-bold sm:mb-2 sm:text-xs ${
+                    day.isCurrentMonth ? weekendTextClass(dayOfWeek) || "text-muted" : "text-slate-400"
+                  }`}
+                >
+                  {Number(day.date.slice(8, 10))}
+                </div>
+                <div className={day.isCurrentMonth ? "space-y-1" : "space-y-1 opacity-65"}>
+                  {dayRecords.map((record) => (
+                    <TeamCalendarRecord
+                      currentEmployeeId={currentEmployeeId}
+                      key={`${record.employeeId}-${record.workDate}`}
+                      onPrefetch={onPrefetchRecord}
+                      onSelect={onSelectRecord}
+                      record={record}
+                    />
+                  ))}
+                </div>
               </div>
             );
           })}
@@ -1026,12 +1619,43 @@ function TeamMonthCalendar({
   );
 }
 
+function CalendarLegend() {
+  const items = [
+    { className: "border-warn/50 bg-warn/10", label: "10시간+" },
+    { className: "border-danger/50 bg-danger/10", label: "12시간+" },
+    { className: "border-accent/45 bg-accentSoft", label: "완료 5개+" },
+    { className: "border-ink/30 bg-slate-100", label: "전부 완료" },
+  ];
+
+  return (
+    <div
+      aria-label="달력 범례"
+      className="hidden flex-wrap justify-end gap-1.5 text-[11px] text-muted sm:flex"
+    >
+      {items.map((item) => (
+        <span
+          className="inline-flex items-center gap-1 rounded border border-line bg-field/70 px-2 py-1"
+          key={item.label}
+        >
+          <span
+            aria-hidden="true"
+            className={`h-2.5 w-2.5 rounded-sm border ${item.className}`}
+          />
+          <span>{item.label}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function TeamCalendarRecord({
   currentEmployeeId,
+  onPrefetch,
   onSelect,
   record,
 }: {
   currentEmployeeId: string;
+  onPrefetch: (record: TeamAttendanceRecord) => void;
   onSelect: (record: TeamAttendanceRecord) => void;
   record: TeamAttendanceRecord;
 }) {
@@ -1040,25 +1664,71 @@ function TeamCalendarRecord({
   const timeRangeText = formatKstTimeRange(record);
   const workedMinutes = getWorkedMinutes(record);
   const durationText = workedMinutes === null ? "" : formatWorkedDuration(workedMinutes);
-  const isLongDay = workedMinutes !== null && workedMinutes >= 10 * 60;
-  const isVeryLongDay = workedMinutes !== null && workedMinutes >= 12 * 60;
-  const cardClassName = isVeryLongDay
-    ? "border-warn/40 bg-warn/10 text-warn shadow-[0_0_0_1px_rgba(234,88,12,0.08)]"
-    : isLongDay || isMe
-      ? "border-accent/30 bg-accentSoft text-accent"
-      : "border-line bg-field/80 text-ink";
+  const marker = getCalendarMarker(record, workedMinutes);
+  const markerClassName = marker?.className ?? "border-line bg-field/80 text-ink";
 
   return (
     <button
-      className={`flex h-7 w-full min-w-0 items-center justify-between gap-1 rounded border px-1.5 text-left text-[10px] leading-none transition hover:border-accent/50 hover:shadow-md hover:ring-1 hover:ring-inset hover:ring-accent/20 sm:h-8 sm:px-2 sm:text-xs ${cardClassName}`}
+      className={`flex h-7 w-full min-w-0 items-center justify-between gap-1 rounded border px-1.5 text-left text-[10px] leading-none transition hover:border-accent/50 hover:bg-white hover:shadow-md hover:ring-1 hover:ring-inset hover:ring-accent/20 sm:h-8 sm:px-2 sm:text-xs ${markerClassName}`}
+      onFocus={() => onPrefetch(record)}
       onClick={() => onSelect(record)}
-      title={`${record.employeeName} ${timeRangeText}${durationText ? ` · ${durationText}` : ""}`}
+      onPointerEnter={() => onPrefetch(record)}
+      title={`${record.employeeName}${isMe ? " (나)" : ""} ${timeRangeText}${durationText ? ` · ${durationText}` : ""}${marker ? ` · ${marker.title}` : ""}${record.commentCount ? ` · 댓글 ${record.commentCount}개` : ""}`}
       type="button"
     >
       <span className="min-w-0 truncate font-bold">{record.employeeName}</span>
-      <span className="shrink-0 text-[10px] font-semibold opacity-80 sm:text-[11px]">{checkInText}</span>
+      <span className="flex shrink-0 items-center gap-1 pl-1">
+        {record.commentCount ? (
+          <span
+            aria-label={`댓글 ${record.commentCount}개`}
+            className="text-[10px] font-bold opacity-70"
+            title={`댓글 ${record.commentCount}개`}
+          >
+            💬{record.commentCount}
+          </span>
+        ) : null}
+        <span className="text-[10px] font-semibold opacity-80 sm:text-[11px]">{checkInText}</span>
+      </span>
     </button>
   );
+}
+
+function getCalendarMarker(
+  record: Pick<TeamAttendanceRecord, "doneCount" | "taskCount">,
+  workedMinutes: number | null,
+) {
+  const taskCount = record.taskCount ?? 0;
+  const doneCount = record.doneCount ?? 0;
+
+  if (workedMinutes !== null && workedMinutes >= 12 * 60) {
+    return {
+      className: "border-danger/50 bg-danger/10 text-danger",
+      title: "12시간 이상 열일",
+    };
+  }
+
+  if (taskCount >= 3 && doneCount === taskCount) {
+    return {
+      className: "border-ink/30 bg-slate-100 text-ink",
+      title: "업무 전부 완료",
+    };
+  }
+
+  if (doneCount >= 5) {
+    return {
+      className: "border-accent/45 bg-accentSoft text-accent",
+      title: "완료 업무 5개 이상",
+    };
+  }
+
+  if (workedMinutes !== null && workedMinutes >= 10 * 60) {
+    return {
+      className: "border-warn/50 bg-warn/10 text-warn",
+      title: "10시간 이상 열일",
+    };
+  }
+
+  return null;
 }
 
 function QuickWorkLogPanel({
@@ -1068,6 +1738,7 @@ function QuickWorkLogPanel({
   newTaskText,
   onAddTask,
   onRemoveTask,
+  onReorderTasks,
   onTaskTextChange,
   onToggleTask,
   onUpdateTask,
@@ -1080,6 +1751,7 @@ function QuickWorkLogPanel({
   newTaskText: string;
   onAddTask: () => void;
   onRemoveTask: (task: WorkTask) => void;
+  onReorderTasks: (tasks: WorkTask[]) => void;
   onTaskTextChange: (text: string) => void;
   onToggleTask: (taskId: string) => void;
   onUpdateTask: (taskId: string, text: string) => void;
@@ -1091,7 +1763,7 @@ function QuickWorkLogPanel({
   return (
     <div className="border-t border-line px-3 pb-3">
       {isLoading ? (
-        <div className="flex items-center gap-2 py-5 text-sm font-semibold text-muted">
+        <div className="flex items-center justify-center gap-2 py-5 text-sm font-semibold text-muted">
           <Spinner />
           오늘 업무를 불러오는 중
         </div>
@@ -1103,11 +1775,11 @@ function QuickWorkLogPanel({
             canEdit
             isSaving={isSaving}
             onRemoveTask={onRemoveTask}
+            onReorderTasks={onReorderTasks}
             onToggleTask={onToggleTask}
             onUpdateTask={onUpdateTask}
             processingTaskId={processingTaskId}
             tasks={tasks}
-            title="오늘의 업무"
           />
 
           {tasks.length === 0 ? (
@@ -1119,7 +1791,6 @@ function QuickWorkLogPanel({
           <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
             <input
               className="field text-sm"
-              disabled={isSaving}
               onChange={(event) => onTaskTextChange(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
@@ -1132,7 +1803,7 @@ function QuickWorkLogPanel({
             />
             <button
               className="primary-button px-4 py-2 text-sm"
-              disabled={isSaving || !newTaskText.trim()}
+              disabled={!newTaskText.trim()}
               onClick={onAddTask}
               type="button"
             >
@@ -1153,36 +1824,65 @@ function QuickWorkLogPanel({
 
 function WorkLogModal({
   canEdit,
+  currentEmployeeId,
+  editingCommentId,
+  editingCommentText,
+  isCommentSaving,
   isLoading,
   isSaving,
   message,
+  newCommentText,
   newTaskText,
+  onAddComment,
   onAddTask,
   onClose,
+  onCommentTextChange,
+  onDeleteComment,
+  onEditCommentCancel,
+  onEditCommentStart,
+  onEditCommentTextChange,
   onRemoveTask,
+  onReorderTasks,
   onTaskTextChange,
   onToggleTask,
+  onUpdateComment,
   onUpdateTask,
+  pendingCommentId,
   processingTaskId,
   record,
   workLog,
 }: {
   canEdit: boolean;
+  currentEmployeeId: string;
+  editingCommentId: string | null;
+  editingCommentText: string;
+  isCommentSaving: boolean;
   isLoading: boolean;
   isSaving: boolean;
   message: string;
+  newCommentText: string;
   newTaskText: string;
+  onAddComment: () => void;
   onAddTask: () => void;
   onClose: () => void;
+  onCommentTextChange: (text: string) => void;
+  onDeleteComment: (commentId: string) => void;
+  onEditCommentCancel: () => void;
+  onEditCommentStart: (comment: WorkComment) => void;
+  onEditCommentTextChange: (text: string) => void;
   onRemoveTask: (task: WorkTask) => void;
+  onReorderTasks: (tasks: WorkTask[]) => void;
   onTaskTextChange: (text: string) => void;
   onToggleTask: (taskId: string) => void;
+  onUpdateComment: (commentId: string, text: string) => void;
   onUpdateTask: (taskId: string, text: string) => void;
+  pendingCommentId: string | null;
   processingTaskId: string | null;
   record: TeamAttendanceRecord;
   workLog: WorkLog | null;
 }) {
   const tasks = workLog?.tasks ?? [];
+  const comments = workLog?.comments ?? [];
 
   return (
     <div
@@ -1227,6 +1927,7 @@ function WorkLogModal({
                 canEdit={canEdit}
                 isSaving={isSaving}
                 onRemoveTask={onRemoveTask}
+                onReorderTasks={onReorderTasks}
                 onToggleTask={onToggleTask}
                 onUpdateTask={onUpdateTask}
                 processingTaskId={processingTaskId}
@@ -1246,7 +1947,6 @@ function WorkLogModal({
                   <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
                     <input
                       className="field"
-                      disabled={isSaving}
                       onChange={(event) => onTaskTextChange(event.target.value)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter") {
@@ -1259,7 +1959,7 @@ function WorkLogModal({
                     />
                     <button
                       className="primary-button px-4 py-2 text-sm"
-                      disabled={isSaving || !newTaskText.trim()}
+                      disabled={!newTaskText.trim()}
                       onClick={onAddTask}
                       type="button"
                     >
@@ -1272,6 +1972,137 @@ function WorkLogModal({
                   다른 사람의 업무 기록은 참고용으로만 볼 수 있어요.
                 </p>
               )}
+
+              <section className="rounded border border-line p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-bold text-ink">댓글</p>
+                  <span className="text-xs font-semibold text-muted">{comments.length}개</span>
+                </div>
+                {comments.length ? (
+                  <ul className="mt-3 space-y-2">
+                    {comments.map((comment) => {
+                      const isMine = comment.authorEmployeeId === currentEmployeeId;
+                      const isEditing = editingCommentId === comment.id;
+                      const isPending = pendingCommentId === comment.id;
+
+                      return (
+                        <li className="rounded bg-field/70 px-3 py-2 text-sm" key={comment.id}>
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="font-bold text-ink">{comment.authorName}</span>
+                            <span className="shrink-0 text-[11px] text-muted">
+                              {formatKstDateTime(comment.createdAt)}
+                            </span>
+                          </div>
+                          {isEditing ? (
+                            <div className="mt-2 space-y-2">
+                              <textarea
+                                autoFocus
+                                className="field min-h-20 resize-y text-sm"
+                                disabled={isPending}
+                                onChange={(event) => onEditCommentTextChange(event.target.value)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Escape") {
+                                    event.preventDefault();
+                                    onEditCommentCancel();
+                                  }
+                                  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                                    event.preventDefault();
+                                    onUpdateComment(comment.id, editingCommentText);
+                                  }
+                                }}
+                                value={editingCommentText}
+                              />
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  className="secondary-button px-3 py-1.5 text-xs"
+                                  disabled={isPending}
+                                  onClick={onEditCommentCancel}
+                                  type="button"
+                                >
+                                  취소
+                                </button>
+                                <button
+                                  className="primary-button px-3 py-1.5 text-xs"
+                                  disabled={isPending || !editingCommentText.trim()}
+                                  onClick={() => onUpdateComment(comment.id, editingCommentText)}
+                                  type="button"
+                                >
+                                  저장
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <p className="mt-1 whitespace-pre-wrap break-words text-ink">{comment.text}</p>
+                              {isMine ? (
+                                <div className="mt-2 flex justify-end gap-2">
+                                  {isPending ? (
+                                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted">
+                                      <Spinner className="h-3 w-3" />
+                                      처리 중
+                                    </span>
+                                  ) : (
+                                    <>
+                                      <button
+                                        className="text-xs font-semibold text-muted underline-offset-4 hover:text-ink hover:underline"
+                                        onClick={() => onEditCommentStart(comment)}
+                                        type="button"
+                                      >
+                                        수정
+                                      </button>
+                                      <button
+                                        className="text-xs font-semibold text-danger underline-offset-4 hover:underline"
+                                        onClick={() => onDeleteComment(comment.id)}
+                                        type="button"
+                                      >
+                                        삭제
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              ) : null}
+                            </>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="mt-3 rounded border border-dashed border-line px-3 py-4 text-center text-sm text-muted">
+                    아직 댓글이 없어요.
+                  </p>
+                )}
+                <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+                  <input
+                    className="field text-sm"
+                    disabled={isCommentSaving}
+                    onChange={(event) => onCommentTextChange(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        onAddComment();
+                      }
+                    }}
+                    placeholder="댓글을 입력하세요"
+                    value={newCommentText}
+                  />
+                  <button
+                    className="secondary-button px-4 py-2 text-sm"
+                    disabled={isCommentSaving || !newCommentText.trim()}
+                    onClick={onAddComment}
+                    type="button"
+                  >
+                    {isCommentSaving ? (
+                      <>
+                        <Spinner className="mr-2 h-3 w-3" />
+                        저장
+                      </>
+                    ) : (
+                      "댓글"
+                    )}
+                  </button>
+                </div>
+              </section>
             </div>
           ) : null}
 
@@ -1290,6 +2121,7 @@ function TaskSection({
   canEdit,
   isSaving,
   onRemoveTask,
+  onReorderTasks,
   onToggleTask,
   onUpdateTask,
   processingTaskId,
@@ -1299,14 +2131,21 @@ function TaskSection({
   canEdit: boolean;
   isSaving: boolean;
   onRemoveTask: (task: WorkTask) => void;
+  onReorderTasks: (tasks: WorkTask[]) => void;
   onToggleTask: (taskId: string) => void;
   onUpdateTask: (taskId: string, text: string) => void;
   processingTaskId: string | null;
   tasks: WorkTask[];
-  title: string;
+  title?: string;
 }) {
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
+  const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const draggingTaskIdRef = useRef<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    placement: "before" | "after";
+    taskId: string;
+  } | null>(null);
 
   if (tasks.length === 0) {
     return null;
@@ -1332,28 +2171,137 @@ function TaskSection({
     cancelEditing();
   }
 
+  function handleDragStart(
+    event: DragEvent<HTMLSpanElement>,
+    task: WorkTask,
+    isEditing: boolean,
+    isProcessing: boolean,
+  ) {
+    if (!canEdit || isEditing || isProcessing) {
+      event.preventDefault();
+      return;
+    }
+
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", task.id);
+    event.dataTransfer.setData("application/x-attendance-task-id", task.id);
+    const row = event.currentTarget.closest("[data-task-row]") as HTMLElement | null;
+    if (row) {
+      const preview = row.cloneNode(true) as HTMLElement;
+      preview.style.position = "fixed";
+      preview.style.top = "-1000px";
+      preview.style.left = "-1000px";
+      preview.style.width = `${row.offsetWidth}px`;
+      preview.style.transform = "scale(0.96)";
+      preview.style.opacity = "0.92";
+      preview.style.boxShadow = "0 18px 35px -24px rgba(23, 32, 51, 0.65)";
+      preview.style.pointerEvents = "none";
+      document.body.appendChild(preview);
+      event.dataTransfer.setDragImage(preview, 18, 18);
+      window.setTimeout(() => preview.remove(), 0);
+    }
+    draggingTaskIdRef.current = task.id;
+    setDraggingTaskId(task.id);
+  }
+
+  function handleDragOver(event: DragEvent<HTMLDivElement>, taskId: string) {
+    const sourceTaskId = draggingTaskIdRef.current ?? draggingTaskId;
+    if (!sourceTaskId || sourceTaskId === taskId) return;
+
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const placement = event.clientY > rect.top + rect.height / 2 ? "after" : "before";
+    event.dataTransfer.dropEffect = "move";
+    setDropTarget({ placement, taskId });
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>, taskId: string) {
+    event.preventDefault();
+    const sourceTaskId =
+      event.dataTransfer.getData("application/x-attendance-task-id") ||
+      event.dataTransfer.getData("text/plain") ||
+      draggingTaskIdRef.current ||
+      draggingTaskId;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const pointerPlacement = event.clientY > rect.top + rect.height / 2 ? "after" : "before";
+    const placement = dropTarget?.taskId === taskId ? dropTarget.placement : pointerPlacement;
+    draggingTaskIdRef.current = null;
+    setDraggingTaskId(null);
+    setDropTarget(null);
+
+    if (!sourceTaskId || sourceTaskId === taskId) return;
+
+    onReorderTasks(moveTask(tasks, sourceTaskId, taskId, placement));
+  }
+
+  function handleDragEnd() {
+    draggingTaskIdRef.current = null;
+    setDraggingTaskId(null);
+    setDropTarget(null);
+  }
+
   return (
     <section>
-      <h4 className="mb-2 text-sm font-bold text-ink">{title}</h4>
+      {title ? <h4 className="mb-2 text-sm font-bold text-ink">{title}</h4> : null}
       <div className="space-y-2">
         {tasks.map((task) => {
           const isProcessing = processingTaskId === task.id;
           const isEditing = editingTaskId === task.id;
+          const isDragging = draggingTaskId === task.id;
+          const isDropTarget = dropTarget?.taskId === task.id && !isDragging;
 
           return (
             <div
-              className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2 rounded border px-3 py-2 text-sm transition ${
-                isProcessing ? "border-accent/30 bg-accentSoft/60" : "border-line bg-white"
+              className={`relative grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded border px-3 py-2 text-sm transition ${
+                isProcessing
+                  ? "border-accent/30 bg-accentSoft/60"
+                  : isDragging
+                    ? "border-accent/40 bg-field opacity-60"
+                    : "border-line bg-white"
               }`}
+              data-task-row
               key={task.id}
+              onDragOver={(event) => handleDragOver(event, task.id)}
+              onDrop={(event) => handleDrop(event, task.id)}
             >
-              <input
-                checked={task.done}
-                className="mt-1 h-4 w-4 accent-accent"
-                disabled={!canEdit || isProcessing}
-                onChange={() => onToggleTask(task.id)}
-                type="checkbox"
-              />
+              {isDropTarget ? (
+                <span
+                  className={`pointer-events-none absolute left-3 right-3 h-0.5 rounded bg-accent ${
+                    dropTarget.placement === "before" ? "top-0" : "bottom-0"
+                  }`}
+                />
+              ) : null}
+              <div className="flex items-center gap-2">
+                {canEdit ? (
+                  <span
+                    aria-label={`${task.text} 순서 변경`}
+                    className={`rounded p-0.5 text-muted transition ${
+                      isEditing || isProcessing
+                        ? "opacity-40"
+                        : "cursor-grab hover:bg-field hover:text-ink active:cursor-grabbing"
+                    }`}
+                    draggable={canEdit && !isEditing && !isProcessing}
+                    onDragEnd={handleDragEnd}
+                    onDragStart={(event) => handleDragStart(event, task, isEditing, isProcessing)}
+                    role="button"
+                    tabIndex={0}
+                    title="드래그해서 순서 바꾸기"
+                  >
+                    <GripIcon />
+                  </span>
+                ) : null}
+                {isProcessing ? (
+                  <Spinner className="h-4 w-4 text-accent" />
+                ) : (
+                  <input
+                    checked={task.done}
+                    className="h-4 w-4 accent-accent"
+                    disabled={!canEdit}
+                    onChange={() => onToggleTask(task.id)}
+                    type="checkbox"
+                  />
+                )}
+              </div>
               <div className="min-w-0">
                 {isEditing ? (
                   <div className="space-y-2">
@@ -1403,26 +2351,32 @@ function TaskSection({
                 )}
               </div>
               {canEdit ? (
-                <div className="flex items-center gap-1">
-                  <button
-                    aria-label={`${task.text} 수정`}
-                    className="rounded p-1 text-muted transition hover:bg-accent/10 hover:text-accent disabled:hover:bg-transparent disabled:hover:text-muted"
-                    disabled={isProcessing || isEditing}
-                    onClick={() => startEditing(task)}
-                    type="button"
-                  >
-                    <PencilIcon />
-                  </button>
-                  <button
-                    aria-label={`${task.text} 삭제`}
-                    className="rounded p-1 text-muted transition hover:bg-danger/10 hover:text-danger disabled:hover:bg-transparent disabled:hover:text-muted"
-                    disabled={isProcessing || isEditing}
-                    onClick={() => onRemoveTask(task)}
-                    type="button"
-                  >
-                    <TrashIcon />
-                  </button>
-                </div>
+                isProcessing ? (
+                  <div className="flex min-w-12 justify-end text-accent">
+                    <Spinner className="h-4 w-4" />
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <button
+                      aria-label={`${task.text} 수정`}
+                      className="rounded p-1 text-muted transition hover:bg-accent/10 hover:text-accent disabled:hover:bg-transparent disabled:hover:text-muted"
+                      disabled={isEditing}
+                      onClick={() => startEditing(task)}
+                      type="button"
+                    >
+                      <PencilIcon />
+                    </button>
+                    <button
+                      aria-label={`${task.text} 삭제`}
+                      className="rounded p-1 text-muted transition hover:bg-danger/10 hover:text-danger disabled:hover:bg-transparent disabled:hover:text-muted"
+                      disabled={isEditing}
+                      onClick={() => onRemoveTask(task)}
+                      type="button"
+                    >
+                      <TrashIcon />
+                    </button>
+                  </div>
+                )
               ) : null}
             </div>
           );
@@ -1485,6 +2439,39 @@ function DeleteTaskConfirmModal({
   );
 }
 
+function ChevronDownIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      viewBox="0 0 24 24"
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+function GripIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeWidth={2}
+      viewBox="0 0 24 24"
+    >
+      <path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" />
+    </svg>
+  );
+}
+
 function PencilIcon() {
   return (
     <svg
@@ -1543,29 +2530,34 @@ function TeamStatusBadge({ record }: { record: TeamAttendanceRecord }) {
   return <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-bold ${className}`}>{label}</span>;
 }
 
-function getCalendarDays(startDate: string, endDate: string) {
-  const days: Array<{ date: string | null; key: string }> = [];
-  const cursor = dateStringToUtcDate(startDate);
-  const end = dateStringToUtcDate(endDate);
-  const startDayOfWeek = cursor.getUTCDay();
-
-  for (let index = 0; index < startDayOfWeek; index += 1) {
-    days.push({ date: null, key: `start-${index}` });
-  }
+function getCalendarDays(teamMonth: TeamMonthAttendance) {
+  const days: Array<{ date: string; isCurrentMonth: boolean; key: string }> = [];
+  const cursor = dateStringToUtcDate(teamMonth.calendarStartDate ?? getCalendarStartDate(teamMonth.startDate));
+  const end = dateStringToUtcDate(teamMonth.calendarEndDate ?? getCalendarEndDate(teamMonth.endDate));
 
   while (cursor <= end) {
     const date = cursor.toISOString().slice(0, 10);
-    days.push({ date, key: date });
+    days.push({
+      date,
+      isCurrentMonth: date >= teamMonth.startDate && date <= teamMonth.endDate,
+      key: date,
+    });
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
 
-  let paddingIndex = 0;
-  while (days.length % 7 !== 0) {
-    days.push({ date: null, key: `end-${paddingIndex}` });
-    paddingIndex += 1;
-  }
-
   return days;
+}
+
+function getCalendarStartDate(startDate: string) {
+  const date = dateStringToUtcDate(startDate);
+  date.setUTCDate(date.getUTCDate() - date.getUTCDay());
+  return date.toISOString().slice(0, 10);
+}
+
+function getCalendarEndDate(endDate: string) {
+  const date = dateStringToUtcDate(endDate);
+  date.setUTCDate(date.getUTCDate() + (6 - date.getUTCDay()));
+  return date.toISOString().slice(0, 10);
 }
 
 function dateStringToUtcDate(value: string) {
@@ -1669,6 +2661,89 @@ function formatKstTimeRange(record: Pick<AttendanceRecord, "checkInAt" | "checkO
   }
 
   return `${checkInText} ~ ${formatKstTime(record.checkOutAt)}`;
+}
+
+function getWorkLogCacheKey(employeeId: string, workDate: string) {
+  return `${employeeId}:${workDate}`;
+}
+
+function normalizeWorkLogCounts(workLog: WorkLog): WorkLog {
+  const tasks = withTaskOrder(workLog.tasks);
+  const comments = [...(workLog.comments ?? [])].sort((a, b) =>
+    a.createdAt.localeCompare(b.createdAt),
+  );
+  return {
+    ...workLog,
+    tasks,
+    comments,
+    taskCount: tasks.length,
+    doneCount: tasks.filter((task) => task.done).length,
+    commentCount: comments.length,
+  };
+}
+
+function formatMonthLabel(month: string | null | undefined) {
+  const safeMonth = month && /^\d{4}-\d{2}$/.test(month) ? month : getMonthFromDate();
+  const [year, monthNumber] = safeMonth.split("-");
+  return `${year}년 ${Number(monthNumber)}월`;
+}
+
+function getMonthFromDate(date?: string | null) {
+  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return date.slice(0, 7);
+  }
+
+  const now = new Date();
+  const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return `${kstNow.getUTCFullYear()}-${String(kstNow.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function shiftMonth(month: string, delta: number) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const date = new Date(Date.UTC(year, monthNumber - 1 + delta, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function withTaskOrder(tasks: WorkTask[]) {
+  return tasks
+    .map((task, index) => ({
+      ...task,
+      order: index,
+    }))
+    .sort(
+      (a, b) =>
+        Number(b.done) - Number(a.done) ||
+        a.order - b.order ||
+        a.createdAt.localeCompare(b.createdAt),
+    )
+    .map((task, index) => ({
+      ...task,
+      order: index,
+    }));
+}
+
+function moveTask(
+  tasks: WorkTask[],
+  sourceTaskId: string,
+  targetTaskId: string,
+  placement: "before" | "after",
+) {
+  const sourceIndex = tasks.findIndex((task) => task.id === sourceTaskId);
+  if (sourceIndex === -1) {
+    return tasks;
+  }
+
+  const movingTask = tasks[sourceIndex];
+  const remainingTasks = tasks.filter((task) => task.id !== sourceTaskId);
+  const targetIndex = remainingTasks.findIndex((task) => task.id === targetTaskId);
+  if (targetIndex === -1) {
+    return tasks;
+  }
+
+  const insertIndex = placement === "after" ? targetIndex + 1 : targetIndex;
+  const reorderedTasks = [...remainingTasks];
+  reorderedTasks.splice(insertIndex, 0, movingTask);
+  return withTaskOrder(reorderedTasks);
 }
 
 function RecentLoadingRows() {

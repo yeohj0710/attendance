@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "db:upsert-employee": "node --env-file=.env scripts/upsert-employee.mjs"
+    "db:upsert-employee": "node --env-file=.env scripts/upsert-employee.mjs",
+    "db:import-notion-worklogs": "node --env-file=.env scripts/import-notion-worklogs.mjs"
   },
   "dependencies": {
     "firebase-admin": "^13.8.0",
