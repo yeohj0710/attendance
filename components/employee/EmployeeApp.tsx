@@ -1007,7 +1007,7 @@ function TeamMonthCalendar({
                     <div className={`mb-1 text-right text-[10px] font-bold sm:mb-2 sm:text-xs ${weekendTextClass(dayOfWeek) || "text-muted"}`}>
                       {Number(day.date.slice(8, 10))}
                     </div>
-                    <div className="max-h-28 space-y-1 overflow-y-auto pr-0.5 sm:max-h-32">
+                    <div className="scrollbar-none max-h-28 space-y-1 overflow-y-auto sm:max-h-32">
                       {dayRecords.map((record) => (
                         <TeamCalendarRecord
                           currentEmployeeId={currentEmployeeId}
