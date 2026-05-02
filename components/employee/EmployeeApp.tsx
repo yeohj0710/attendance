@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { DragEvent } from "react";
+import type { CSSProperties, DragEvent } from "react";
 import {
   apiFetch,
   clearToken,
@@ -13,6 +13,12 @@ import {
 } from "@/components/api";
 import { LoginPanel } from "@/components/LoginPanel";
 import { Spinner } from "@/components/Spinner";
+import {
+  createLocalGreetings,
+  type GreetingContext,
+  type GreetingEvent,
+  type GreetingWeather,
+} from "@/lib/greeting";
 
 type Employee = {
   id: string;
@@ -117,6 +123,12 @@ const workTypeLabels: Record<AttendanceRecord["workType"], string> = {
   business_trip: "출장",
 };
 
+const TASK_DRAFT_MAX_LINES = 5;
+const TASK_DRAFT_MAX_LENGTH = 280;
+const GREETING_ROTATION_INTERVAL_MS = 5200;
+const CALENDAR_COLUMN_MIN_WIDTH = 88;
+const CALENDAR_CELL_INLINE_PADDING = 12;
+const CALENDAR_RECORD_INLINE_PADDING = 14;
 const weekdayLabels = ["일", "월", "화", "수", "목", "금", "토"];
 const formerTeamMemberNames = new Set(["홍현석"]);
 
@@ -134,6 +146,11 @@ export function EmployeeApp() {
   const [isTeamMonthLoading, setIsTeamMonthLoading] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [greetingMessages, setGreetingMessages] = useState<string[]>([]);
+  const [greetingIndex, setGreetingIndex] = useState(0);
+  const [greetingRotationNonce, setGreetingRotationNonce] = useState(0);
+  const [officeWeather, setOfficeWeather] = useState<GreetingWeather | null>(null);
+  const [deskRefreshSeed] = useState(() => Math.floor(Math.random() * 1_000_000));
   const [encouragement, setEncouragement] = useState("");
   const [selectedWorkRecord, setSelectedWorkRecord] = useState<TeamAttendanceRecord | null>(null);
   const [deleteTaskRequest, setDeleteTaskRequest] = useState<{
@@ -227,6 +244,40 @@ export function EmployeeApp() {
   }, [auth, employee, status?.kstDate]);
 
   useEffect(() => {
+    if (!auth || !employee || !status?.kstDate) return;
+
+    const context = getGreetingContext();
+    const fallbackMessages = createLocalGreetings(context, "visit", 6);
+    setGreetingMessages(fallbackMessages);
+    setGreetingIndex(0);
+    void fetchGreeting("visit", context).then((nextGreeting) => {
+      if (nextGreeting?.messages.length) {
+        setGreetingMessages(nextGreeting.messages);
+        setGreetingIndex(0);
+      }
+      if (nextGreeting?.weather !== undefined) {
+        setOfficeWeather(nextGreeting.weather);
+      }
+    });
+  }, [
+    auth,
+    employee?.id,
+    status?.kstDate,
+    status?.openRecord?.checkInAt,
+    status?.openRecord?.checkOutAt,
+    status?.todayRecord?.checkInAt,
+    status?.todayRecord?.checkOutAt,
+  ]);
+
+  useEffect(() => {
+    if (greetingMessages.length <= 1) return;
+    const timer = window.setTimeout(() => {
+      setGreetingIndex((currentIndex) => (currentIndex + 1) % greetingMessages.length);
+    }, GREETING_ROTATION_INTERVAL_MS);
+    return () => window.clearTimeout(timer);
+  }, [greetingIndex, greetingMessages, greetingRotationNonce]);
+
+  useEffect(() => {
     if (!auth || !teamMonth?.month) return;
     prefetchTeamMonth(shiftMonth(teamMonth.month, -1));
     prefetchTeamMonth(shiftMonth(teamMonth.month, 1));
@@ -265,7 +316,17 @@ export function EmployeeApp() {
         auth,
       });
       applyRecord(result.record);
-      setEncouragement(getActionMessage(actionLabel, result.record));
+      const greetingEvent = getGreetingEvent(actionLabel);
+      const greetingContext = getGreetingContext(result.record);
+      setEncouragement(createLocalGreetings(greetingContext, greetingEvent, 1)[0]);
+      void fetchGreeting(greetingEvent, greetingContext).then((nextGreeting) => {
+        if (nextGreeting?.message) {
+          setEncouragement(nextGreeting.message);
+        }
+        if (nextGreeting?.weather !== undefined) {
+          setOfficeWeather(nextGreeting.weather);
+        }
+      });
       void load(auth).catch((error) => {
         setMessage(error instanceof Error ? error.message : "최신 정보를 불러오지 못했습니다.");
       });
@@ -275,6 +336,59 @@ export function EmployeeApp() {
       setIsMutating(false);
       setPendingAction(null);
     }
+  }
+
+  function getGreetingContext(recordOverride?: AttendanceRecord | null): GreetingContext {
+    const greetingRecord = recordOverride ?? status?.openRecord ?? status?.todayRecord ?? null;
+    const myTeamRecord = teamRecords.find((record) => record.employeeId === employee?.id);
+    const visibleTeamCount = teamRecords.filter(
+      (record) =>
+        record.checkInAt &&
+        record.employeeId !== employee?.id &&
+        !formerTeamMemberNames.has(record.employeeName),
+    ).length;
+
+    return {
+      employeeName: employee?.name,
+      kstDate: status?.kstDate ?? greetingRecord?.workDate,
+      record: greetingRecord
+        ? {
+            workDate: greetingRecord.workDate,
+            checkInAt: greetingRecord.checkInAt,
+            checkOutAt: greetingRecord.checkOutAt,
+          }
+        : null,
+      records: records.map((record) => ({
+        workDate: record.workDate,
+        checkInAt: record.checkInAt,
+        checkOutAt: record.checkOutAt,
+      })),
+      teamCount: visibleTeamCount,
+      taskCount: todayWorkLog?.taskCount ?? myTeamRecord?.taskCount ?? 0,
+      doneCount: todayWorkLog?.doneCount ?? myTeamRecord?.doneCount ?? 0,
+    };
+  }
+
+  async function fetchGreeting(event: GreetingEvent, context: GreetingContext) {
+    if (!auth) return null;
+
+    const result = await apiFetch<{
+      message: string;
+      messages?: string[];
+      weather?: GreetingWeather | null;
+    }>("/api/greeting", {
+      method: "POST",
+      auth,
+      body: JSON.stringify({ event, context }),
+    }).catch(() => null);
+
+    return result
+      ? {
+          message: result.message,
+          messages: result.messages?.length ? result.messages : [result.message],
+          weather: result.weather ?? null,
+        }
+      : null;
   }
 
   function applyRecord(record: AttendanceRecord) {
@@ -1111,6 +1225,11 @@ export function EmployeeApp() {
     setEditingCommentText("");
   }
 
+  const selectGreetingIndex = useCallback((index: number) => {
+    setGreetingIndex(index);
+    setGreetingRotationNonce((currentNonce) => currentNonce + 1);
+  }, []);
+
   if (isLoading) {
     return (
       <main className="flex min-h-dvh items-center justify-center px-4 text-sm text-muted">
@@ -1127,6 +1246,10 @@ export function EmployeeApp() {
   }
 
   const currentRecord = status?.openRecord ?? status?.todayRecord;
+  const currentWorkingMinutes =
+    currentRecord?.checkInAt && !currentRecord.checkOutAt
+      ? getDeskWorkedMinutes(currentRecord, clock)
+      : null;
   const statusText = currentRecord?.checkOutAt
     ? "오늘도 고생했어요"
     : currentRecord?.checkInAt
@@ -1134,14 +1257,30 @@ export function EmployeeApp() {
       : isRefreshing
         ? "확인 중"
         : "좋은 하루 시작";
+  const displayStatusText =
+    currentWorkingMinutes !== null
+      ? `함께 일하는 중 · ${formatWorkingSinceLabel(currentWorkingMinutes)}`
+      : statusText;
+  const statusHeatClassName =
+    currentWorkingMinutes !== null ? getWorkDurationHeatClassName(currentWorkingMinutes) : "";
   const canPressCheckOut =
     Boolean(status?.canCheckOut || status?.todayRecord?.checkInAt) && !isMutating;
   const canCancelCheckOut = Boolean(status?.todayRecord?.checkOutAt) && !isMutating;
-  const visibleTeamRecords = teamRecords.filter(
+  const workingTeamRecords = teamRecords.filter(
     (record) =>
       record.checkInAt &&
-      record.employeeId !== employee.id &&
+      !record.checkOutAt &&
       !formerTeamMemberNames.has(record.employeeName),
+  );
+  const liveDeskRecords = getLiveDeskRecords({
+    currentEmployeeId: employee.id,
+    currentRecord,
+    employee,
+    records: workingTeamRecords,
+    todayWorkLog,
+  });
+  const visibleTeamRecords = workingTeamRecords.filter(
+    (record) => record.employeeId !== employee.id,
   );
 
   return (
@@ -1159,12 +1298,20 @@ export function EmployeeApp() {
             />
             <p className="text-xs font-semibold text-muted">{formatKstClock(clock)}</p>
             <h1 className="mt-1 text-2xl font-bold text-ink">{employee.name}</h1>
-            <p className="mt-2 text-sm text-muted">{getWarmGreeting(currentRecord)}</p>
           </div>
-          <span className="rounded-full bg-accentSoft px-3 py-1 text-sm font-semibold text-accent">
-            {statusText}
+          <span
+            className={`work-status-pill shrink-0 whitespace-nowrap rounded-full bg-accentSoft px-3 py-1 text-sm font-semibold text-accent ${statusHeatClassName}`}
+          >
+            {displayStatusText}
           </span>
         </div>
+        <GreetingTicker
+          currentIndex={greetingIndex}
+          message={greetingMessages[greetingIndex]}
+          messages={greetingMessages}
+          onSelect={selectGreetingIndex}
+          total={greetingMessages.length}
+        />
 
         <div className="mt-5 grid grid-cols-2 gap-3">
           <button
@@ -1282,6 +1429,16 @@ export function EmployeeApp() {
             </span>
           ) : null}
         </div>
+        <TeamDeskScene
+          currentEmployeeId={employee.id}
+          now={clock}
+          onPrefetchRecord={prefetchWorkLog}
+          onSelectRecord={openWorkLog}
+          refreshSeed={deskRefreshSeed}
+          records={liveDeskRecords}
+          todayDate={status?.kstDate}
+          weather={officeWeather}
+        />
         <div className="mt-3 space-y-2">
           {visibleTeamRecords.map((record) => (
             <details
@@ -1315,13 +1472,13 @@ export function EmployeeApp() {
           ) : null}
           {visibleTeamRecords.length === 0 && !isRefreshing ? (
             <p className="rounded border border-line py-5 text-center text-sm text-muted">
-              아직 출근한 사람이 없어요. 첫 기록을 기다리는 중이에요.
+              지금 함께 일하는 사람이 없어요. 첫 기록을 기다리는 중이에요.
             </p>
           ) : null}
         </div>
       </section>
 
-      <section className="mt-4 w-full max-w-4xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
+      <section className="mt-4 w-full max-w-5xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -1364,6 +1521,12 @@ export function EmployeeApp() {
           onPrefetchRecord={prefetchWorkLog}
           onSelectRecord={openWorkLog}
           teamMonth={teamMonth}
+        />
+        <MyTitlesPanel
+          employeeId={employee.id}
+          teamMonth={teamMonth}
+          todayDate={status?.kstDate}
+          todayWorkLog={todayWorkLog}
         />
       </section>
 
@@ -1484,6 +1647,578 @@ function LoadingLine() {
   return <span className="block h-4 w-20 animate-pulse rounded bg-line" />;
 }
 
+function TeamDeskScene({
+  currentEmployeeId,
+  now,
+  onPrefetchRecord,
+  onSelectRecord,
+  refreshSeed,
+  records,
+  todayDate,
+  weather,
+}: {
+  currentEmployeeId: string;
+  now: Date;
+  onPrefetchRecord: (record: TeamAttendanceRecord) => void;
+  onSelectRecord: (record: TeamAttendanceRecord) => void;
+  refreshSeed: number;
+  records: TeamAttendanceRecord[];
+  todayDate?: string | null;
+  weather: GreetingWeather | null;
+}) {
+  if (!records.length) {
+    return null;
+  }
+
+  const ambience = getDeskAmbience(now, todayDate, weather);
+
+  return (
+    <div className={`team-pixel-room mt-3 ${ambience.className}`} aria-label="실시간 작업실">
+      <div className="team-pixel-room-header">
+        <span>실시간 작업실</span>
+        <span>{records.length}명 작업 중</span>
+      </div>
+      <span className="team-pixel-clock" aria-hidden="true">
+        {ambience.clockLabel}
+      </span>
+      <span className="team-pixel-weather-badge">{ambience.weatherText}</span>
+      {ambience.eventLabel ? <span className="team-pixel-event-banner">{ambience.eventLabel}</span> : null}
+      <span className="team-pixel-weather-layer" aria-hidden="true" />
+      <span className="team-pixel-window" aria-hidden="true">
+        <span />
+        <span />
+      </span>
+      <span className="team-pixel-board" aria-hidden="true">
+        WORK
+      </span>
+      <div className="team-pixel-grid">
+        {records.map((record, index) => (
+          <TeamDeskSeat
+            currentEmployeeId={currentEmployeeId}
+            dateKey={todayDate ?? record.workDate}
+            index={index}
+            key={record.employeeId}
+            now={now}
+            onPrefetchRecord={onPrefetchRecord}
+            onSelectRecord={onSelectRecord}
+            refreshSeed={refreshSeed}
+            record={record}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TeamDeskSeat({
+  currentEmployeeId,
+  dateKey,
+  index,
+  now,
+  onPrefetchRecord,
+  onSelectRecord,
+  refreshSeed,
+  record,
+}: {
+  currentEmployeeId: string;
+  dateKey?: string | null;
+  index: number;
+  now: Date;
+  onPrefetchRecord: (record: TeamAttendanceRecord) => void;
+  onSelectRecord: (record: TeamAttendanceRecord) => void;
+  refreshSeed: number;
+  record: TeamAttendanceRecord;
+}) {
+  const palette = getDeskPalette(index, record.employeeId, dateKey ?? record.workDate);
+  const state = getDeskSeatState(record, now, refreshSeed);
+  const isMe = record.employeeId === currentEmployeeId;
+  const taskCount = record.taskCount ?? record.tasks?.length ?? 0;
+  const doneCount = record.doneCount ?? record.tasks?.filter((task) => task.done).length ?? 0;
+  const taskText = taskCount > 0 ? `${doneCount}/${taskCount} 완료` : "업무 중";
+  const workedMinutes = getDeskWorkedMinutes(record, now);
+  const workingLabel = formatWorkingSinceLabel(workedMinutes);
+  const workHeatClassName = getWorkDurationHeatClassName(workedMinutes);
+  const mumbleLines = getDeskMumbleLines(record);
+  const [mumbleIndex, setMumbleIndex] = useState(0);
+  const safeMumbleIndex = mumbleIndex % mumbleLines.length;
+
+  useEffect(() => {
+    if (mumbleLines.length <= 1) {
+      setMumbleIndex(0);
+      return;
+    }
+
+    const timer = window.setTimeout(
+      () => setMumbleIndex((currentIndex) => (currentIndex + 1) % mumbleLines.length),
+      3300 + index * 260,
+    );
+    return () => window.clearTimeout(timer);
+  }, [index, mumbleIndex, mumbleLines.length]);
+
+  return (
+    <button
+      aria-label={`${record.employeeName} 업무 기록 보기`}
+      className={`team-pixel-seat team-pixel-hair-${palette.hairStyle} team-pixel-outfit-${palette.outfit} team-pixel-posture-${state.posture} team-pixel-mood-${state.mood} team-pixel-screen-${state.screen}${state.rare ? ` team-pixel-rare-${state.rare}` : ""}${isMe ? " team-pixel-seat-me" : ""}`}
+      onFocus={() => onPrefetchRecord(record)}
+      onClick={() => onSelectRecord(record)}
+      onPointerEnter={() => onPrefetchRecord(record)}
+      style={getDeskPaletteStyle(palette)}
+      title={`${record.employeeName} · ${formatKstTimeRange(record)}`}
+      type="button"
+    >
+      <span className="team-pixel-nameplate">
+        <span className="team-pixel-name">{record.employeeName}</span>
+        <span className={`team-pixel-time ${workHeatClassName}`}>{workingLabel}</span>
+      </span>
+      <span className="team-pixel-mumble" key={`${record.employeeId}-${safeMumbleIndex}`}>
+        {mumbleLines[safeMumbleIndex]}
+      </span>
+      <span className="team-pixel-art" aria-hidden="true">
+        <span className="team-pixel-rug" />
+        <span className="team-pixel-ground-shadow" />
+        <span className="team-pixel-lamp">
+          <span />
+        </span>
+        <span className="team-pixel-chair" />
+        <span className="team-pixel-worker">
+          <span className="team-pixel-head">
+            <span className="team-pixel-hair" />
+            <span className="team-pixel-face" />
+            <span className="team-pixel-mouth" />
+          </span>
+          <span className="team-pixel-body" />
+          <span className="team-pixel-leg team-pixel-leg-left" />
+          <span className="team-pixel-leg team-pixel-leg-right" />
+          <span className="team-pixel-arm team-pixel-arm-left" />
+          <span className="team-pixel-arm team-pixel-arm-right" />
+        </span>
+        <span className="team-pixel-desk">
+          <span className="team-pixel-monitor">
+            <span />
+            <span />
+            <span />
+          </span>
+          <span className="team-pixel-keyboard" />
+          <span className="team-pixel-desk-items">
+            {state.items.map((item) => (
+              <span aria-hidden="true" className={`team-pixel-item team-pixel-item-${item}`} key={item} />
+            ))}
+          </span>
+        </span>
+        {state.showZzz ? <span className="team-pixel-zzz">zzz</span> : null}
+        <span className="team-pixel-plant">
+          <span />
+          <span />
+        </span>
+      </span>
+      <span className="team-pixel-stat">
+        <span>{taskText}</span>
+        <span>{isMe ? "내 자리" : "클릭해서 보기"}</span>
+      </span>
+    </button>
+  );
+}
+
+function getDeskMumbleLines(record: Pick<TeamAttendanceRecord, "tasks">) {
+  const tasks = record.tasks ?? [];
+  const activeTasks = tasks.filter((task) => !task.done && task.text.trim());
+  const fallbackTasks = tasks.filter((task) => task.text.trim());
+  const lines = (activeTasks.length ? activeTasks : fallbackTasks)
+    .slice(0, 5)
+    .map((task) => `…${compactDeskTaskText(task.text)}`);
+
+  return lines.length ? lines : ["…업무 정리 중"];
+}
+
+function compactDeskTaskText(value: string) {
+  const compacted = value.replace(/\s+/g, " ").trim();
+  return compacted.length > 64 ? `${compacted.slice(0, 64)}…` : compacted;
+}
+
+type DeskMood = "boosted" | "focused" | "normal" | "sleepy" | "tired";
+type DeskPosture = "lean" | "stretch" | "typing" | "upright";
+type DeskScreen = "chart" | "code" | "doc" | "mail" | "spark";
+type DeskItem = "book" | "coffee" | "memo" | "snack" | "trophy" | "water";
+type DeskRare = "gold" | "sparkle" | null;
+
+function getDeskSeatState(record: TeamAttendanceRecord, now: Date, refreshSeed: number) {
+  const seed = hashString(`${record.employeeId}:${record.workDate}:${refreshSeed}`);
+  const workedMinutes = getDeskWorkedMinutes(record, now);
+  const taskCount = record.taskCount ?? record.tasks?.length ?? 0;
+  const doneCount = record.doneCount ?? record.tasks?.filter((task) => task.done).length ?? 0;
+  const completionRate = taskCount > 0 ? doneCount / taskCount : 0;
+  const hour = getKstHour(now);
+  const mood: DeskMood =
+    workedMinutes >= 12 * 60 || (hour >= 23 && workedMinutes >= 8 * 60)
+      ? "sleepy"
+      : workedMinutes >= 10 * 60 || (hour >= 22 && workedMinutes >= 6 * 60 && completionRate < 0.8)
+        ? "tired"
+        : taskCount >= 6 && completionRate < 0.6
+          ? "focused"
+          : doneCount >= 5 || completionRate === 1
+            ? "boosted"
+            : "normal";
+  const posture: DeskPosture =
+    mood === "sleepy"
+      ? pickBySeed(["typing", "lean"], seed + 2)
+      : mood === "tired"
+        ? pickBySeed(["typing", "upright"], seed + 3)
+        : mood === "focused"
+          ? "typing"
+          : pickBySeed(["typing", "upright", "stretch"], seed + 5);
+  const screen: DeskScreen = pickBySeed(["chart", "code", "doc", "mail", "spark"], seed + workedMinutes + taskCount);
+  const items = getDeskItems(seed, mood, workedMinutes);
+  const rareRoll = seed % 97;
+  const rare: DeskRare = rareRoll === 0 ? "gold" : rareRoll === 1 ? "sparkle" : null;
+
+  return {
+    items,
+    mood,
+    posture,
+    rare,
+    screen,
+    showZzz: mood === "sleepy" && seed % 2 === 0,
+  };
+}
+
+function getDeskItems(seed: number, mood: DeskMood, workedMinutes: number) {
+  const items: DeskItem[] = [];
+  const addItem = (item: DeskItem) => {
+    if (!items.includes(item)) {
+      items.push(item);
+    }
+  };
+
+  if (workedMinutes >= 6 * 60 || mood === "tired" || mood === "sleepy") {
+    addItem("coffee");
+  } else {
+    addItem(pickBySeed<DeskItem>(["water", "memo", "book"], seed + 1));
+  }
+
+  addItem(pickBySeed<DeskItem>(["memo", "book", "snack", "water"], seed + 9));
+  addItem(pickBySeed<DeskItem>(["book", "memo", "snack", "water", "trophy"], seed + 17));
+
+  if (seed % 13 === 0) {
+    addItem("trophy");
+  }
+
+  addItem(pickBySeed<DeskItem>(["memo", "water", "book", "snack"], seed + 31));
+
+  return items.slice(0, 3);
+}
+
+function getDeskWorkedMinutes(record: Pick<TeamAttendanceRecord, "checkInAt" | "checkOutAt">, now: Date) {
+  if (!record.checkInAt) return 0;
+  const checkIn = new Date(record.checkInAt).getTime();
+  const checkOut = record.checkOutAt ? new Date(record.checkOutAt).getTime() : now.getTime();
+  if (!Number.isFinite(checkIn) || !Number.isFinite(checkOut) || checkOut <= checkIn) return 0;
+  return Math.round((checkOut - checkIn) / 60000);
+}
+
+function getKstHour(now: Date) {
+  return new Date(now.getTime() + 9 * 60 * 60 * 1000).getUTCHours();
+}
+
+function getDeskAmbience(now: Date, todayDate: string | null | undefined, weather: GreetingWeather | null) {
+  const kstParts = getKstDateParts(now, todayDate);
+  const period =
+    kstParts.hour < 6
+      ? "night"
+      : kstParts.hour < 11
+        ? "morning"
+        : kstParts.hour < 17
+          ? "day"
+          : kstParts.hour < 20
+            ? "evening"
+            : "night";
+  const season =
+    kstParts.month <= 2 || kstParts.month === 12
+      ? "winter"
+      : kstParts.month <= 5
+        ? "spring"
+        : kstParts.month <= 8
+          ? "summer"
+          : "autumn";
+  const weatherLabel = weather?.label ?? "unknown";
+  const eventLabel = getDeskEventLabel(kstParts);
+  const temperature =
+    weather?.apparentTemperature !== null && weather?.apparentTemperature !== undefined
+      ? weather.apparentTemperature
+      : weather?.temperature;
+  const weatherText =
+    temperature !== null && temperature !== undefined
+      ? `${getDeskWeatherLabel(weatherLabel)} ${temperature.toFixed(1)}도`
+      : getDeskWeatherLabel(weatherLabel);
+
+  return {
+    className: [
+      `team-pixel-${period}`,
+      `team-pixel-season-${season}`,
+      `team-pixel-weather-${weatherLabel}`,
+      eventLabel ? "team-pixel-has-event" : "",
+    ]
+      .filter(Boolean)
+      .join(" "),
+    clockLabel: period === "night" ? "NIGHT" : period === "evening" ? "SUNSET" : "LIVE",
+    eventLabel,
+    weatherText,
+  };
+}
+
+function getKstDateParts(now: Date, todayDate: string | null | undefined) {
+  const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const [year, month, day] =
+    todayDate && /^\d{4}-\d{2}-\d{2}$/.test(todayDate)
+      ? todayDate.split("-").map(Number)
+      : [kstNow.getUTCFullYear(), kstNow.getUTCMonth() + 1, kstNow.getUTCDate()];
+
+  return {
+    year,
+    month,
+    day,
+    hour: kstNow.getUTCHours(),
+  };
+}
+
+function getDeskWeatherLabel(label: string) {
+  if (label === "rain") return "비";
+  if (label === "snow") return "눈";
+  if (label === "fog") return "안개";
+  if (label === "windy") return "바람";
+  if (label === "hot") return "더움";
+  if (label === "cold") return "추움";
+  if (label === "clear") return "맑음";
+  if (label === "cloudy") return "흐림";
+  return "광진구";
+}
+
+function getDeskEventLabel(parts: { month: number; day: number }) {
+  const key = `${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+  const labels: Record<string, string> = {
+    "01-01": "새해",
+    "02-14": "밸런타인",
+    "03-01": "삼일절",
+    "04-01": "만우절",
+    "05-01": "근로자의 날",
+    "05-05": "어린이날",
+    "05-08": "어버이날",
+    "05-15": "스승의 날",
+    "06-06": "현충일",
+    "08-15": "광복절",
+    "10-03": "개천절",
+    "10-09": "한글날",
+    "11-11": "11.11",
+    "12-24": "이브",
+    "12-25": "크리스마스",
+    "12-31": "연말",
+  };
+
+  if (labels[key]) return labels[key];
+  if (parts.day === 1) return `${parts.month}월 첫날`;
+  return "";
+}
+
+function getLiveDeskRecords({
+  currentEmployeeId,
+  currentRecord,
+  employee,
+  records,
+  todayWorkLog,
+}: {
+  currentEmployeeId: string;
+  currentRecord: AttendanceRecord | null | undefined;
+  employee: Employee;
+  records: TeamAttendanceRecord[];
+  todayWorkLog: WorkLog | null;
+}) {
+  const currentEmployeeRecord =
+    currentRecord?.checkInAt && !currentRecord.checkOutAt
+      ? {
+          employeeId: employee.id,
+          employeeName: employee.name,
+          employeeNo: employee.employeeNo,
+          workDate: currentRecord.workDate,
+          checkInAt: currentRecord.checkInAt,
+          checkOutAt: currentRecord.checkOutAt,
+          workType: currentRecord.workType,
+          note: currentRecord.note,
+          taskCount: todayWorkLog?.taskCount ?? 0,
+          doneCount: todayWorkLog?.doneCount ?? 0,
+          commentCount: todayWorkLog?.commentCount ?? 0,
+          tasks: todayWorkLog?.tasks ?? [],
+        }
+      : null;
+  const mergedRecords = currentEmployeeRecord
+    ? [
+        currentEmployeeRecord,
+        ...records.filter((record) => record.employeeId !== currentEmployeeRecord.employeeId),
+      ]
+    : records;
+
+  return [...mergedRecords].sort(
+    (a, b) =>
+      Number(b.employeeId === currentEmployeeId) - Number(a.employeeId === currentEmployeeId) ||
+      a.employeeName.localeCompare(b.employeeName, "ko"),
+  );
+}
+
+type DeskPalette = {
+  chair: string;
+  desk: string;
+  hairStyle: "cap" | "flat" | "side" | "soft";
+  hair: string;
+  outfit: "cardigan" | "hoodie" | "tie" | "vest";
+  screen: string;
+  shirt: string;
+  skin: string;
+};
+
+function getDeskPalette(index: number, employeeId: string, dateKey?: string | null) {
+  const seed = hashString(`${employeeId}:${dateKey ?? ""}:${index}`);
+  const skins = ["#f2c7a7", "#ffd6a5", "#fed7aa", "#f5c9a8"];
+  const hairs = ["#27324a", "#4a2f28", "#172033", "#2f241f"];
+  const shirts = ["#6f89f5", "#38bdf8", "#5b7cff", "#60a5fa", "#4f7df3"];
+  const chairs = ["#8ea2ff", "#7dd3fc", "#9bb1ff", "#93c5fd"];
+  const desks = ["#d7e6ff", "#e0f2fe", "#eff6ff", "#dbeafe"];
+  const screens = ["#4568f5", "#0ea5e9", "#3b82f6", "#64748b"];
+  const hairStyles: DeskPalette["hairStyle"][] = ["cap", "flat", "side"];
+  const outfits: DeskPalette["outfit"][] = ["cardigan", "hoodie"];
+
+  return {
+    chair: pickBySeed(chairs, seed + 7),
+    desk: pickBySeed(desks, seed + 11),
+    hair: pickBySeed(hairs, seed + 13),
+    hairStyle: pickBySeed(hairStyles, seed + 17),
+    outfit: pickBySeed(outfits, seed + 19),
+    screen: pickBySeed(screens, seed + 23),
+    shirt: pickBySeed(shirts, seed + 29),
+    skin: pickBySeed(skins, seed + 31),
+  };
+}
+
+function getDeskPaletteStyle(palette: DeskPalette) {
+  return {
+    "--pixel-chair": palette.chair,
+    "--pixel-desk": palette.desk,
+    "--pixel-hair": palette.hair,
+    "--pixel-screen": palette.screen,
+    "--pixel-shirt": palette.shirt,
+    "--pixel-skin": palette.skin,
+  } as CSSProperties;
+}
+
+function hashString(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+function pickBySeed<T>(items: T[], seed: number) {
+  return items[Math.abs(seed) % items.length];
+}
+
+function GreetingTicker({
+  currentIndex,
+  message,
+  messages,
+  onSelect,
+  total,
+}: {
+  currentIndex: number;
+  message?: string;
+  messages: string[];
+  onSelect: (index: number) => void;
+  total: number;
+}) {
+  const visibleMessage = message || "오늘도 가볍게 시작해봐요!";
+  const longestMessage = getLongestGreetingMessage(messages, visibleMessage);
+  const dotCount = Math.min(total, 6);
+
+  return (
+    <div className="mx-auto mt-3 grid w-fit max-w-md overflow-hidden rounded border border-line bg-field/70 px-3 py-2.5 text-center">
+      <div aria-hidden="true" className="pointer-events-none invisible col-start-1 row-start-1">
+        <GreetingTickerLine message={longestMessage} />
+        {total > 1 ? <GreetingTickerDots currentIndex={currentIndex} dotCount={dotCount} /> : null}
+      </div>
+      <div className="col-start-1 row-start-1">
+        <GreetingTickerLine
+          animated
+          key={`${currentIndex}-${visibleMessage}`}
+          message={visibleMessage}
+        />
+        {total > 1 ? (
+          <GreetingTickerDots
+            currentIndex={currentIndex}
+            dotCount={dotCount}
+            onSelect={onSelect}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function GreetingTickerLine({ animated, message }: { animated?: boolean; message: string }) {
+  return (
+    <div className="flex items-center justify-center gap-2">
+      <span
+        aria-hidden="true"
+        className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent shadow-[0_0_0_4px_rgba(69,104,245,0.10)]"
+      />
+      <p
+        className={`${animated ? "greeting-marquee-line " : ""}min-w-0 text-sm font-semibold leading-relaxed text-muted`}
+      >
+        {message}
+      </p>
+    </div>
+  );
+}
+
+function GreetingTickerDots({
+  currentIndex,
+  dotCount,
+  onSelect,
+}: {
+  currentIndex: number;
+  dotCount: number;
+  onSelect?: (index: number) => void;
+}) {
+  return (
+    <div className="mt-2 flex justify-center gap-1.5">
+      {Array.from({ length: dotCount }).map((_, dotIndex) => {
+        const isActive = dotIndex === currentIndex % dotCount;
+        const className = `h-1.5 rounded-full transition-all ${
+          isActive ? "w-5 bg-accent" : "w-2 bg-slate-300"
+        }`;
+
+        return onSelect ? (
+          <button
+            aria-label={`${dotIndex + 1}번째 멘트 보기`}
+            aria-pressed={isActive}
+            className={`${className} hover:bg-accent/70 focus:outline-none focus:ring-2 focus:ring-accent/20`}
+            key={dotIndex}
+            onClick={() => onSelect(dotIndex)}
+            type="button"
+          >
+            <span className="sr-only">{dotIndex + 1}번째 멘트</span>
+          </button>
+        ) : (
+          <span className={className} key={dotIndex} />
+        );
+      })}
+    </div>
+  );
+}
+
+function getLongestGreetingMessage(messages: string[], fallback: string) {
+  return messages.reduce(
+    (longest, current) => (current.length > longest.length ? current : longest),
+    fallback,
+  );
+}
+
 function TodayTeamTasks({ record }: { record: TeamAttendanceRecord }) {
   const tasks = record.tasks ?? [];
   const mainTasks = tasks.filter((task) => task.section !== "later");
@@ -1550,6 +2285,32 @@ function TeamMonthCalendar({
   onSelectRecord: (record: TeamAttendanceRecord) => void;
   teamMonth: TeamMonthAttendance | null;
 }) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [canScroll, setCanScroll] = useState(false);
+
+  function updateScrollProgress() {
+    const element = scrollRef.current;
+    if (!element) return;
+
+    const maxScrollLeft = element.scrollWidth - element.clientWidth;
+    setCanScroll(maxScrollLeft > 1);
+    setScrollProgress(maxScrollLeft > 0 ? element.scrollLeft / maxScrollLeft : 0);
+  }
+
+  function scrollCalendar(delta: number) {
+    scrollRef.current?.scrollBy({ left: delta, behavior: "smooth" });
+  }
+
+  useEffect(() => {
+    const timer = window.setTimeout(updateScrollProgress, 0);
+    window.addEventListener("resize", updateScrollProgress);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("resize", updateScrollProgress);
+    };
+  }, [teamMonth?.month]);
+
   if (!teamMonth) {
     return (
       <div className="mt-3 rounded border border-line bg-field/70 px-3 py-5 text-center text-sm text-muted">
@@ -1566,53 +2327,105 @@ function TeamMonthCalendar({
   }
 
   const days = getCalendarDays(teamMonth);
+  const columnWidths = getCalendarColumnWidths(days, recordsByDate);
+  const minCalendarWidth = columnWidths.reduce((total, width) => total + width, 0);
+  const calendarFrameStyle = {
+    minWidth: `${minCalendarWidth}px`,
+  };
+  const calendarGridStyle = {
+    gridTemplateColumns: columnWidths.map((width) => `minmax(${width}px, 1fr)`).join(" "),
+  };
 
   return (
-    <div className="mt-3 overflow-hidden rounded border-l border-t border-line">
-      <div className="w-full">
-        <div className="grid grid-cols-7 text-center text-[10px] font-bold text-muted sm:text-xs">
-          {weekdayLabels.map((weekday, index) => (
-            <div
-              className={`border-b border-r border-line bg-field/80 py-2 ${weekendTextClass(index)}`}
-              key={weekday}
-            >
-              {weekday}
-            </div>
-          ))}
+    <div className="mt-3">
+      {canScroll ? (
+        <div className="mb-2 flex items-center gap-2 rounded border border-line bg-field/60 px-2 py-1.5">
+          <button
+            aria-label="달력 왼쪽으로 이동"
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-line bg-white text-sm font-bold text-muted transition hover:border-slate-300 hover:bg-field hover:text-ink"
+            onClick={() => scrollCalendar(-260)}
+            type="button"
+          >
+            ‹
+          </button>
+          <input
+            aria-label="달력 좌우 위치"
+            className="calendar-scroll-range w-full"
+            max={100}
+            min={0}
+            onChange={(event) => {
+              const element = scrollRef.current;
+              if (!element) return;
+              const maxScrollLeft = element.scrollWidth - element.clientWidth;
+              element.scrollLeft = (Number(event.target.value) / 100) * maxScrollLeft;
+              updateScrollProgress();
+            }}
+            type="range"
+            value={Math.round(scrollProgress * 100)}
+          />
+          <button
+            aria-label="달력 오른쪽으로 이동"
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-line bg-white text-sm font-bold text-muted transition hover:border-slate-300 hover:bg-field hover:text-ink"
+            onClick={() => scrollCalendar(260)}
+            type="button"
+          >
+            ›
+          </button>
         </div>
-        <div className="grid grid-cols-7">
-          {days.map((day) => {
-            const dayRecords = recordsByDate.get(day.date) ?? [];
-            const dayOfWeek = dateStringToUtcDate(day.date).getUTCDay();
-
-            return (
+      ) : null}
+      <div
+        className="scrollbar-none overflow-x-auto"
+        onScroll={updateScrollProgress}
+        ref={scrollRef}
+      >
+        <div className="w-full rounded border-l border-t border-line" style={calendarFrameStyle}>
+          <div
+            className="grid text-center text-[10px] font-bold text-muted sm:text-xs"
+            style={calendarGridStyle}
+          >
+            {weekdayLabels.map((weekday, index) => (
               <div
-                className={`min-h-32 min-w-0 border-b border-r border-line p-1.5 sm:min-h-36 sm:p-2 ${
-                  day.isCurrentMonth ? "bg-white" : "bg-field/35"
-                }`}
-                key={day.key}
+                className={`border-b border-r border-line bg-field/80 py-2 ${weekendTextClass(index)}`}
+                key={weekday}
               >
-                <div
-                  className={`mb-1 text-right text-[10px] font-bold sm:mb-2 sm:text-xs ${
-                    day.isCurrentMonth ? weekendTextClass(dayOfWeek) || "text-muted" : "text-slate-400"
-                  }`}
-                >
-                  {Number(day.date.slice(8, 10))}
-                </div>
-                <div className={day.isCurrentMonth ? "space-y-1" : "space-y-1 opacity-65"}>
-                  {dayRecords.map((record) => (
-                    <TeamCalendarRecord
-                      currentEmployeeId={currentEmployeeId}
-                      key={`${record.employeeId}-${record.workDate}`}
-                      onPrefetch={onPrefetchRecord}
-                      onSelect={onSelectRecord}
-                      record={record}
-                    />
-                  ))}
-                </div>
+                {weekday}
               </div>
-            );
-          })}
+            ))}
+          </div>
+          <div className="grid" style={calendarGridStyle}>
+            {days.map((day) => {
+              const dayRecords = recordsByDate.get(day.date) ?? [];
+              const dayOfWeek = dateStringToUtcDate(day.date).getUTCDay();
+
+              return (
+                <div
+                  className={`min-h-32 min-w-0 border-b border-r border-line p-1.5 sm:min-h-36 ${
+                    day.isCurrentMonth ? "bg-white" : "bg-field/35"
+                  }`}
+                  key={day.key}
+                >
+                  <div
+                    className={`mb-1 text-right text-[10px] font-bold sm:mb-2 sm:text-xs ${
+                      day.isCurrentMonth ? weekendTextClass(dayOfWeek) || "text-muted" : "text-slate-400"
+                    }`}
+                  >
+                    {Number(day.date.slice(8, 10))}
+                  </div>
+                  <div className={day.isCurrentMonth ? "space-y-1" : "space-y-1 opacity-65"}>
+                    {dayRecords.map((record) => (
+                      <TeamCalendarRecord
+                        currentEmployeeId={currentEmployeeId}
+                        key={`${record.employeeId}-${record.workDate}`}
+                        onPrefetch={onPrefetchRecord}
+                        onSelect={onSelectRecord}
+                        record={record}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
@@ -1621,10 +2434,10 @@ function TeamMonthCalendar({
 
 function CalendarLegend() {
   const items = [
-    { className: "border-warn/50 bg-warn/10", label: "10시간+" },
-    { className: "border-danger/50 bg-danger/10", label: "12시간+" },
-    { className: "border-accent/45 bg-accentSoft", label: "완료 5개+" },
-    { className: "border-ink/30 bg-slate-100", label: "전부 완료" },
+    { className: "border-warn/50 bg-warn/10", label: "10시간+", tone: "warm" },
+    { className: "border-danger/50 bg-danger/10", label: "12시간+", tone: "danger" },
+    { className: "border-accent/45 bg-accentSoft", label: "완료 5개+", tone: "accent" },
+    { className: "border-ink/30 bg-slate-100", label: "전부 완료", tone: "complete" },
   ];
 
   return (
@@ -1634,18 +2447,476 @@ function CalendarLegend() {
     >
       {items.map((item) => (
         <span
-          className="inline-flex items-center gap-1 rounded border border-line bg-field/70 px-2 py-1"
+          className={`calendar-legend-badge calendar-legend-badge-${item.tone} inline-flex items-center gap-1 rounded border px-2 py-1`}
           key={item.label}
         >
           <span
             aria-hidden="true"
-            className={`h-2.5 w-2.5 rounded-sm border ${item.className}`}
+            className={`calendar-legend-dot h-2.5 w-2.5 rounded-sm border ${item.className}`}
           />
           <span>{item.label}</span>
         </span>
       ))}
     </div>
   );
+}
+
+type EmployeeTitleTone = "accent" | "complete" | "danger" | "ink" | "warm";
+
+type EmployeeTitle = {
+  achieved: boolean;
+  description: string;
+  id: string;
+  kind?: "duration";
+  name: string;
+  progress: number;
+  target: number;
+  tone: EmployeeTitleTone;
+  unit?: string;
+  value: number;
+};
+
+type EmployeeTitleBase = Omit<EmployeeTitle, "achieved" | "progress">;
+
+type EmployeeTitleStats = {
+  attendanceDays: number;
+  checkoutDays: number;
+  commentCount: number;
+  completedTasks: number;
+  currentStreak: number;
+  heavyDoneDays: number;
+  perfectTaskDays: number;
+  tenHourDays: number;
+  totalTasks: number;
+  totalWorkedMinutes: number;
+  twelveHourDays: number;
+};
+
+function MyTitlesPanel({
+  employeeId,
+  teamMonth,
+  todayDate,
+  todayWorkLog,
+}: {
+  employeeId: string;
+  teamMonth: TeamMonthAttendance | null;
+  todayDate?: string;
+  todayWorkLog: WorkLog | null;
+}) {
+  if (!teamMonth) {
+    return null;
+  }
+
+  const stats = getEmployeeTitleStats(employeeId, teamMonth, todayDate, todayWorkLog);
+  const titles = getEmployeeTitles(stats);
+  const achievedTitles = titles.filter((title) => title.achieved);
+  const representativeTitle = achievedTitles[0] ?? titles[0];
+  const doneSummary =
+    stats.totalTasks > 0 ? `${stats.completedTasks}/${stats.totalTasks}개` : "0개";
+
+  return (
+    <div className="mt-4 border-t border-line pt-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-bold text-ink">나의 칭호</h3>
+          <p className="mt-1 text-xs text-muted">
+            이번 달 기록으로 {achievedTitles.length}개 달성했어요. 다음 칭호까지 남은 흐름도 바로 볼 수 있어요.
+          </p>
+        </div>
+        <span className="rounded-full border border-accent/25 bg-accentSoft px-3 py-1 text-xs font-bold text-accent">
+          대표 칭호 · {representativeTitle.name}
+        </span>
+      </div>
+
+      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+        <TitleSummaryChip label="이번 달 출근" value={`${stats.attendanceDays}일`} />
+        <TitleSummaryChip label="총 근무시간" value={formatWorkedDuration(stats.totalWorkedMinutes)} />
+        <TitleSummaryChip label="완료한 업무" value={doneSummary} />
+      </div>
+
+      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        {titles.map((title) => (
+          <div
+            className={`rounded border p-3 transition ${getTitleCardClassName(title)}`}
+            key={title.id}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold">{title.name}</p>
+                <p className="mt-1 text-xs leading-relaxed opacity-80">{title.description}</p>
+              </div>
+              <span
+                className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                  title.achieved ? "bg-white/75 text-ink" : "bg-slate-100 text-muted"
+                }`}
+              >
+                {title.achieved ? "달성" : "진행"}
+              </span>
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-2 text-[11px] font-semibold">
+              <span>{formatTitleProgressValue(title)}</span>
+              <span>{Math.round(title.progress * 100)}%</span>
+            </div>
+            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-200/80">
+              <div
+                className={`h-full rounded-full ${getTitleProgressClassName(title)}`}
+                style={{ width: `${Math.max(7, Math.round(title.progress * 100))}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TitleSummaryChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded border border-line bg-white/75 px-3 py-2">
+      <p className="font-semibold text-muted">{label}</p>
+      <p className="mt-1 text-sm font-bold text-ink">{value}</p>
+    </div>
+  );
+}
+
+function getEmployeeTitleStats(
+  employeeId: string,
+  teamMonth: TeamMonthAttendance,
+  todayDate: string | undefined,
+  todayWorkLog: WorkLog | null,
+): EmployeeTitleStats {
+  const records = teamMonth.records
+    .filter(
+      (record) =>
+        record.employeeId === employeeId &&
+        record.workDate >= teamMonth.startDate &&
+        record.workDate <= teamMonth.endDate,
+    )
+    .sort((a, b) => a.workDate.localeCompare(b.workDate));
+
+  let totalWorkedMinutes = 0;
+  let tenHourDays = 0;
+  let twelveHourDays = 0;
+  let completedTasks = 0;
+  let totalTasks = 0;
+  let heavyDoneDays = 0;
+  let perfectTaskDays = 0;
+  let commentCount = 0;
+
+  for (const record of records) {
+    const workedMinutes = getWorkedMinutes(record);
+    if (workedMinutes !== null) {
+      totalWorkedMinutes += workedMinutes;
+      if (workedMinutes >= 10 * 60) {
+        tenHourDays += 1;
+      }
+      if (workedMinutes >= 12 * 60) {
+        twelveHourDays += 1;
+      }
+    }
+
+    const taskCount =
+      todayWorkLog?.employeeId === employeeId && todayWorkLog.workDate === record.workDate
+        ? todayWorkLog.taskCount
+        : record.taskCount ?? record.tasks?.length ?? 0;
+    const doneCount =
+      todayWorkLog?.employeeId === employeeId && todayWorkLog.workDate === record.workDate
+        ? todayWorkLog.doneCount
+        : record.doneCount ?? record.tasks?.filter((task) => task.done).length ?? 0;
+    const recordCommentCount =
+      todayWorkLog?.employeeId === employeeId && todayWorkLog.workDate === record.workDate
+        ? todayWorkLog.commentCount
+        : record.commentCount ?? 0;
+
+    totalTasks += taskCount;
+    completedTasks += doneCount;
+    commentCount += recordCommentCount;
+
+    if (doneCount >= 5) {
+      heavyDoneDays += 1;
+    }
+    if (taskCount >= 3 && doneCount === taskCount) {
+      perfectTaskDays += 1;
+    }
+  }
+
+  return {
+    attendanceDays: records.filter((record) => record.checkInAt || record.checkOutAt).length,
+    checkoutDays: records.filter((record) => record.checkOutAt).length,
+    commentCount,
+    completedTasks,
+    currentStreak: getCurrentAttendanceStreak(records, todayDate),
+    heavyDoneDays,
+    perfectTaskDays,
+    tenHourDays,
+    totalTasks,
+    totalWorkedMinutes,
+    twelveHourDays,
+  };
+}
+
+function getEmployeeTitles(stats: EmployeeTitleStats) {
+  const titles: EmployeeTitleBase[] = [
+    {
+      description: "이번 달 출근 기록을 남긴 날",
+      id: "attendance-starter",
+      name: "출근 스타터",
+      target: 1,
+      tone: "accent",
+      unit: "일",
+      value: stats.attendanceDays,
+    },
+    {
+      description: `현재 연속 출근 ${stats.currentStreak}일`,
+      id: "streak-3",
+      name: "3일 연속 출근",
+      target: 3,
+      tone: "accent",
+      unit: "일",
+      value: stats.currentStreak,
+    },
+    {
+      description: `현재 연속 출근 ${stats.currentStreak}일`,
+      id: "streak-5",
+      name: "5일 연속 추진력",
+      target: 5,
+      tone: "warm",
+      unit: "일",
+      value: stats.currentStreak,
+    },
+    {
+      description: "하루 10시간 이상 근무한 날",
+      id: "ten-hour",
+      name: "10시간 돌파",
+      target: 1,
+      tone: "warm",
+      unit: "일",
+      value: stats.tenHourDays,
+    },
+    {
+      description: "하루 12시간 이상 근무한 날",
+      id: "twelve-hour",
+      name: "12시간 불꽃근무",
+      target: 1,
+      tone: "danger",
+      unit: "일",
+      value: stats.twelveHourDays,
+    },
+    {
+      description: "하루에 완료 업무 5개 이상",
+      id: "task-five",
+      name: "완료 5개+",
+      target: 1,
+      tone: "accent",
+      unit: "일",
+      value: stats.heavyDoneDays,
+    },
+    {
+      description: "업무 3개 이상을 전부 완료한 날",
+      id: "perfect-task-day",
+      name: "전부 완료",
+      target: 1,
+      tone: "complete",
+      unit: "일",
+      value: stats.perfectTaskDays,
+    },
+    {
+      description: "이번 달 누적 근무시간 40시간",
+      id: "month-40h",
+      kind: "duration",
+      name: "월간 40시간",
+      target: 40 * 60,
+      tone: "ink",
+      value: stats.totalWorkedMinutes,
+    },
+    {
+      description: "이번 달 누적 근무시간 80시간",
+      id: "month-80h",
+      kind: "duration",
+      name: "월간 80시간",
+      target: 80 * 60,
+      tone: "danger",
+      value: stats.totalWorkedMinutes,
+    },
+    {
+      description: "업무 댓글 3개 이상",
+      id: "comment-connector",
+      name: "댓글 연결자",
+      target: 3,
+      tone: "ink",
+      unit: "개",
+      value: stats.commentCount,
+    },
+    {
+      description: "퇴근 기록까지 남긴 날 5일",
+      id: "checkout-routine",
+      name: "마무리 루틴",
+      target: 5,
+      tone: "complete",
+      unit: "일",
+      value: stats.checkoutDays,
+    },
+  ];
+
+  return titles
+    .map((title) => ({
+      ...title,
+      achieved: title.value >= title.target,
+      progress: Math.min(1, title.value / title.target),
+    }))
+    .sort(
+      (a, b) =>
+        Number(b.achieved) - Number(a.achieved) ||
+        b.progress - a.progress ||
+        a.target - b.target,
+    );
+}
+
+function getCurrentAttendanceStreak(records: TeamAttendanceRecord[], todayDate?: string) {
+  const attendanceDates = new Set(
+    records
+      .filter((record) => record.checkInAt || record.checkOutAt)
+      .map((record) => record.workDate),
+  );
+  if (attendanceDates.size === 0) {
+    return 0;
+  }
+
+  const sortedDates = [...attendanceDates].sort();
+  const latestDate = sortedDates[sortedDates.length - 1];
+  const cursorStart =
+    todayDate && todayDate.slice(0, 7) === latestDate.slice(0, 7) && todayDate <= latestDate
+      ? todayDate
+      : latestDate;
+  let cursor = attendanceDates.has(cursorStart) ? cursorStart : latestDate;
+  let streak = 0;
+
+  while (attendanceDates.has(cursor)) {
+    streak += 1;
+    cursor = addDateString(cursor, -1);
+  }
+
+  return streak;
+}
+
+function addDateString(value: string, deltaDays: number) {
+  const date = dateStringToUtcDate(value);
+  date.setUTCDate(date.getUTCDate() + deltaDays);
+  return date.toISOString().slice(0, 10);
+}
+
+function formatTitleProgressValue(title: EmployeeTitle) {
+  if (title.kind === "duration") {
+    return `${formatWorkedDuration(title.value)} / ${formatWorkedDuration(title.target)}`;
+  }
+
+  return `${title.value}${title.unit ?? ""} / ${title.target}${title.unit ?? ""}`;
+}
+
+function getTitleCardClassName(title: EmployeeTitle) {
+  if (!title.achieved) {
+    return "border-line bg-white/70 text-ink";
+  }
+
+  if (title.tone === "danger") {
+    return "border-danger/30 bg-danger/10 text-danger shadow-[0_14px_30px_-26px_rgba(222,69,69,0.85)]";
+  }
+
+  if (title.tone === "warm") {
+    return "border-warn/35 bg-warn/10 text-warn shadow-[0_14px_30px_-26px_rgba(235,133,38,0.85)]";
+  }
+
+  if (title.tone === "complete") {
+    return "border-ink/25 bg-slate-100 text-ink shadow-[0_14px_30px_-26px_rgba(23,32,51,0.55)]";
+  }
+
+  if (title.tone === "ink") {
+    return "border-slate-300 bg-field text-ink";
+  }
+
+  return "border-accent/30 bg-accentSoft text-accent shadow-[0_14px_30px_-26px_rgba(69,104,245,0.85)]";
+}
+
+function getTitleProgressClassName(title: EmployeeTitle) {
+  if (!title.achieved) {
+    return "bg-slate-400";
+  }
+
+  if (title.tone === "danger") {
+    return "bg-danger";
+  }
+
+  if (title.tone === "warm") {
+    return "bg-warn";
+  }
+
+  if (title.tone === "complete" || title.tone === "ink") {
+    return "bg-ink";
+  }
+
+  return "bg-accent";
+}
+
+function getCalendarColumnWidths(
+  days: Array<{ date: string; isCurrentMonth: boolean; key: string }>,
+  recordsByDate: Map<string, TeamAttendanceRecord[]>,
+) {
+  const widths = Array.from({ length: 7 }, () => CALENDAR_COLUMN_MIN_WIDTH);
+
+  for (const day of days) {
+    const dayOfWeek = dateStringToUtcDate(day.date).getUTCDay();
+    const dayLabelWidth =
+      estimateCalendarTextWidth(String(Number(day.date.slice(8, 10)))) +
+      CALENDAR_CELL_INLINE_PADDING * 2;
+    widths[dayOfWeek] = Math.max(widths[dayOfWeek], dayLabelWidth);
+
+    for (const record of recordsByDate.get(day.date) ?? []) {
+      widths[dayOfWeek] = Math.max(
+        widths[dayOfWeek],
+        estimateCalendarRecordWidth(record) + CALENDAR_CELL_INLINE_PADDING,
+      );
+    }
+  }
+
+  return widths.map((width) => Math.ceil(width));
+}
+
+function estimateCalendarRecordWidth(record: TeamAttendanceRecord) {
+  const commentWidth = record.commentCount
+    ? estimateCalendarTextWidth(`💬${record.commentCount}`)
+    : 0;
+  const commentGap = record.commentCount ? 4 : 0;
+
+  return (
+    estimateCalendarTextWidth(record.employeeName, { isBold: true }) +
+    estimateCalendarTextWidth(formatKstTime(record.checkInAt)) +
+    commentWidth +
+    commentGap +
+    4 +
+    CALENDAR_RECORD_INLINE_PADDING
+  );
+}
+
+function estimateCalendarTextWidth(value: string, options: { isBold?: boolean } = {}) {
+  let width = 0;
+
+  for (const character of value) {
+    if (/[\uAC00-\uD7A3]/.test(character)) {
+      width += 12;
+    } else if (/[0-9]/.test(character)) {
+      width += 6.6;
+    } else if (character === ":") {
+      width += 3.8;
+    } else if (character === " ") {
+      width += 3.5;
+    } else if (character === "💬") {
+      width += 14;
+    } else {
+      width += 7;
+    }
+  }
+
+  return options.isBold ? width + 1.5 : width;
 }
 
 function TeamCalendarRecord({
@@ -1669,25 +2940,25 @@ function TeamCalendarRecord({
 
   return (
     <button
-      className={`flex h-7 w-full min-w-0 items-center justify-between gap-1 rounded border px-1.5 text-left text-[10px] leading-none transition hover:border-accent/50 hover:bg-white hover:shadow-md hover:ring-1 hover:ring-inset hover:ring-accent/20 sm:h-8 sm:px-2 sm:text-xs ${markerClassName}`}
+      className={`flex h-8 w-full min-w-0 items-center justify-between gap-1 rounded border px-1.5 text-left text-xs leading-none transition hover:border-accent/50 hover:bg-white hover:shadow-md hover:ring-1 hover:ring-inset hover:ring-accent/20 ${markerClassName}`}
       onFocus={() => onPrefetch(record)}
       onClick={() => onSelect(record)}
       onPointerEnter={() => onPrefetch(record)}
       title={`${record.employeeName}${isMe ? " (나)" : ""} ${timeRangeText}${durationText ? ` · ${durationText}` : ""}${marker ? ` · ${marker.title}` : ""}${record.commentCount ? ` · 댓글 ${record.commentCount}개` : ""}`}
       type="button"
     >
-      <span className="min-w-0 truncate font-bold">{record.employeeName}</span>
-      <span className="flex shrink-0 items-center gap-1 pl-1">
+      <span className="shrink-0 whitespace-nowrap font-bold">{record.employeeName}</span>
+      <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
         {record.commentCount ? (
           <span
             aria-label={`댓글 ${record.commentCount}개`}
-            className="text-[10px] font-bold opacity-70"
+            className="shrink-0 text-xs font-bold opacity-70"
             title={`댓글 ${record.commentCount}개`}
           >
             💬{record.commentCount}
           </span>
         ) : null}
-        <span className="text-[10px] font-semibold opacity-80 sm:text-[11px]">{checkInText}</span>
+        <span className="shrink-0 text-xs font-semibold opacity-80">{checkInText}</span>
       </span>
     </button>
   );
@@ -1763,7 +3034,7 @@ function QuickWorkLogPanel({
   return (
     <div className="border-t border-line px-3 pb-3">
       {isLoading ? (
-        <div className="flex items-center justify-center gap-2 py-5 text-sm font-semibold text-muted">
+        <div className="flex items-center justify-center gap-2 pb-5 pt-8 text-sm font-semibold text-muted">
           <Spinner />
           오늘 업무를 불러오는 중
         </div>
@@ -1788,21 +3059,23 @@ function QuickWorkLogPanel({
             </p>
           ) : null}
 
-          <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-            <input
-              className="field text-sm"
-              onChange={(event) => onTaskTextChange(event.target.value)}
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <textarea
+              className="field min-h-20 resize-none text-sm leading-relaxed"
+              maxLength={TASK_DRAFT_MAX_LENGTH}
+              onChange={(event) => onTaskTextChange(normalizeTaskDraft(event.target.value))}
               onKeyDown={(event) => {
-                if (event.key === "Enter") {
+                if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
                   event.preventDefault();
                   onAddTask();
                 }
               }}
               placeholder="할 일 또는 한 일을 입력하세요"
+              rows={3}
               value={newTaskText}
             />
             <button
-              className="primary-button px-4 py-2 text-sm"
+              className="primary-button min-h-20 px-4 py-2 text-sm"
               disabled={!newTaskText.trim()}
               onClick={onAddTask}
               type="button"
@@ -1944,21 +3217,23 @@ function WorkLogModal({
               {canEdit ? (
                 <div className="rounded border border-line p-3">
                   <p className="text-sm font-bold text-ink">업무 추가</p>
-                  <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
-                    <input
-                      className="field"
-                      onChange={(event) => onTaskTextChange(event.target.value)}
+                  <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                    <textarea
+                      className="field min-h-20 resize-none text-sm leading-relaxed"
+                      maxLength={TASK_DRAFT_MAX_LENGTH}
+                      onChange={(event) => onTaskTextChange(normalizeTaskDraft(event.target.value))}
                       onKeyDown={(event) => {
-                        if (event.key === "Enter") {
+                        if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
                           event.preventDefault();
                           onAddTask();
                         }
                       }}
                       placeholder="할 일을 입력하세요"
+                      rows={3}
                       value={newTaskText}
                     />
                     <button
-                      className="primary-button px-4 py-2 text-sm"
+                      className="primary-button min-h-20 px-4 py-2 text-sm"
                       disabled={!newTaskText.trim()}
                       onClick={onAddTask}
                       type="button"
@@ -2610,34 +3885,53 @@ function formatWorkedDuration(minutes: number) {
   return `${hours}시간 ${restMinutes}분`;
 }
 
-function getWarmGreeting(record: AttendanceRecord | null | undefined) {
-  if (record?.checkOutAt) {
-    return "고생 많았어요. 남은 하루는 조금 가볍게 보내요.";
-  }
-
-  if (record?.checkInAt) {
-    return "오늘도 천천히, 할 수 있는 만큼만 잘 해봐요.";
-  }
-
-  return "어서 와요. 오늘도 무리하지 말고 차근차근 시작해요.";
+function formatWorkingSinceLabel(minutes: number) {
+  return `${formatWorkedDuration(Math.max(0, minutes))}째`;
 }
 
-function getActionMessage(actionLabel: string, record: AttendanceRecord) {
+function getWorkDurationHeatClassName(minutes: number) {
+  if (minutes >= 12 * 60) {
+    return "work-heat-fire";
+  }
+
+  if (minutes >= 10 * 60) {
+    return "work-heat-hot";
+  }
+
+  if (minutes >= 8 * 60) {
+    return "work-heat-warm";
+  }
+
+  if (minutes >= 4 * 60) {
+    return "work-heat-steady";
+  }
+
+  return "work-heat-fresh";
+}
+
+function getGreetingEvent(actionLabel: string): GreetingEvent {
   if (actionLabel === "출근 처리 중") {
-    return "좋은 아침이에요. 오늘도 같이 잘 보내봐요!";
+    return "checkIn";
   }
 
   if (actionLabel === "퇴근 처리 중") {
-    return record.checkInAt
-      ? "오늘도 고생하셨어요. 퇴근 기록을 남겨뒀어요!"
-      : "출근을 깜빡했어도 괜찮아요. 퇴근 기록부터 남겨뒀어요.";
+    return "checkOut";
   }
 
   if (actionLabel === "퇴근 취소 중") {
-    return "괜찮아요. 퇴근 기록을 다시 열어뒀어요.";
+    return "cancelCheckOut";
   }
 
-  return "";
+  return "visit";
+}
+
+function normalizeTaskDraft(value: string) {
+  return value
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .slice(0, TASK_DRAFT_MAX_LINES)
+    .join("\n")
+    .slice(0, TASK_DRAFT_MAX_LENGTH);
 }
 
 function formatKstTime(value: string | null | undefined) {
@@ -2712,7 +4006,7 @@ function withTaskOrder(tasks: WorkTask[]) {
     }))
     .sort(
       (a, b) =>
-        Number(b.done) - Number(a.done) ||
+        Number(a.done) - Number(b.done) ||
         a.order - b.order ||
         a.createdAt.localeCompare(b.createdAt),
     )
