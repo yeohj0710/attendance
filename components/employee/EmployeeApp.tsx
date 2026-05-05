@@ -633,7 +633,7 @@ export function EmployeeApp() {
         todayRecord: record,
         openRecord: record.checkInAt && !record.checkOutAt ? record : null,
         canCheckIn: !record.checkInAt && !record.checkOutAt,
-        canCheckOut: true,
+        canCheckOut: !record.checkOutAt,
         hasPreviousOpen: false,
       };
     });
@@ -1612,7 +1612,7 @@ export function EmployeeApp() {
   const statusHeatClassName =
     currentWorkingMinutes !== null ? getWorkDurationHeatClassName(currentWorkingMinutes) : "";
   const canPressCheckOut =
-    !isReadOnly && Boolean(status?.canCheckOut || status?.todayRecord?.checkInAt) && !isMutating;
+    !isReadOnly && Boolean(status?.canCheckOut) && !isMutating;
   const canCancelCheckOut = !isReadOnly && Boolean(status?.todayRecord?.checkOutAt) && !isMutating;
   const workingTeamRecords = teamRecords.filter(
     (record) =>

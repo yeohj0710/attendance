@@ -244,9 +244,7 @@ function getEventMessages(profile: GreetingProfile) {
 
     return [
       "퇴근 완료! 오늘도 고생하셨어요.",
-      ...(profile.workedMinutes !== null
-        ? [`오늘 ${formatDuration(profile.workedMinutes)} 근무하셨네요. 고생 많았어요!`]
-        : []),
+      ...getCheckoutDurationMessages(profile),
       `${profile.firstName}님, 퇴근 기록까지 깔끔해요. 고생 많았어요!`,
       "오늘 업무 마무리네요. 이제 쉬는 쪽으로 넘어가요!",
     ];
@@ -309,6 +307,56 @@ function getRecordCareMessages(profile: GreetingProfile) {
   }
 
   return messages;
+}
+
+function getCheckoutDurationMessages(profile: GreetingProfile) {
+  if (profile.workedMinutes === null) return [];
+
+  const duration = formatDuration(profile.workedMinutes);
+
+  if (profile.workedMinutes >= 12 * 60) {
+    return [
+      `오늘 ${duration} 근무하셨네요. 정말 길게 버티셨어요, 이제 푹 쉬어요.`,
+      `${duration} 일하고 퇴근 완료! 오늘은 고생 많았다는 말이 딱이에요.`,
+      `무려 ${duration} 채웠네요. 내일의 나를 위해 지금은 회복 쪽으로 갑시다.`,
+    ];
+  }
+
+  if (profile.workedMinutes >= 10 * 60) {
+    return [
+      `오늘 ${duration} 근무하셨어요. 긴 하루 끝까지 챙기느라 고생 많았어요!`,
+      `${duration} 일하고 마무리했네요. 이제 머리 좀 내려놓아도 됩니다.`,
+      `퇴근 완료! ${duration} 꽉 채운 하루였네요. 진짜 수고했어요.`,
+    ];
+  }
+
+  if (profile.workedMinutes >= 8 * 60) {
+    return [
+      `오늘 ${duration} 근무하셨네요. 정석으로 잘 마무리했어요, 고생했어요!`,
+      `${duration} 일하고 퇴근 완료! 남은 하루는 가볍게 쉬어가요.`,
+      `오늘도 ${duration} 잘 채웠네요. 기록까지 깔끔합니다!`,
+    ];
+  }
+
+  if (profile.workedMinutes >= 4 * 60) {
+    return [
+      `오늘 ${duration} 근무하셨어요. 필요한 만큼 잘 달렸네요, 고생했어요!`,
+      `${duration} 일하고 마무리했네요. 남은 에너지는 퇴근길에 아껴둡시다.`,
+      `퇴근 완료! ${duration} 동안 챙길 것 챙기느라 수고했어요.`,
+    ];
+  }
+
+  if (profile.workedMinutes <= 30) {
+    return [
+      `오늘 기록 간격은 ${duration}이에요. 혹시 출근을 깜빡했다면 다음엔 먼저 찍어봐요!`,
+      `${duration} 만에 퇴근 처리됐어요. 기록 확인만 한번 해두면 좋겠어요.`,
+    ];
+  }
+
+  return [
+    `오늘 ${duration} 근무하셨네요. 짧고 굵게 마무리했어요, 수고했어요!`,
+    `${duration} 일하고 퇴근 완료! 오늘도 기록 잘 남겼습니다.`,
+  ];
 }
 
 function getWeatherMessages(profile: GreetingProfile) {
