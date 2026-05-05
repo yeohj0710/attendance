@@ -18,6 +18,33 @@ export class ApiClientError extends Error {
 const TOKEN_KEY = "attendance.token";
 const DEVICE_KEY = "attendance.deviceId";
 const ACTIVE_DEVICE_KEY = "attendance.activeDeviceId";
+export const SHARE_QUERY_PARAM = "share";
+export const SHARE_ID_QUERY_PARAM = "shareId";
+
+export function getShareTokenFromLocation() {
+  return new URLSearchParams(window.location.search).get(SHARE_QUERY_PARAM)?.trim() ?? "";
+}
+
+export function getShareRequestParamsFromLocation() {
+  const searchParams = new URLSearchParams(window.location.search);
+  const shareToken = searchParams.get(SHARE_QUERY_PARAM)?.trim();
+  const shareId =
+    searchParams.get(SHARE_ID_QUERY_PARAM)?.trim() ??
+    window.location.pathname.match(/^\/s\/([^/]+)/)?.[1];
+
+  if (!shareToken && !shareId) {
+    return null;
+  }
+
+  const params = new URLSearchParams();
+  if (shareToken) {
+    params.set(SHARE_QUERY_PARAM, shareToken);
+  }
+  if (shareId) {
+    params.set(SHARE_ID_QUERY_PARAM, decodeURIComponent(shareId));
+  }
+  return params;
+}
 
 export function getDeviceId(owner?: string) {
   const storageKey = getDeviceStorageKey(owner);

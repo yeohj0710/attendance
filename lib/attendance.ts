@@ -72,10 +72,14 @@ const formerTeamMemberNames = new Set(["홍현석"]);
 export async function getAttendanceStatus(auth: AuthContext) {
   await autoCloseForgottenCheckOuts(auth);
 
+  return getAttendanceStatusForEmployee(auth.employee.id);
+}
+
+export async function getAttendanceStatusForEmployee(employeeId: string) {
   const today = getWorkDateString();
   const [todayRecord, openRecord] = await Promise.all([
-    getRecordByEmployeeDate(auth.employee.id, today),
-    getOpenRecord(auth.employee.id),
+    getRecordByEmployeeDate(employeeId, today),
+    getOpenRecord(employeeId),
   ]);
   const hasPreviousOpen =
     openRecord !== null && openRecord.workDate !== today && !openRecord.checkOutAt;

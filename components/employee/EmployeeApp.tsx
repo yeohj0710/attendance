@@ -7,6 +7,7 @@ import {
   clearToken,
   formatKstClock,
   formatKstDateTime,
+  getShareRequestParamsFromLocation,
   getStoredAuth,
   isAuthError,
   type StoredAuth,
@@ -58,6 +59,13 @@ type DashboardResponse = {
   teamMonth: TeamMonthAttendance;
 };
 
+type SharedDashboardResponse = DashboardResponse & {
+  todayWorkLog: WorkLog | null;
+  targetWorkLog: WorkLog | null;
+  targetWorkRecord: TeamAttendanceRecord | null;
+  shareType?: "dashboard" | "work-log";
+};
+
 type TeamMonthAttendance = {
   month: string;
   startDate: string;
@@ -75,6 +83,7 @@ type WorkTask = {
   done: boolean;
   section: WorkTaskSection;
   order?: number;
+  completedOrder?: number | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -85,6 +94,15 @@ type WorkComment = {
   authorName: string;
   text: string;
   createdAt: string;
+};
+
+type WorkCommentNotification = WorkComment & {
+  workDate: string;
+};
+
+type WorkCommentNotificationResponse = {
+  checkedAt: string;
+  notifications: WorkCommentNotification[];
 };
 
 type TeamAttendanceRecord = {
@@ -125,12 +143,39 @@ const workTypeLabels: Record<AttendanceRecord["workType"], string> = {
 
 const TASK_DRAFT_MAX_LINES = 5;
 const TASK_DRAFT_MAX_LENGTH = 280;
+const COMMENT_DRAFT_MAX_LENGTH = 2000;
 const GREETING_ROTATION_INTERVAL_MS = 5200;
 const CALENDAR_COLUMN_MIN_WIDTH = 88;
 const CALENDAR_CELL_INLINE_PADDING = 12;
 const CALENDAR_RECORD_INLINE_PADDING = 14;
 const weekdayLabels = ["일", "월", "화", "수", "목", "금", "토"];
 const formerTeamMemberNames = new Set(["홍현석"]);
+const fixedPublicHolidayNames: Record<string, string> = {
+  "01-01": "신정",
+  "03-01": "삼일절",
+  "05-05": "어린이날",
+  "06-06": "현충일",
+  "08-15": "광복절",
+  "10-03": "개천절",
+  "10-09": "한글날",
+  "12-25": "성탄절",
+};
+const publicHolidayNamesByDate: Record<string, string> = {
+  "2026-02-16": "설 연휴",
+  "2026-02-17": "설날",
+  "2026-02-18": "설 연휴",
+  "2026-03-02": "대체공휴일",
+  "2026-05-24": "부처님오신날",
+  "2026-05-25": "대체공휴일",
+  "2026-06-03": "지방선거일",
+  "2026-08-17": "대체공휴일",
+  "2026-09-24": "추석 연휴",
+  "2026-09-25": "추석",
+  "2026-09-26": "추석 연휴",
+  "2026-10-05": "대체공휴일",
+};
+const COMMENT_NOTIFICATION_LAST_SEEN_KEY = "attendance.commentNotifications.lastSeen";
+const COMMENT_NOTIFICATION_INITIAL_LOOKBACK_MS = 3 * 24 * 60 * 60 * 1000;
 
 export function EmployeeApp() {
   const [auth, setAuth] = useState<StoredAuth | null>(null);
@@ -144,6 +189,7 @@ export function EmployeeApp() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isTeamMonthLoading, setIsTeamMonthLoading] = useState(false);
+  const [isSharedView, setIsSharedView] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [greetingMessages, setGreetingMessages] = useState<string[]>([]);
@@ -157,10 +203,18 @@ export function EmployeeApp() {
     scope: "today" | "work";
     task: WorkTask;
   } | null>(null);
+  const [commentNotificationState, setCommentNotificationState] = useState<{
+    checkedAt: string;
+    notifications: WorkCommentNotification[];
+  } | null>(null);
   const [skipDeleteConfirm, setSkipDeleteConfirm] = useState(false);
   const [deleteWithoutAskingAgain, setDeleteWithoutAskingAgain] = useState(false);
   const [workLog, setWorkLog] = useState<WorkLog | null>(null);
   const [workLogMessage, setWorkLogMessage] = useState("");
+  const [workLogShareMessage, setWorkLogShareMessage] = useState("");
+  const [workLogShareToastId, setWorkLogShareToastId] = useState(0);
+  const [dashboardShareUrl, setDashboardShareUrl] = useState("");
+  const [workLogShareUrl, setWorkLogShareUrl] = useState("");
   const [isWorkLogLoading, setIsWorkLogLoading] = useState(false);
   const [isWorkLogSaving, setIsWorkLogSaving] = useState(false);
   const [isCommentSaving, setIsCommentSaving] = useState(false);
@@ -186,6 +240,8 @@ export function EmployeeApp() {
   const workLogSaveChainRef = useRef<Promise<void>>(Promise.resolve());
   const todayWorkLogSaveChainRef = useRef<Promise<void>>(Promise.resolve());
   const prefetchingWorkLogKeysRef = useRef(new Set<string>());
+  const workLogShareMessageTimerRef = useRef<number | null>(null);
+  const commentNotificationCheckedRef = useRef(false);
 
   const load = useCallback(async (storedAuth: StoredAuth, knownEmployee?: Employee) => {
     setMessage("");
@@ -197,20 +253,35 @@ export function EmployeeApp() {
         { auth: storedAuth },
       );
 
-      setEmployee(knownEmployee ?? dashboard.employee);
-      setStatus(dashboard.status);
-      setRecords(dashboard.records);
-      setTeamRecords(dashboard.teamRecords);
-      setTeamMonth(dashboard.teamMonth);
-      teamMonthCacheRef.current.set(dashboard.teamMonth.month, dashboard.teamMonth);
+      applyDashboardState({
+        ...dashboard,
+        employee: knownEmployee ?? dashboard.employee,
+      });
     } finally {
       setIsRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
+    const shareParams = getShareRequestParamsFromLocation();
+    if (shareParams) {
+      setAuth(null);
+      setIsSharedView(true);
+      apiFetch<SharedDashboardResponse>(`/api/share?${shareParams.toString()}`)
+        .then((dashboard) => applySharedDashboardState(dashboard))
+        .catch((error) => {
+          setMessage(error instanceof Error ? error.message : "공유 화면을 불러오지 못했습니다.");
+        })
+        .finally(() => {
+          setIsLoading(false);
+          setIsRefreshing(false);
+        });
+      return;
+    }
+
     const storedAuth = getStoredAuth();
     setAuth(storedAuth);
+    setIsSharedView(false);
 
     if (!storedAuth) {
       setIsLoading(false);
@@ -242,6 +313,12 @@ export function EmployeeApp() {
     if (!auth || !employee || !status?.kstDate) return;
     void loadTodayWorkLog();
   }, [auth, employee, status?.kstDate]);
+
+  useEffect(() => {
+    if (!auth || !employee || isSharedView || commentNotificationCheckedRef.current) return;
+    commentNotificationCheckedRef.current = true;
+    void loadCommentNotifications(auth, employee);
+  }, [auth, employee?.id, isSharedView]);
 
   useEffect(() => {
     if (!auth || !employee || !status?.kstDate) return;
@@ -293,15 +370,123 @@ export function EmployeeApp() {
     return () => window.clearTimeout(timer);
   }, [auth, teamMonth?.month, teamMonth?.records]);
 
+  useEffect(() => {
+    return () => {
+      if (workLogShareMessageTimerRef.current !== null) {
+        window.clearTimeout(workLogShareMessageTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!auth || isSharedView) {
+      setDashboardShareUrl("");
+      return;
+    }
+
+    let cancelled = false;
+    void createShareUrl({ type: "dashboard" })
+      .then((url) => {
+        if (!cancelled) {
+          setDashboardShareUrl(url);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDashboardShareUrl("");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [auth, isSharedView]);
+
+  useEffect(() => {
+    setWorkLogShareUrl("");
+    if (!auth || isSharedView || !selectedWorkRecord) {
+      return;
+    }
+
+    let cancelled = false;
+    void createShareUrl({
+      type: "work-log",
+      employeeId: selectedWorkRecord.employeeId,
+      workDate: selectedWorkRecord.workDate,
+    })
+      .then((url) => {
+        if (!cancelled) {
+          setWorkLogShareUrl(url);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setWorkLogShareUrl("");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [auth, isSharedView, selectedWorkRecord?.employeeId, selectedWorkRecord?.workDate]);
+
   async function refresh(loginEmployee?: Employee) {
     const storedAuth = getStoredAuth();
     setAuth(storedAuth);
+    commentNotificationCheckedRef.current = false;
     if (!storedAuth) return;
     if (loginEmployee) {
       setEmployee(loginEmployee);
       setIsLoading(false);
     }
     await load(storedAuth, loginEmployee);
+  }
+
+  async function loadCommentNotifications(requestAuth: StoredAuth, currentEmployee: Employee) {
+    const since = getCommentNotificationLastSeen(currentEmployee.id);
+
+    try {
+      const params = new URLSearchParams({ since });
+      const result = await apiFetch<WorkCommentNotificationResponse>(
+        `/api/work-log/comment-notifications?${params.toString()}`,
+        { auth: requestAuth },
+      );
+
+      if (!result.notifications.length) {
+        setCommentNotificationLastSeen(currentEmployee.id, result.checkedAt);
+        return;
+      }
+
+      setCommentNotificationState({
+        checkedAt: result.checkedAt,
+        notifications: result.notifications,
+      });
+    } catch {
+      // 댓글 알림은 보조 기능이라 대시보드 진입을 막지 않는다.
+    }
+  }
+
+  function dismissCommentNotifications() {
+    if (employee && commentNotificationState?.checkedAt) {
+      setCommentNotificationLastSeen(employee.id, commentNotificationState.checkedAt);
+    }
+    setCommentNotificationState(null);
+  }
+
+  function openCommentNotification(notification: WorkCommentNotification) {
+    if (!employee) return;
+
+    dismissCommentNotifications();
+    void openWorkLog({
+      employeeId: employee.id,
+      employeeNo: employee.employeeNo,
+      employeeName: employee.name,
+      workDate: notification.workDate,
+      checkInAt: null,
+      checkOutAt: null,
+      workType: "office",
+      note: null,
+    });
   }
 
   async function runAction(path: string, actionLabel: string) {
@@ -389,6 +574,44 @@ export function EmployeeApp() {
           weather: result.weather ?? null,
         }
       : null;
+  }
+
+  function applyDashboardState(dashboard: DashboardResponse) {
+    setEmployee(dashboard.employee);
+    setStatus(dashboard.status);
+    setRecords(dashboard.records);
+    setTeamRecords(dashboard.teamRecords);
+    setTeamMonth(dashboard.teamMonth);
+    teamMonthCacheRef.current.set(dashboard.teamMonth.month, dashboard.teamMonth);
+  }
+
+  function applySharedDashboardState(dashboard: SharedDashboardResponse) {
+    applyDashboardState(dashboard);
+    setTodayWorkLog(dashboard.todayWorkLog ? normalizeWorkLogCounts(dashboard.todayWorkLog) : null);
+    if (dashboard.todayWorkLog) {
+      rememberWorkLog(normalizeWorkLogCounts(dashboard.todayWorkLog));
+    }
+
+    if (dashboard.targetWorkLog) {
+      const targetWorkLog = normalizeWorkLogCounts(dashboard.targetWorkLog);
+      const targetRecord =
+        dashboard.targetWorkRecord ??
+        resolveSharedWorkLogRecord(
+          { employeeId: targetWorkLog.employeeId, workDate: targetWorkLog.workDate },
+          {
+            employee: dashboard.employee,
+            records: dashboard.records,
+            status: dashboard.status,
+            teamMonth: dashboard.teamMonth,
+            teamRecords: dashboard.teamRecords,
+          },
+      );
+      setSelectedWorkRecord(targetRecord);
+      setWorkLog(targetWorkLog);
+      rememberWorkLog(targetWorkLog);
+    } else if (dashboard.shareType === "work-log") {
+      setWorkLogMessage("공유된 업무 기록을 찾지 못했어요.");
+    }
   }
 
   function applyRecord(record: AttendanceRecord) {
@@ -480,7 +703,7 @@ export function EmployeeApp() {
   }
 
   async function openWorkLog(record: TeamAttendanceRecord) {
-    if (!auth) return;
+    if (!auth && !isSharedView) return;
 
     const cacheKey = getWorkLogCacheKey(record.employeeId, record.workDate);
     const cachedWorkLog = workLogCacheRef.current.get(cacheKey) ?? null;
@@ -489,14 +712,24 @@ export function EmployeeApp() {
     setSelectedWorkRecord(record);
     setWorkLog(cachedWorkLog);
     setWorkLogMessage("");
+    setWorkLogShareMessage("");
     setNewTaskText("");
     setNewCommentText("");
     setIsWorkLogLoading(!cachedWorkLog);
 
     try {
-      const freshWorkLog = await fetchWorkLog(record, auth, { force: true });
+      const freshWorkLog =
+        auth
+          ? await fetchWorkLog(record, auth, { force: true })
+          : await fetchSharedWorkLog(record);
       if (workLogLoadRequestIdRef.current === requestId) {
         setWorkLog(freshWorkLog);
+        setSelectedWorkRecord((currentRecord) =>
+          currentRecord?.employeeId === freshWorkLog.employeeId &&
+          currentRecord.workDate === freshWorkLog.workDate
+            ? { ...currentRecord, employeeName: freshWorkLog.employeeName }
+            : currentRecord,
+        );
       }
     } catch (error) {
       if (workLogLoadRequestIdRef.current === requestId) {
@@ -507,6 +740,21 @@ export function EmployeeApp() {
         setIsWorkLogLoading(false);
       }
     }
+  }
+
+  async function fetchSharedWorkLog(record: Pick<TeamAttendanceRecord, "employeeId" | "workDate">) {
+    const params = getShareRequestParamsFromLocation();
+    if (!params) {
+      throw new Error("공유 링크를 찾을 수 없어요.");
+    }
+    params.set("employeeId", record.employeeId);
+    params.set("workDate", record.workDate);
+    const result = await apiFetch<SharedDashboardResponse>(`/api/share?${params.toString()}`);
+    if (!result.targetWorkLog) {
+      throw new Error("업무 기록을 찾을 수 없습니다.");
+    }
+
+    return normalizeWorkLogCounts(result.targetWorkLog);
   }
 
   async function loadTeamMonth(month: string) {
@@ -705,7 +953,7 @@ export function EmployeeApp() {
       id: crypto.randomUUID(),
       authorEmployeeId: employee.id,
       authorName: employee.name,
-      text: newCommentText.trim().slice(0, 500),
+      text: newCommentText.trim().slice(0, COMMENT_DRAFT_MAX_LENGTH),
       createdAt: now,
     };
     const optimisticLog = normalizeWorkLogCounts({
@@ -743,7 +991,7 @@ export function EmployeeApp() {
   }
 
   async function updateWorkComment(commentId: string, text: string) {
-    const nextText = text.trim().slice(0, 500);
+    const nextText = text.trim().slice(0, COMMENT_DRAFT_MAX_LENGTH);
     if (!auth || !workLog || !nextText) return;
 
     const optimisticLog = normalizeWorkLogCounts({
@@ -902,10 +1150,77 @@ export function EmployeeApp() {
     setSelectedWorkRecord(null);
     setWorkLog(null);
     setWorkLogMessage("");
+    setWorkLogShareMessage("");
     setNewTaskText("");
     setNewCommentText("");
     setEditingCommentId(null);
     setEditingCommentText("");
+  }
+
+  async function copySelectedWorkLogLink() {
+    if (!selectedWorkRecord) return;
+
+    try {
+      const url =
+        workLogShareUrl ||
+        (await createShareUrl({
+          type: "work-log",
+          employeeId: selectedWorkRecord.employeeId,
+          workDate: selectedWorkRecord.workDate,
+        }));
+      setWorkLogShareUrl(url);
+      await copyPreparedShareUrl(url);
+    } catch {
+      showShareToast("공유 링크 복사에 실패했어요.");
+    }
+  }
+
+  async function copyDashboardShareLink() {
+    try {
+      const url = dashboardShareUrl || (await createShareUrl({ type: "dashboard" }));
+      setDashboardShareUrl(url);
+      await copyPreparedShareUrl(url);
+    } catch {
+      showShareToast("공유 링크 복사에 실패했어요.");
+    }
+  }
+
+  async function copyPreparedShareUrl(url: string) {
+    try {
+      await copyTextToClipboard(url);
+      showShareToast("공유 링크가 복사되었어요.");
+    } catch {
+      showShareToast("공유 링크 복사에 실패했어요.");
+    }
+  }
+
+  function showShareToast(message: string) {
+    setWorkLogShareMessage(message);
+    setWorkLogShareToastId((currentId) => currentId + 1);
+    if (workLogShareMessageTimerRef.current !== null) {
+      window.clearTimeout(workLogShareMessageTimerRef.current);
+    }
+    workLogShareMessageTimerRef.current = window.setTimeout(() => {
+      setWorkLogShareMessage("");
+      workLogShareMessageTimerRef.current = null;
+    }, 2500);
+  }
+
+  async function createShareUrl(input: {
+    type: "dashboard" | "work-log";
+    employeeId?: string;
+    workDate?: string;
+  }) {
+    if (!auth) {
+      return window.location.href;
+    }
+
+    const result = await apiFetch<{ url: string }>("/api/share", {
+      method: "POST",
+      auth,
+      body: JSON.stringify(input),
+    });
+    return result.url;
   }
 
   async function persistWorkLog(nextLog: WorkLog) {
@@ -1011,6 +1326,8 @@ export function EmployeeApp() {
           text: newTaskText.trim(),
           done: false,
           section: "today" as WorkTaskSection,
+          order: getNextTaskOrder(workLog.tasks),
+          completedOrder: null,
           createdAt: now,
           updatedAt: now,
         },
@@ -1033,6 +1350,8 @@ export function EmployeeApp() {
           text: todayTaskText.trim(),
           done: false,
           section: "today" as WorkTaskSection,
+          order: getNextTaskOrder(todayWorkLog.tasks),
+          completedOrder: null,
           createdAt: now,
           updatedAt: now,
         },
@@ -1047,14 +1366,28 @@ export function EmployeeApp() {
 
     setPendingWorkTaskId(taskId);
     try {
+      const now = new Date().toISOString();
+      const nextCompletedOrder = getNextCompletedOrder(workLog.tasks);
       await persistWorkLog({
         ...workLog,
         tasks: withTaskOrder(
-          workLog.tasks.map((task) =>
-            task.id === taskId
-              ? { ...task, done: !task.done, updatedAt: new Date().toISOString() }
-              : task,
-          ),
+          workLog.tasks.map((task) => {
+            if (task.id !== taskId) {
+              return task;
+            }
+
+            const done = !task.done;
+            return {
+              ...task,
+              done,
+              order:
+                done || getFiniteNumber(task.completedOrder) !== null
+                  ? task.order
+                  : getRestoredOpenOrder(task, workLog.tasks),
+              completedOrder: done ? nextCompletedOrder : null,
+              updatedAt: now,
+            };
+          }),
         ),
       });
     } finally {
@@ -1067,14 +1400,28 @@ export function EmployeeApp() {
 
     setPendingTodayTaskId(taskId);
     try {
+      const now = new Date().toISOString();
+      const nextCompletedOrder = getNextCompletedOrder(todayWorkLog.tasks);
       await persistTodayWorkLog({
         ...todayWorkLog,
         tasks: withTaskOrder(
-          todayWorkLog.tasks.map((task) =>
-            task.id === taskId
-              ? { ...task, done: !task.done, updatedAt: new Date().toISOString() }
-              : task,
-          ),
+          todayWorkLog.tasks.map((task) => {
+            if (task.id !== taskId) {
+              return task;
+            }
+
+            const done = !task.done;
+            return {
+              ...task,
+              done,
+              order:
+                done || getFiniteNumber(task.completedOrder) !== null
+                  ? task.order
+                  : getRestoredOpenOrder(task, todayWorkLog.tasks),
+              completedOrder: done ? nextCompletedOrder : null,
+              updatedAt: now,
+            };
+          }),
         ),
       });
     } finally {
@@ -1241,10 +1588,11 @@ export function EmployeeApp() {
     );
   }
 
-  if (!auth || !employee) {
+  if (!employee) {
     return <LoginPanel onLogin={refresh} />;
   }
 
+  const isReadOnly = isSharedView || !auth;
   const currentRecord = status?.openRecord ?? status?.todayRecord;
   const currentWorkingMinutes =
     currentRecord?.checkInAt && !currentRecord.checkOutAt
@@ -1264,8 +1612,8 @@ export function EmployeeApp() {
   const statusHeatClassName =
     currentWorkingMinutes !== null ? getWorkDurationHeatClassName(currentWorkingMinutes) : "";
   const canPressCheckOut =
-    Boolean(status?.canCheckOut || status?.todayRecord?.checkInAt) && !isMutating;
-  const canCancelCheckOut = Boolean(status?.todayRecord?.checkOutAt) && !isMutating;
+    !isReadOnly && Boolean(status?.canCheckOut || status?.todayRecord?.checkInAt) && !isMutating;
+  const canCancelCheckOut = !isReadOnly && Boolean(status?.todayRecord?.checkOutAt) && !isMutating;
   const workingTeamRecords = teamRecords.filter(
     (record) =>
       record.checkInAt &&
@@ -1299,11 +1647,26 @@ export function EmployeeApp() {
             <p className="text-xs font-semibold text-muted">{formatKstClock(clock)}</p>
             <h1 className="mt-1 text-2xl font-bold text-ink">{employee.name}</h1>
           </div>
-          <span
-            className={`work-status-pill shrink-0 whitespace-nowrap rounded-full bg-accentSoft px-3 py-1 text-sm font-semibold text-accent ${statusHeatClassName}`}
-          >
-            {displayStatusText}
-          </span>
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <span
+              className={`work-status-pill whitespace-nowrap rounded-full bg-accentSoft px-3 py-1 text-sm font-semibold text-accent ${statusHeatClassName}`}
+            >
+              {displayStatusText}
+            </span>
+            {!isSharedView ? (
+              <button
+                className="rounded border border-line bg-white px-2 py-1 text-xs font-bold text-muted transition hover:bg-field hover:text-ink"
+                onClick={copyDashboardShareLink}
+                type="button"
+              >
+                공유
+              </button>
+            ) : (
+              <span className="rounded bg-field px-2 py-1 text-xs font-bold text-muted">
+                공유 화면
+              </span>
+            )}
+          </div>
         </div>
         <GreetingTicker
           currentIndex={greetingIndex}
@@ -1316,7 +1679,7 @@ export function EmployeeApp() {
         <div className="mt-5 grid grid-cols-2 gap-3">
           <button
             className="primary-button min-h-14 text-base"
-            disabled={!status?.canCheckIn || isMutating}
+            disabled={isReadOnly || !status?.canCheckIn || isMutating}
             onClick={() => runAction("/api/attendance/check-in", "출근 처리 중")}
             type="button"
           >
@@ -1403,6 +1766,7 @@ export function EmployeeApp() {
             <span className="block text-sm font-bold text-ink">오늘 할 일 / 한 일</span>
           </div>
           <QuickWorkLogPanel
+            canEdit={!isReadOnly}
             isLoading={isTodayWorkLoading}
             isSaving={isTodayWorkSaving}
             message={todayWorkMessage}
@@ -1485,7 +1849,7 @@ export function EmployeeApp() {
               <button
                 aria-label="이전 달"
                 className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-line bg-white text-sm font-bold text-muted transition hover:border-slate-300 hover:bg-field hover:text-ink disabled:bg-slate-100 disabled:text-slate-400"
-                disabled={isTeamMonthLoading}
+                disabled={isTeamMonthLoading || isSharedView}
                 onClick={() => moveTeamMonth(-1)}
                 type="button"
               >
@@ -1497,7 +1861,7 @@ export function EmployeeApp() {
               <button
                 aria-label="다음 달"
                 className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-line bg-white text-sm font-bold text-muted transition hover:border-slate-300 hover:bg-field hover:text-ink disabled:bg-slate-100 disabled:text-slate-400"
-                disabled={isTeamMonthLoading}
+                disabled={isTeamMonthLoading || isSharedView}
                 onClick={() => moveTeamMonth(1)}
                 type="button"
               >
@@ -1578,7 +1942,7 @@ export function EmployeeApp() {
         </div>
       </section>
 
-      <div className="mt-5 flex items-center justify-center gap-3 text-xs">
+      {!isSharedView ? <div className="mt-5 flex items-center justify-center gap-3 text-xs">
         <button
           className="text-xs text-muted underline-offset-4 hover:text-ink hover:underline"
           onClick={logout}
@@ -1590,11 +1954,19 @@ export function EmployeeApp() {
         <a className="text-muted underline-offset-4 hover:text-ink hover:underline" href="/admin">
           관리자 로그인
         </a>
-      </div>
+      </div> : null}
     </main>
+    {commentNotificationState ? (
+      <CommentNotificationModal
+        notifications={commentNotificationState.notifications}
+        onClose={dismissCommentNotifications}
+        onOpen={openCommentNotification}
+      />
+    ) : null}
     {selectedWorkRecord ? (
       <WorkLogModal
-        canEdit={selectedWorkRecord.employeeId === employee.id}
+        canComment={!isReadOnly}
+        canEdit={!isReadOnly && selectedWorkRecord.employeeId === employee.id}
         currentEmployeeId={employee.id}
         editingCommentId={editingCommentId}
         editingCommentText={editingCommentText}
@@ -1608,6 +1980,7 @@ export function EmployeeApp() {
         onAddTask={addWorkTask}
         onClose={closeWorkLog}
         onCommentTextChange={setNewCommentText}
+        onCopyLink={copySelectedWorkLogLink}
         onDeleteComment={deleteWorkComment}
         onEditCommentCancel={() => {
           setEditingCommentId(null);
@@ -1630,6 +2003,9 @@ export function EmployeeApp() {
         workLog={workLog}
       />
     ) : null}
+    {workLogShareMessage ? (
+      <Toast key={workLogShareToastId} message={workLogShareMessage} />
+    ) : null}
     {deleteTaskRequest ? (
       <DeleteTaskConfirmModal
         dontAskAgain={deleteWithoutAskingAgain}
@@ -1645,6 +2021,258 @@ export function EmployeeApp() {
 
 function LoadingLine() {
   return <span className="block h-4 w-20 animate-pulse rounded bg-line" />;
+}
+
+function Toast({ message }: { message: string }) {
+  return (
+    <div
+      aria-live="polite"
+      className="pointer-events-none fixed left-1/2 top-5 z-[70] -translate-x-1/2 animate-[toast-slide_2.5s_ease-in-out_forwards] rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white shadow-2xl"
+      role="status"
+    >
+      {message}
+    </div>
+  );
+}
+
+function LinkifiedText({ text }: { text: string }) {
+  const parts = splitTextIntoLinks(text);
+  return (
+    <>
+      {parts.map((part, index) =>
+        part.href ? (
+          <a
+            className="font-semibold text-accent underline underline-offset-2 hover:text-[#3f5fe0]"
+            href={part.href}
+            key={`${part.href}-${index}`}
+            onClick={(event) => event.stopPropagation()}
+            rel="noreferrer"
+            target="_blank"
+          >
+            {part.text}
+          </a>
+        ) : (
+          <span key={`${part.text}-${index}`}>{part.text}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+function MarkdownText({ text }: { text: string }) {
+  const blocks = parseMarkdownBlocks(text);
+
+  return (
+    <div className="space-y-2">
+      {blocks.map((block, index) => {
+        if (block.type === "code") {
+          return (
+            <pre
+              className="overflow-x-auto rounded border border-line bg-white px-3 py-2 text-xs leading-relaxed text-ink"
+              key={`code-${index}`}
+            >
+              <code>{block.lines.join("\n")}</code>
+            </pre>
+          );
+        }
+
+        if (block.type === "quote") {
+          return (
+            <blockquote
+              className="border-l-2 border-accent/50 pl-3 text-sm leading-relaxed text-muted"
+              key={`quote-${index}`}
+            >
+              {renderMarkdownLines(block.lines)}
+            </blockquote>
+          );
+        }
+
+        if (block.type === "heading") {
+          const HeadingTag = `h${block.level}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+          return (
+            <HeadingTag
+              className={`${getMarkdownHeadingClassName(block.level)} leading-snug text-ink`}
+              key={`heading-${index}`}
+            >
+              {renderInlineMarkdown(block.text)}
+            </HeadingTag>
+          );
+        }
+
+        if (block.type === "list") {
+          const ListTag = block.ordered ? "ol" : "ul";
+          return (
+            <ListTag
+              className={`space-y-1 pl-5 text-sm leading-relaxed text-ink ${
+                block.ordered ? "list-decimal" : "list-disc"
+              }`}
+              key={`list-${index}`}
+            >
+              {block.items.map((item, lineIndex) => (
+                <li
+                  className={item.checked === null ? "" : "list-none"}
+                  key={`${item.text}-${lineIndex}`}
+                  style={item.level ? { marginLeft: `${item.level * 18}px` } : undefined}
+                >
+                  {item.checked === null ? null : (
+                    <span
+                      aria-hidden="true"
+                      className={`mr-1.5 inline-flex h-4 w-4 translate-y-0.5 items-center justify-center rounded-sm border text-[11px] font-black shadow-sm ${
+                        item.checked
+                          ? "border-accent bg-white text-accent"
+                          : "border-slate-400 bg-white text-transparent"
+                      }`}
+                    >
+                      ✓
+                    </span>
+                  )}
+                  {renderInlineMarkdown(item.text)}
+                </li>
+              ))}
+            </ListTag>
+          );
+        }
+
+        return (
+          <p className="text-sm leading-relaxed text-ink" key={`paragraph-${index}`}>
+            {renderMarkdownLines(block.lines)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+function renderMarkdownLines(lines: string[]) {
+  return lines.flatMap((line, index) => [
+    index > 0 ? <br key={`br-${index}`} /> : null,
+    <span key={`line-${index}`}>{renderInlineMarkdown(line)}</span>,
+  ]);
+}
+
+function renderInlineMarkdown(text: string) {
+  const parts = splitInlineMarkdown(text);
+  return parts.map((part, index) => {
+    if (part.kind === "bold") {
+      return (
+        <strong className="font-bold" key={`${part.text}-${index}`}>
+          {renderInlineMarkdown(part.text)}
+        </strong>
+      );
+    }
+
+    if (part.kind === "italic") {
+      return (
+        <em className="italic" key={`${part.text}-${index}`}>
+          {renderInlineMarkdown(part.text)}
+        </em>
+      );
+    }
+
+    if (part.kind === "code") {
+      return (
+        <code className="rounded bg-slate-100 px-1 py-0.5 text-[0.92em] text-ink" key={`${part.text}-${index}`}>
+          {part.text}
+        </code>
+      );
+    }
+
+    if (part.kind === "strike") {
+      return (
+        <del className="text-muted" key={`${part.text}-${index}`}>
+          {renderInlineMarkdown(part.text)}
+        </del>
+      );
+    }
+
+    if (part.kind === "link") {
+      return (
+        <a
+          className="font-semibold text-accent underline underline-offset-2 hover:text-[#3f5fe0]"
+          href={part.href}
+          key={`${part.href}-${index}`}
+          onClick={(event) => event.stopPropagation()}
+          rel="noreferrer"
+          target="_blank"
+        >
+          {part.text}
+        </a>
+      );
+    }
+
+    return <span key={`${part.text}-${index}`}>{part.text}</span>;
+  });
+}
+
+function CommentNotificationModal({
+  notifications,
+  onClose,
+  onOpen,
+}: {
+  notifications: WorkCommentNotification[];
+  onClose: () => void;
+  onOpen: (notification: WorkCommentNotification) => void;
+}) {
+  const groupedCount = new Set(notifications.map((notification) => notification.workDate)).size;
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/35 px-3 py-6"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="w-full max-w-lg rounded-lg border border-line bg-white p-4 shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-xs font-bold text-accent">
+              새 댓글 {notifications.length}개 · 업무기록 {groupedCount}곳
+            </p>
+            <h3 className="mt-1 text-lg font-bold text-ink">내 업무기록에 댓글이 달렸어요</h3>
+          </div>
+          <button
+            className="rounded px-2 py-1 text-sm font-bold text-muted hover:bg-field hover:text-ink"
+            onClick={onClose}
+            type="button"
+          >
+            닫기
+          </button>
+        </div>
+        <ul className="mt-4 max-h-[60vh] space-y-2 overflow-y-auto pr-1">
+          {notifications.map((notification) => (
+            <li
+              className="rounded border border-line bg-field/70 px-3 py-2"
+              key={`${notification.workDate}-${notification.id}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-ink">
+                    {notification.authorName}님이 댓글을 달았어요
+                  </p>
+                  <p className="mt-0.5 text-xs font-semibold text-muted">
+                    {formatWorkDateWithWeekday(notification.workDate)} ·{" "}
+                    {formatKstDateTime(notification.createdAt)}
+                  </p>
+                </div>
+                <button
+                  className="shrink-0 rounded border border-line bg-white px-2.5 py-1.5 text-xs font-bold text-accent hover:border-accent/40 hover:bg-accentSoft"
+                  onClick={() => onOpen(notification)}
+                  type="button"
+                >
+                  바로 보러가기
+                </button>
+              </div>
+              <div className="mt-2 line-clamp-2 break-words text-sm text-ink">
+                <MarkdownText text={notification.text} />
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
 }
 
 function TeamDeskScene({
@@ -1738,7 +2366,7 @@ function TeamDeskSeat({
   const workedMinutes = getDeskWorkedMinutes(record, now);
   const workingLabel = formatWorkingSinceLabel(workedMinutes);
   const workHeatClassName = getWorkDurationHeatClassName(workedMinutes);
-  const mumbleLines = getDeskMumbleLines(record);
+  const mumbleLines = getDeskMumbleLines(record, refreshSeed);
   const [mumbleIndex, setMumbleIndex] = useState(0);
   const safeMumbleIndex = mumbleIndex % mumbleLines.length;
 
@@ -1819,15 +2447,33 @@ function TeamDeskSeat({
   );
 }
 
-function getDeskMumbleLines(record: Pick<TeamAttendanceRecord, "tasks">) {
+function getDeskMumbleLines(
+  record: Pick<TeamAttendanceRecord, "employeeId" | "tasks" | "workDate">,
+  refreshSeed: number,
+) {
   const tasks = record.tasks ?? [];
   const activeTasks = tasks.filter((task) => !task.done && task.text.trim());
   const fallbackTasks = tasks.filter((task) => task.text.trim());
-  const lines = (activeTasks.length ? activeTasks : fallbackTasks)
+  const sourceTasks = activeTasks.length ? activeTasks : fallbackTasks;
+  const startIndex =
+    sourceTasks.length > 0
+      ? hashString(`${record.employeeId}:${record.workDate}:${refreshSeed}:mumble`) %
+        sourceTasks.length
+      : 0;
+  const rotatedTasks = rotateFromIndex(sourceTasks, startIndex);
+  const lines = rotatedTasks
     .slice(0, 5)
     .map((task) => `…${compactDeskTaskText(task.text)}`);
 
   return lines.length ? lines : ["…업무 정리 중"];
+}
+
+function rotateFromIndex<T>(items: T[], startIndex: number) {
+  if (items.length <= 1 || startIndex <= 0) {
+    return items;
+  }
+
+  return [...items.slice(startIndex), ...items.slice(0, startIndex)];
 }
 
 function compactDeskTaskText(value: string) {
@@ -2133,16 +2779,11 @@ function GreetingTicker({
   total: number;
 }) {
   const visibleMessage = message || "오늘도 가볍게 시작해봐요!";
-  const longestMessage = getLongestGreetingMessage(messages, visibleMessage);
   const dotCount = Math.min(total, 6);
 
   return (
-    <div className="mx-auto mt-3 grid w-fit max-w-md overflow-hidden rounded border border-line bg-field/70 px-3 py-2.5 text-center">
-      <div aria-hidden="true" className="pointer-events-none invisible col-start-1 row-start-1">
-        <GreetingTickerLine message={longestMessage} />
-        {total > 1 ? <GreetingTickerDots currentIndex={currentIndex} dotCount={dotCount} /> : null}
-      </div>
-      <div className="col-start-1 row-start-1">
+    <div className="mx-auto mt-3 w-full max-w-md overflow-hidden rounded border border-line bg-field/70 px-3 py-2.5 text-center">
+      <div>
         <GreetingTickerLine
           animated
           key={`${currentIndex}-${visibleMessage}`}
@@ -2168,7 +2809,7 @@ function GreetingTickerLine({ animated, message }: { animated?: boolean; message
         className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent shadow-[0_0_0_4px_rgba(69,104,245,0.10)]"
       />
       <p
-        className={`${animated ? "greeting-marquee-line " : ""}min-w-0 text-sm font-semibold leading-relaxed text-muted`}
+        className={`${animated ? "greeting-marquee-line " : ""}min-w-0 truncate whitespace-nowrap text-sm font-semibold leading-relaxed text-muted`}
       >
         {message}
       </p>
@@ -2209,13 +2850,6 @@ function GreetingTickerDots({
         );
       })}
     </div>
-  );
-}
-
-function getLongestGreetingMessage(messages: string[], fallback: string) {
-  return messages.reduce(
-    (longest, current) => (current.length > longest.length ? current : longest),
-    fallback,
   );
 }
 
@@ -2267,7 +2901,9 @@ function TaskPreviewList({ tasks }: { tasks: WorkTask[] }) {
           >
             ✓
           </span>
-          <span className={task.done ? "text-muted line-through" : ""}>{task.text}</span>
+          <span className={task.done ? "text-muted line-through" : ""}>
+            <LinkifiedText text={task.text} />
+          </span>
         </li>
       ))}
     </ul>
@@ -2395,7 +3031,7 @@ function TeamMonthCalendar({
           <div className="grid" style={calendarGridStyle}>
             {days.map((day) => {
               const dayRecords = recordsByDate.get(day.date) ?? [];
-              const dayOfWeek = dateStringToUtcDate(day.date).getUTCDay();
+              const dayToneClassName = getDateToneTextClass(day.date);
 
               return (
                 <div
@@ -2406,8 +3042,9 @@ function TeamMonthCalendar({
                 >
                   <div
                     className={`mb-1 text-right text-[10px] font-bold sm:mb-2 sm:text-xs ${
-                      day.isCurrentMonth ? weekendTextClass(dayOfWeek) || "text-muted" : "text-slate-400"
+                      day.isCurrentMonth ? dayToneClassName : "text-slate-400"
                     }`}
+                    title={getPublicHolidayName(day.date) || undefined}
                   >
                     {Number(day.date.slice(8, 10))}
                   </div>
@@ -3003,6 +3640,7 @@ function getCalendarMarker(
 }
 
 function QuickWorkLogPanel({
+  canEdit,
   isLoading,
   isSaving,
   message,
@@ -3016,6 +3654,7 @@ function QuickWorkLogPanel({
   processingTaskId,
   workLog,
 }: {
+  canEdit: boolean;
   isLoading: boolean;
   isSaving: boolean;
   message: string;
@@ -3043,7 +3682,7 @@ function QuickWorkLogPanel({
       {!isLoading && workLog ? (
         <div className="space-y-3 pt-3">
           <TaskSection
-            canEdit
+            canEdit={canEdit}
             isSaving={isSaving}
             onRemoveTask={onRemoveTask}
             onReorderTasks={onReorderTasks}
@@ -3059,7 +3698,7 @@ function QuickWorkLogPanel({
             </p>
           ) : null}
 
-          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+          {canEdit ? <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
             <textarea
               className="field min-h-20 resize-none text-sm leading-relaxed"
               maxLength={TASK_DRAFT_MAX_LENGTH}
@@ -3082,7 +3721,7 @@ function QuickWorkLogPanel({
             >
               추가
             </button>
-          </div>
+          </div> : null}
         </div>
       ) : null}
 
@@ -3096,6 +3735,7 @@ function QuickWorkLogPanel({
 }
 
 function WorkLogModal({
+  canComment,
   canEdit,
   currentEmployeeId,
   editingCommentId,
@@ -3110,6 +3750,7 @@ function WorkLogModal({
   onAddTask,
   onClose,
   onCommentTextChange,
+  onCopyLink,
   onDeleteComment,
   onEditCommentCancel,
   onEditCommentStart,
@@ -3125,6 +3766,7 @@ function WorkLogModal({
   record,
   workLog,
 }: {
+  canComment: boolean;
   canEdit: boolean;
   currentEmployeeId: string;
   editingCommentId: string | null;
@@ -3139,6 +3781,7 @@ function WorkLogModal({
   onAddTask: () => void;
   onClose: () => void;
   onCommentTextChange: (text: string) => void;
+  onCopyLink: () => void;
   onDeleteComment: (commentId: string) => void;
   onEditCommentCancel: () => void;
   onEditCommentStart: (comment: WorkComment) => void;
@@ -3156,6 +3799,8 @@ function WorkLogModal({
 }) {
   const tasks = workLog?.tasks ?? [];
   const comments = workLog?.comments ?? [];
+  const holidayName = getPublicHolidayName(record.workDate);
+  const dateToneClassName = getDateToneTextClass(record.workDate);
 
   return (
     <div
@@ -3169,7 +3814,14 @@ function WorkLogModal({
       >
         <div className="flex items-start justify-between gap-4 border-b border-line px-4 py-3">
           <div className="min-w-0">
-            <p className="text-xs font-semibold text-muted">{record.workDate}</p>
+            <p className={`text-xs font-semibold ${dateToneClassName}`}>
+              {formatWorkDateWithWeekday(record.workDate)}
+              {holidayName ? (
+                <span className="ml-1 rounded-full bg-danger/10 px-1.5 py-0.5 text-[10px] font-bold text-danger">
+                  {holidayName}
+                </span>
+              ) : null}
+            </p>
             <h3 className="truncate text-lg font-bold text-ink">
               {record.employeeName} 업무 기록
             </h3>
@@ -3177,13 +3829,24 @@ function WorkLogModal({
               {formatKstTimeRange(record)}
             </p>
           </div>
-          <button
+          <div className="flex shrink-0 items-center gap-2">
+            <div>
+              <button
+                className="rounded border border-line px-2 py-1 text-sm font-bold text-muted hover:bg-field hover:text-ink"
+                onClick={onCopyLink}
+                type="button"
+              >
+                공유
+              </button>
+            </div>
+            <button
             className="rounded px-2 py-1 text-sm font-bold text-muted hover:bg-field hover:text-ink"
             onClick={onClose}
             type="button"
           >
             닫기
           </button>
+          </div>
         </div>
 
         <div className="max-h-[75vh] overflow-y-auto px-4 py-4">
@@ -3256,7 +3919,7 @@ function WorkLogModal({
                 {comments.length ? (
                   <ul className="mt-3 space-y-2">
                     {comments.map((comment) => {
-                      const isMine = comment.authorEmployeeId === currentEmployeeId;
+                      const isMine = canComment && comment.authorEmployeeId === currentEmployeeId;
                       const isEditing = editingCommentId === comment.id;
                       const isPending = pendingCommentId === comment.id;
 
@@ -3274,6 +3937,7 @@ function WorkLogModal({
                                 autoFocus
                                 className="field min-h-20 resize-y text-sm"
                                 disabled={isPending}
+                                maxLength={COMMENT_DRAFT_MAX_LENGTH}
                                 onChange={(event) => onEditCommentTextChange(event.target.value)}
                                 onKeyDown={(event) => {
                                   if (event.key === "Escape") {
@@ -3308,7 +3972,9 @@ function WorkLogModal({
                             </div>
                           ) : (
                             <>
-                              <p className="mt-1 whitespace-pre-wrap break-words text-ink">{comment.text}</p>
+                              <div className="mt-1 break-words text-ink">
+                                <MarkdownText text={comment.text} />
+                              </div>
                               {isMine ? (
                                 <div className="mt-2 flex justify-end gap-2">
                                   {isPending ? (
@@ -3347,18 +4013,20 @@ function WorkLogModal({
                     아직 댓글이 없어요.
                   </p>
                 )}
-                <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
-                  <input
-                    className="field text-sm"
+                {canComment ? <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+                  <textarea
+                    className="field min-h-20 resize-y text-sm leading-relaxed"
                     disabled={isCommentSaving}
+                    maxLength={COMMENT_DRAFT_MAX_LENGTH}
                     onChange={(event) => onCommentTextChange(event.target.value)}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter") {
+                      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
                         event.preventDefault();
                         onAddComment();
                       }
                     }}
-                    placeholder="댓글을 입력하세요"
+                    placeholder="댓글을 입력하세요. Markdown도 사용할 수 있어요."
+                    rows={3}
                     value={newCommentText}
                   />
                   <button
@@ -3376,7 +4044,7 @@ function WorkLogModal({
                       "댓글"
                     )}
                   </button>
-                </div>
+                </div> : null}
               </section>
             </div>
           ) : null}
@@ -3621,7 +4289,7 @@ function TaskSection({
                       task.done ? "text-muted line-through" : "text-ink"
                     }`}
                   >
-                    {task.text}
+                    <LinkifiedText text={task.text} />
                   </span>
                 )}
               </div>
@@ -3840,8 +4508,22 @@ function dateStringToUtcDate(value: string) {
   return new Date(Date.UTC(year, month - 1, day));
 }
 
+function formatWorkDateWithWeekday(value: string) {
+  const dayOfWeek = dateStringToUtcDate(value).getUTCDay();
+  return `${value} (${weekdayLabels[dayOfWeek] ?? ""})`;
+}
+
 function isDateInRange(date: string, range: { startDate: string; endDate: string }) {
   return date >= range.startDate && date <= range.endDate;
+}
+
+function getDateToneTextClass(date: string) {
+  if (getPublicHolidayName(date)) {
+    return "text-danger";
+  }
+
+  const dayOfWeek = dateStringToUtcDate(date).getUTCDay();
+  return weekendTextClass(dayOfWeek) || "text-muted";
 }
 
 function weekendTextClass(dayOfWeek: number | null) {
@@ -3854,6 +4536,10 @@ function weekendTextClass(dayOfWeek: number | null) {
   }
 
   return "";
+}
+
+function getPublicHolidayName(date: string) {
+  return publicHolidayNamesByDate[date] ?? fixedPublicHolidayNames[date.slice(5)] ?? "";
 }
 
 function getWorkedMinutes(record: Pick<AttendanceRecord, "checkInAt" | "checkOutAt">) {
@@ -3961,6 +4647,353 @@ function getWorkLogCacheKey(employeeId: string, workDate: string) {
   return `${employeeId}:${workDate}`;
 }
 
+function getCommentNotificationLastSeen(employeeId: string) {
+  const key = getCommentNotificationStorageKey(employeeId);
+  const storedValue = localStorage.getItem(key);
+  if (storedValue && Number.isFinite(Date.parse(storedValue))) {
+    return storedValue;
+  }
+
+  return new Date(Date.now() - COMMENT_NOTIFICATION_INITIAL_LOOKBACK_MS).toISOString();
+}
+
+function setCommentNotificationLastSeen(employeeId: string, value: string) {
+  if (!Number.isFinite(Date.parse(value))) return;
+  localStorage.setItem(getCommentNotificationStorageKey(employeeId), value);
+}
+
+function getCommentNotificationStorageKey(employeeId: string) {
+  return `${COMMENT_NOTIFICATION_LAST_SEEN_KEY}:${encodeURIComponent(employeeId)}`;
+}
+
+function resolveSharedWorkLogRecord(
+  target: { employeeId: string; workDate: string },
+  context: {
+    employee: Employee;
+    records: AttendanceRecord[];
+    status: StatusResponse | null;
+    teamMonth: TeamMonthAttendance | null;
+    teamRecords: TeamAttendanceRecord[];
+  },
+): TeamAttendanceRecord {
+  const teamRecord =
+    context.teamRecords.find(
+      (record) => record.employeeId === target.employeeId && record.workDate === target.workDate,
+    ) ??
+    context.teamMonth?.records.find(
+      (record) => record.employeeId === target.employeeId && record.workDate === target.workDate,
+    );
+  if (teamRecord) {
+    return teamRecord;
+  }
+
+  const ownRecord =
+    target.employeeId === context.employee.id
+      ? context.records.find((record) => record.workDate === target.workDate) ??
+        (context.status?.todayRecord?.workDate === target.workDate
+          ? context.status.todayRecord
+          : null)
+      : null;
+  if (ownRecord) {
+    return {
+      employeeId: context.employee.id,
+      employeeNo: context.employee.employeeNo,
+      employeeName: context.employee.name,
+      workDate: ownRecord.workDate,
+      checkInAt: ownRecord.checkInAt,
+      checkOutAt: ownRecord.checkOutAt,
+      workType: ownRecord.workType,
+      note: ownRecord.note,
+    };
+  }
+
+  const isCurrentEmployee = target.employeeId === context.employee.id;
+  return {
+    employeeId: target.employeeId,
+    employeeNo: isCurrentEmployee ? context.employee.employeeNo : "",
+    employeeName: isCurrentEmployee ? context.employee.name : "업무 기록",
+    workDate: target.workDate,
+    checkInAt: null,
+    checkOutAt: null,
+    workType: "office",
+    note: null,
+  };
+}
+
+async function copyTextToClipboard(text: string) {
+  if (copyTextWithSelection(text)) {
+    return;
+  }
+
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  throw new Error("copy failed");
+}
+
+function copyTextWithSelection(text: string) {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+  }
+}
+
+function splitTextIntoLinks(text: string) {
+  const parts: Array<{ text: string; href?: string }> = [];
+  const urlPattern = /https?:\/\/[^\s<>"']+/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = urlPattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ text: text.slice(lastIndex, match.index) });
+    }
+
+    const { href, suffix } = splitTrailingLinkPunctuation(match[0]);
+    parts.push({ text: href, href });
+    if (suffix) {
+      parts.push({ text: suffix });
+    }
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push({ text: text.slice(lastIndex) });
+  }
+
+  return parts.length ? parts : [{ text }];
+}
+
+function splitTrailingLinkPunctuation(value: string) {
+  let href = value;
+  let suffix = "";
+  while (href.length > "https://".length && /[.,!?;:)\]}。！？、，]$/.test(href)) {
+    suffix = href[href.length - 1] + suffix;
+    href = href.slice(0, -1);
+  }
+
+  return { href, suffix };
+}
+
+type MarkdownBlock =
+  | { type: "paragraph"; lines: string[] }
+  | {
+      type: "list";
+      items: Array<{ checked: boolean | null; level: number; text: string }>;
+      ordered: boolean;
+    }
+  | { type: "quote"; lines: string[] }
+  | { type: "heading"; level: 1 | 2 | 3 | 4 | 5 | 6; text: string }
+  | { type: "code"; lines: string[] };
+
+type InlineMarkdownPart =
+  | { kind: "text"; text: string }
+  | { kind: "bold"; text: string }
+  | { kind: "italic"; text: string }
+  | { kind: "code"; text: string }
+  | { kind: "strike"; text: string }
+  | { kind: "link"; text: string; href: string };
+
+function parseMarkdownBlocks(text: string): MarkdownBlock[] {
+  const blocks: MarkdownBlock[] = [];
+  const paragraphLines: string[] = [];
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  let codeLines: string[] | null = null;
+  let listBlock: {
+    items: Array<{ checked: boolean | null; level: number; text: string }>;
+    ordered: boolean;
+  } | null = null;
+  let quoteLines: string[] | null = null;
+
+  function flushParagraph() {
+    if (!paragraphLines.length) return;
+    blocks.push({ type: "paragraph", lines: [...paragraphLines] });
+    paragraphLines.length = 0;
+  }
+
+  function flushList() {
+    if (!listBlock) return;
+    blocks.push({ type: "list", items: listBlock.items, ordered: listBlock.ordered });
+    listBlock = null;
+  }
+
+  function flushQuote() {
+    if (!quoteLines) return;
+    blocks.push({ type: "quote", lines: quoteLines });
+    quoteLines = null;
+  }
+
+  function flushTextBlocks() {
+    flushParagraph();
+    flushList();
+    flushQuote();
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\s+$/, "");
+
+    if (line.trim().startsWith("```")) {
+      if (codeLines) {
+        blocks.push({ type: "code", lines: codeLines });
+        codeLines = null;
+      } else {
+        flushTextBlocks();
+        codeLines = [];
+      }
+      continue;
+    }
+
+    if (codeLines) {
+      codeLines.push(rawLine);
+      continue;
+    }
+
+    if (!line.trim()) {
+      flushTextBlocks();
+      continue;
+    }
+
+    const unorderedMatch = line.match(/^(\s*)[-*]\s+(.+)$/);
+    const orderedMatch = line.match(/^(\s*)\d+[.)]\s+(.+)$/);
+    const quoteMatch = line.match(/^\s*>\s?(.+)$/);
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+
+    if (headingMatch) {
+      flushTextBlocks();
+      blocks.push({
+        type: "heading",
+        level: headingMatch[1].length as 1 | 2 | 3 | 4 | 5 | 6,
+        text: headingMatch[2].trim(),
+      });
+      continue;
+    }
+
+    if (unorderedMatch || orderedMatch) {
+      flushParagraph();
+      flushQuote();
+      const ordered = Boolean(orderedMatch);
+      if (!listBlock || listBlock.ordered !== ordered) {
+        flushList();
+        listBlock = { items: [], ordered };
+      }
+      listBlock.items.push(
+        parseMarkdownListItem({
+          indent: unorderedMatch?.[1] ?? orderedMatch?.[1] ?? "",
+          text: unorderedMatch?.[2] ?? orderedMatch?.[2] ?? "",
+        }),
+      );
+      continue;
+    }
+
+    if (quoteMatch) {
+      flushParagraph();
+      flushList();
+      quoteLines = [...(quoteLines ?? []), quoteMatch[1]];
+      continue;
+    }
+
+    flushList();
+    flushQuote();
+    paragraphLines.push(line);
+  }
+
+  if (codeLines) {
+    blocks.push({ type: "code", lines: codeLines });
+  }
+  flushTextBlocks();
+
+  return blocks.length ? blocks : [{ type: "paragraph", lines: [""] }];
+}
+
+function splitInlineMarkdown(text: string): InlineMarkdownPart[] {
+  const parts: InlineMarkdownPart[] = [];
+  const tokenPattern =
+    /(\*\*[^*\n][\s\S]*?\*\*|~~[^~\n][\s\S]*?~~|`[^`\n]+`|\[[^\]\n]+\]\(https?:\/\/[^)\s]+\)|https?:\/\/[^\s<>"']+|\*[^*\n]+\*)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenPattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ kind: "text", text: text.slice(lastIndex, match.index) });
+    }
+
+    const token = match[0];
+    if (token.startsWith("**") && token.endsWith("**")) {
+      parts.push({ kind: "bold", text: token.slice(2, -2) });
+    } else if (token.startsWith("~~") && token.endsWith("~~")) {
+      parts.push({ kind: "strike", text: token.slice(2, -2) });
+    } else if (token.startsWith("`") && token.endsWith("`")) {
+      parts.push({ kind: "code", text: token.slice(1, -1) });
+    } else if (token.startsWith("[") && token.includes("](") && token.endsWith(")")) {
+      const labelEnd = token.indexOf("](");
+      parts.push({
+        kind: "link",
+        text: token.slice(1, labelEnd),
+        href: token.slice(labelEnd + 2, -1),
+      });
+    } else if (token.startsWith("http")) {
+      const { href, suffix } = splitTrailingLinkPunctuation(token);
+      parts.push({ kind: "link", text: href, href });
+      if (suffix) {
+        parts.push({ kind: "text", text: suffix });
+      }
+    } else if (token.startsWith("*") && token.endsWith("*")) {
+      parts.push({ kind: "italic", text: token.slice(1, -1) });
+    } else {
+      parts.push({ kind: "text", text: token });
+    }
+
+    lastIndex = match.index + token.length;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push({ kind: "text", text: text.slice(lastIndex) });
+  }
+
+  return parts.length ? parts : [{ kind: "text", text }];
+}
+
+function parseMarkdownListItem({ indent, text }: { indent: string; text: string }) {
+  const taskMatch = text.match(/^\[([ xX])]\s+(.+)$/);
+  const level = getMarkdownListLevel(indent);
+  if (!taskMatch) {
+    return { checked: null, level, text };
+  }
+
+  return {
+    checked: taskMatch[1].toLowerCase() === "x",
+    level,
+    text: taskMatch[2],
+  };
+}
+
+function getMarkdownListLevel(indent: string) {
+  const spaces = indent.replace(/\t/g, "  ").length;
+  return Math.min(4, Math.floor(spaces / 2));
+}
+
+function getMarkdownHeadingClassName(level: number) {
+  if (level <= 1) return "text-base font-extrabold";
+  if (level === 2) return "text-[15px] font-extrabold";
+  return "text-sm font-bold";
+}
+
 function normalizeWorkLogCounts(workLog: WorkLog): WorkLog {
   const tasks = withTaskOrder(workLog.tasks);
   const comments = [...(workLog.comments ?? [])].sort((a, b) =>
@@ -4002,18 +5035,109 @@ function withTaskOrder(tasks: WorkTask[]) {
   return tasks
     .map((task, index) => ({
       ...task,
-      order: index,
+      order: getFiniteNumber(task.order) ?? index,
+      completedOrder: task.done ? getFiniteNumber(task.completedOrder) : null,
     }))
     .sort(
       (a, b) =>
         Number(a.done) - Number(b.done) ||
-        a.order - b.order ||
+        (a.done
+          ? getDoneTaskSortOrder(a) - getDoneTaskSortOrder(b)
+          : (a.order ?? 0) - (b.order ?? 0)) ||
         a.createdAt.localeCompare(b.createdAt),
-    )
-    .map((task, index) => ({
+    );
+}
+
+function getNextTaskOrder(tasks: WorkTask[]) {
+  return (
+    tasks.reduce((maxOrder, task) => {
+      const order = getFiniteNumber(task.order);
+      return order === null ? maxOrder : Math.max(maxOrder, order);
+    }, -1) + 1
+  );
+}
+
+function getNextCompletedOrder(tasks: WorkTask[]) {
+  return (
+    tasks.reduce((maxOrder, task) => {
+      return task.done ? Math.max(maxOrder, getDoneTaskSortOrder(task)) : maxOrder;
+    }, -1) + 1
+  );
+}
+
+function applyManualTaskOrder(tasks: WorkTask[]) {
+  let nextOpenOrder = 0;
+  let nextCompletedOrder = 0;
+
+  return tasks.map((task) => {
+    if (task.done) {
+      return {
+        ...task,
+        completedOrder: nextCompletedOrder++,
+      };
+    }
+
+    return {
       ...task,
-      order: index,
-    }));
+      order: nextOpenOrder++,
+      completedOrder: null,
+    };
+  });
+}
+
+function getRestoredOpenOrder(taskToRestore: WorkTask, tasks: WorkTask[]) {
+  const currentOrder = getFiniteNumber(taskToRestore.order);
+  if (getFiniteNumber(taskToRestore.completedOrder) !== null) {
+    return currentOrder ?? getNextTaskOrder(tasks);
+  }
+
+  const previousOrders: number[] = [];
+  const nextOrders: number[] = [];
+  for (const task of tasks) {
+    if (task.id === taskToRestore.id || task.done) {
+      continue;
+    }
+
+    const order = getFiniteNumber(task.order);
+    if (order === null) {
+      continue;
+    }
+
+    if (compareTaskCreatedAt(task, taskToRestore) < 0) {
+      previousOrders.push(order);
+    } else {
+      nextOrders.push(order);
+    }
+  }
+
+  const previousOrder = previousOrders.length ? Math.max(...previousOrders) : null;
+  const nextOrder = nextOrders.length ? Math.min(...nextOrders) : null;
+  if (previousOrder !== null && nextOrder !== null) {
+    return previousOrder < nextOrder ? (previousOrder + nextOrder) / 2 : currentOrder ?? nextOrder;
+  }
+
+  if (previousOrder !== null) {
+    return previousOrder + 1;
+  }
+
+  if (nextOrder !== null) {
+    return nextOrder - 1;
+  }
+
+  return currentOrder ?? 0;
+}
+
+function compareTaskCreatedAt(a: WorkTask, b: WorkTask) {
+  const createdCompare = a.createdAt.localeCompare(b.createdAt);
+  return createdCompare || a.id.localeCompare(b.id);
+}
+
+function getDoneTaskSortOrder(task: WorkTask) {
+  return getFiniteNumber(task.completedOrder) ?? getFiniteNumber(task.order) ?? 0;
+}
+
+function getFiniteNumber(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function moveTask(
@@ -4037,7 +5161,7 @@ function moveTask(
   const insertIndex = placement === "after" ? targetIndex + 1 : targetIndex;
   const reorderedTasks = [...remainingTasks];
   reorderedTasks.splice(insertIndex, 0, movingTask);
-  return withTaskOrder(reorderedTasks);
+  return withTaskOrder(applyManualTaskOrder(reorderedTasks));
 }
 
 function RecentLoadingRows() {

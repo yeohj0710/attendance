@@ -1,7 +1,12 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { apiFetch, getDeviceFingerprint, getDeviceId, storeToken } from "@/components/api";
+import {
+  apiFetch,
+  getDeviceFingerprint,
+  getDeviceId,
+  storeToken,
+} from "@/components/api";
 import { Spinner } from "@/components/Spinner";
 
 type LoginResponse =

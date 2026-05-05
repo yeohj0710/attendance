@@ -12,6 +12,7 @@ export type WorkTask = {
   done: boolean;
   section: WorkTaskSection;
   order?: number;
+  completedOrder?: number | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -46,6 +47,15 @@ export type WorkLogSummary = {
   commentCount: number;
 };
 
+export type WorkCommentNotification = {
+  id: string;
+  authorEmployeeId: string;
+  authorName: string;
+  text: string;
+  createdAt: string;
+  workDate: string;
+};
+
 type WorkLogData = {
   employee_id: string;
   work_date: string;
@@ -56,6 +66,7 @@ type WorkLogData = {
     done?: boolean;
     section?: WorkTaskSection;
     order?: number;
+    completed_order?: number | null;
     created_at?: string;
     updated_at?: string;
   }>;
@@ -77,6 +88,7 @@ type EmployeeData = {
 
 type WorkTaskInput = Partial<WorkTask> & {
   text?: string;
+  completed_order?: number | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -149,6 +161,7 @@ export async function saveWorkLog(
       done: task.done,
       section: task.section,
       order: task.order,
+      completed_order: task.completedOrder ?? null,
       created_at: task.createdAt,
       updated_at: task.updatedAt,
     })),
@@ -185,6 +198,40 @@ export async function getWorkLogSummariesForRange(startDate: string, endDate: st
   });
 }
 
+export async function getWorkCommentNotifications(employeeId: string, since: string) {
+  if (!employeeId.trim()) {
+    badRequest("직원을 선택하세요.");
+  }
+
+  const sinceTime = Date.parse(since);
+  if (!Number.isFinite(sinceTime)) {
+    badRequest("댓글 확인 기준 시간이 올바르지 않습니다.");
+  }
+
+  const snapshot = await getDb()
+    .collection("work_logs")
+    .where("employee_id", "==", employeeId)
+    .get();
+
+  return snapshot.docs
+    .flatMap((doc) => {
+      const data = doc.data() as WorkLogData;
+      return normalizeComments(data.comments ?? [])
+        .filter(
+          (comment) =>
+            Boolean(comment.authorEmployeeId.trim()) &&
+            comment.authorEmployeeId !== employeeId &&
+            Date.parse(comment.createdAt) > sinceTime,
+        )
+        .map((comment) => ({
+          ...comment,
+          workDate: data.work_date,
+        }));
+    })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 20) satisfies WorkCommentNotification[];
+}
+
 export async function addWorkLogComment(
   auth: AuthContext,
   input: {
@@ -199,12 +246,22 @@ export async function addWorkLogComment(
   if (!text) {
     badRequest("댓글을 입력하세요.");
   }
+  if (!auth.employee.id.trim() || !auth.employee.name.trim()) {
+    badRequest("댓글 작성자 정보를 확인할 수 없습니다. 다시 로그인해주세요.");
+  }
 
   const db = getDb();
-  const employeeDoc = await db.collection("employees").doc(input.employeeId).get();
+  const [employeeDoc, authorDoc] = await Promise.all([
+    db.collection("employees").doc(input.employeeId).get(),
+    db.collection("employees").doc(auth.employee.id).get(),
+  ]);
   const employee = employeeDoc.data() as EmployeeData | undefined;
   if (!employeeDoc.exists || !employee?.is_active) {
     badRequest("직원 정보를 찾을 수 없습니다.");
+  }
+  const author = authorDoc.data() as EmployeeData | undefined;
+  if (!authorDoc.exists || !author?.is_active || !author.name?.trim()) {
+    badRequest("댓글 작성자 정보를 확인할 수 없습니다. 다시 로그인해주세요.");
   }
 
   const now = new Date().toISOString();
@@ -216,7 +273,7 @@ export async function addWorkLogComment(
     {
       id: randomUUID(),
       authorEmployeeId: auth.employee.id,
-      authorName: auth.employee.name,
+      authorName: author.name,
       text,
       createdAt: now,
     },
@@ -336,7 +393,9 @@ async function mutateWorkLogComment(
     badRequest("댓글을 찾을 수 없습니다.");
   }
 
-  if (targetComment.authorEmployeeId !== auth.employee.id) {
+  const canDeleteMalformedOwnLogComment =
+    input.employeeId === auth.employee.id && !targetComment.authorEmployeeId.trim();
+  if (targetComment.authorEmployeeId !== auth.employee.id && !canDeleteMalformedOwnLogComment) {
     forbidden("본인이 작성한 댓글만 수정하거나 삭제할 수 있습니다.");
   }
 
@@ -408,6 +467,7 @@ export async function ensureCarryoverWorkLog(employeeId: string, workDate: strin
       done: task.done,
       section: task.section,
       order: task.order,
+      completed_order: task.completedOrder ?? null,
       created_at: task.createdAt,
       updated_at: task.updatedAt,
     })),
@@ -438,7 +498,7 @@ function normalizeSummary(value: string | null | undefined) {
 }
 
 function normalizeCommentText(value: string | null | undefined) {
-  return (value ?? "").trim().slice(0, 500);
+  return (value ?? "").trim().slice(0, 2000);
 }
 
 function normalizeComments(comments: WorkLogData["comments"]): WorkComment[] {
@@ -457,8 +517,8 @@ function normalizeComments(comments: WorkLogData["comments"]): WorkComment[] {
 
       return {
         id: comment.id && comment.id.length <= 80 ? comment.id : randomUUID(),
-        authorEmployeeId: comment.author_employee_id ?? "",
-        authorName: comment.author_name ?? "익명",
+        authorEmployeeId: normalizeCommentAuthorId(comment.author_employee_id),
+        authorName: normalizeCommentAuthorName(comment.author_name),
         text,
         createdAt,
       } satisfies WorkComment;
@@ -466,6 +526,15 @@ function normalizeComments(comments: WorkLogData["comments"]): WorkComment[] {
     .filter((comment): comment is WorkComment => comment !== null)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     .slice(0, 200);
+}
+
+function normalizeCommentAuthorId(value: string | null | undefined) {
+  return (value ?? "").trim().slice(0, 120);
+}
+
+function normalizeCommentAuthorName(value: string | null | undefined) {
+  const name = (value ?? "").trim();
+  return name ? name.slice(0, 80) : "익명";
 }
 
 function normalizeTasks(tasks: WorkTaskInput[], now: string): WorkTask[] {
@@ -488,6 +557,9 @@ function normalizeTasks(tasks: WorkTaskInput[], now: string): WorkTask[] {
           ? rawUpdatedAt
           : now;
       const order = Number.isFinite(task.order) ? Number(task.order) : index;
+      const completedOrder = task.done
+        ? getFiniteNumber(task.completedOrder ?? task.completed_order)
+        : null;
 
       const normalizedTask: WorkTask = {
         id: task.id && task.id.length <= 80 ? task.id : randomUUID(),
@@ -495,6 +567,7 @@ function normalizeTasks(tasks: WorkTaskInput[], now: string): WorkTask[] {
         done: Boolean(task.done),
         section,
         order,
+        completedOrder,
         createdAt,
         updatedAt,
       };
@@ -535,6 +608,7 @@ async function getCarryoverTasks(employeeId: string, workDate: string) {
           done: false,
           section: "today",
           order: carryoverTasks.length,
+          completedOrder: null,
           createdAt: now,
           updatedAt: now,
         });
@@ -568,14 +642,12 @@ function emptyWorkLog(employeeId: string, employeeName: string, workDate: string
 function mapWorkLog(data: WorkLogData, employeeName: string): WorkLog {
   const rawTasks = data.tasks ?? [];
   const hasStoredOrder = rawTasks.some((task) => Number.isFinite(task.order));
-  const tasks = normalizeTasks(rawTasks, new Date().toISOString())
-    .sort((a, b) =>
-      Number(b.done) - Number(a.done) ||
-      (hasStoredOrder
-        ? (a.order ?? 0) - (b.order ?? 0)
-        : a.createdAt.localeCompare(b.createdAt)),
-    )
-    .map((task, index) => ({ ...task, order: index }));
+  const tasks = withDisplayTaskOrder(
+    normalizeTasks(rawTasks, new Date().toISOString()).map((task, index) => ({
+      ...task,
+      order: hasStoredOrder ? task.order : index,
+    })),
+  );
   const comments = normalizeComments(data.comments ?? []);
 
   return {
@@ -591,4 +663,40 @@ function mapWorkLog(data: WorkLogData, employeeName: string): WorkLog {
     createdAt: timestampToIso(data.created_at),
     updatedAt: timestampToIso(data.updated_at),
   };
+}
+
+function withDisplayTaskOrder(tasks: WorkTask[]) {
+  return tasks
+    .map((task, index) => {
+      const order = getFiniteNumber(task.order) ?? index;
+      if (!task.done) {
+        return {
+          ...task,
+          order,
+          completedOrder: null,
+        };
+      }
+
+      return {
+        ...task,
+        order,
+        completedOrder: getFiniteNumber(task.completedOrder),
+      };
+    })
+    .sort(
+      (a, b) =>
+        Number(a.done) - Number(b.done) ||
+        (a.done
+          ? getDoneTaskSortOrder(a) - getDoneTaskSortOrder(b)
+          : (a.order ?? 0) - (b.order ?? 0)) ||
+        a.createdAt.localeCompare(b.createdAt),
+    );
+}
+
+function getDoneTaskSortOrder(task: WorkTask) {
+  return getFiniteNumber(task.completedOrder) ?? getFiniteNumber(task.order) ?? 0;
+}
+
+function getFiniteNumber(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
