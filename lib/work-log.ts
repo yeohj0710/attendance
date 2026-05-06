@@ -76,13 +76,7 @@ type WorkLogData = {
     text?: string;
     deleted_at?: string;
   }>;
-  comments?: Array<{
-    id?: string;
-    author_employee_id?: string;
-    author_name?: string;
-    text?: string;
-    created_at?: string;
-  }>;
+  comments?: WorkCommentData[];
   created_at?: unknown;
   updated_at?: unknown;
 };
@@ -90,6 +84,17 @@ type WorkLogData = {
 type EmployeeData = {
   name?: string;
   is_active?: boolean;
+};
+
+type WorkCommentData = {
+  id?: string | null;
+  author_employee_id?: string | null;
+  authorEmployeeId?: string | null;
+  author_name?: string | null;
+  authorName?: string | null;
+  text?: string | null;
+  created_at?: string | null;
+  createdAt?: string | null;
 };
 
 type WorkTaskInput = Partial<WorkTask> & {
@@ -189,7 +194,7 @@ export async function saveWorkLog(
       text: task.text,
       deleted_at: task.deletedAt,
     })),
-    comments: normalizeComments(currentData?.comments ?? []),
+    comments: serializeComments(normalizeComments(currentData?.comments ?? [])),
     created_at: currentDoc.exists ? currentData?.created_at : nowTimestamp(),
     updated_at: nowTimestamp(),
   };
@@ -379,13 +384,7 @@ export async function addWorkLogComment(
     work_date: input.workDate,
     summary: currentData?.summary ?? "",
     tasks: currentData?.tasks ?? [],
-    comments: comments.map((comment) => ({
-      id: comment.id,
-      author_employee_id: comment.authorEmployeeId,
-      author_name: comment.authorName,
-      text: comment.text,
-      created_at: comment.createdAt,
-    })),
+    comments: serializeComments(comments),
     created_at: currentDoc.exists ? currentData?.created_at : nowTimestamp(),
     updated_at: nowTimestamp(),
   };
@@ -499,13 +498,7 @@ async function mutateWorkLogComment(
     ...currentData,
     employee_id: input.employeeId,
     work_date: input.workDate,
-    comments: nextComments.map((comment) => ({
-      id: comment.id,
-      author_employee_id: comment.authorEmployeeId,
-      author_name: comment.authorName,
-      text: comment.text,
-      created_at: comment.createdAt,
-    })),
+    comments: serializeComments(nextComments),
     updated_at: nowTimestamp(),
   };
 
@@ -604,7 +597,7 @@ function normalizeComments(comments: WorkLogData["comments"]): WorkComment[] {
         return null;
       }
 
-      const rawCreatedAt = comment.created_at;
+      const rawCreatedAt = comment.created_at ?? comment.createdAt;
       const createdAt =
         rawCreatedAt && !Number.isNaN(new Date(rawCreatedAt).getTime())
           ? rawCreatedAt
@@ -612,8 +605,10 @@ function normalizeComments(comments: WorkLogData["comments"]): WorkComment[] {
 
       return {
         id: comment.id && comment.id.length <= 80 ? comment.id : randomUUID(),
-        authorEmployeeId: normalizeCommentAuthorId(comment.author_employee_id),
-        authorName: normalizeCommentAuthorName(comment.author_name),
+        authorEmployeeId: normalizeCommentAuthorId(
+          comment.author_employee_id ?? comment.authorEmployeeId,
+        ),
+        authorName: normalizeCommentAuthorName(comment.author_name ?? comment.authorName),
         text,
         createdAt,
       } satisfies WorkComment;
@@ -621,6 +616,16 @@ function normalizeComments(comments: WorkLogData["comments"]): WorkComment[] {
     .filter((comment): comment is WorkComment => comment !== null)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     .slice(0, 200);
+}
+
+function serializeComments(comments: WorkComment[]): WorkCommentData[] {
+  return comments.map((comment) => ({
+    id: comment.id,
+    author_employee_id: comment.authorEmployeeId,
+    author_name: comment.authorName,
+    text: comment.text,
+    created_at: comment.createdAt,
+  }));
 }
 
 function normalizeCommentAuthorId(value: string | null | undefined) {
