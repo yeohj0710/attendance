@@ -70,6 +70,10 @@ type WorkLogData = {
     created_at?: string;
     updated_at?: string;
   }>;
+  deleted_tasks?: Array<{
+    text?: string;
+    deleted_at?: string;
+  }>;
   comments?: Array<{
     id?: string;
     author_employee_id?: string;
@@ -91,6 +95,11 @@ type WorkTaskInput = Partial<WorkTask> & {
   completed_order?: number | null;
   created_at?: string;
   updated_at?: string;
+};
+
+type DeletedWorkTask = {
+  text: string;
+  deletedAt: string;
 };
 
 const CARRYOVER_START_DATE = "2026-05-01";
@@ -150,6 +159,15 @@ export async function saveWorkLog(
   const docRef = db.collection("work_logs").doc(getWorkLogDocId(input.employeeId, input.workDate));
   const currentDoc = await docRef.get();
   const currentData = currentDoc.data() as WorkLogData | undefined;
+  const currentTasks = currentDoc.exists
+    ? normalizeTasks(currentData?.tasks ?? [], now)
+    : await getCarryoverTasks(input.employeeId, input.workDate);
+  const deletedTasks = mergeDeletedTasks(
+    currentData?.deleted_tasks ?? [],
+    currentTasks,
+    tasks,
+    now,
+  );
 
   const data: WorkLogData = {
     employee_id: input.employeeId,
@@ -164,6 +182,10 @@ export async function saveWorkLog(
       completed_order: task.completedOrder ?? null,
       created_at: task.createdAt,
       updated_at: task.updatedAt,
+    })),
+    deleted_tasks: deletedTasks.map((task) => ({
+      text: task.text,
+      deleted_at: task.deletedAt,
     })),
     comments: normalizeComments(currentData?.comments ?? []),
     created_at: currentDoc.exists ? currentData?.created_at : nowTimestamp(),
@@ -578,6 +600,61 @@ function normalizeTasks(tasks: WorkTaskInput[], now: string): WorkTask[] {
     .slice(0, 80);
 }
 
+function normalizeDeletedTasks(tasks: WorkLogData["deleted_tasks"]): DeletedWorkTask[] {
+  const seenTexts = new Set<string>();
+  return (tasks ?? [])
+    .map((task) => {
+      const text = getTaskCarryoverKey(task.text ?? "");
+      if (!text || seenTexts.has(text)) {
+        return null;
+      }
+
+      seenTexts.add(text);
+      const rawDeletedAt = task.deleted_at;
+      const deletedAt =
+        rawDeletedAt && !Number.isNaN(new Date(rawDeletedAt).getTime())
+          ? rawDeletedAt
+          : new Date().toISOString();
+
+      return { text, deletedAt } satisfies DeletedWorkTask;
+    })
+    .filter((task): task is DeletedWorkTask => task !== null)
+    .slice(0, 200);
+}
+
+function mergeDeletedTasks(
+  storedDeletedTasks: WorkLogData["deleted_tasks"],
+  currentTasks: WorkTask[],
+  nextTasks: WorkTask[],
+  now: string,
+) {
+  const deletedTasksByText = new Map(
+    normalizeDeletedTasks(storedDeletedTasks).map((task) => [task.text, task]),
+  );
+  const nextTasksById = new Map(nextTasks.map((task) => [task.id, task]));
+  const nextTaskTexts = new Set(nextTasks.map((task) => getTaskCarryoverKey(task.text)));
+
+  for (const currentTask of currentTasks) {
+    const currentText = getTaskCarryoverKey(currentTask.text);
+    if (!currentText || nextTaskTexts.has(currentText)) {
+      continue;
+    }
+
+    const nextTask = nextTasksById.get(currentTask.id);
+    const nextText = nextTask ? getTaskCarryoverKey(nextTask.text) : "";
+    if (nextTask && nextText === currentText) {
+      continue;
+    }
+
+    deletedTasksByText.set(currentText, {
+      text: currentText,
+      deletedAt: now,
+    });
+  }
+
+  return Array.from(deletedTasksByText.values()).slice(0, 200);
+}
+
 async function getCarryoverTasks(employeeId: string, workDate: string) {
   const snapshot = await getDb()
     .collection("work_logs")
@@ -595,7 +672,7 @@ async function getCarryoverTasks(employeeId: string, workDate: string) {
   for (const log of previousLogs) {
     const tasks = normalizeTasks(log.tasks ?? [], now);
     for (const task of tasks) {
-      const key = task.text.trim();
+      const key = getTaskCarryoverKey(task.text);
       if (!key || seenTexts.has(key)) {
         continue;
       }
@@ -618,9 +695,17 @@ async function getCarryoverTasks(employeeId: string, workDate: string) {
         return carryoverTasks;
       }
     }
+
+    for (const deletedTask of normalizeDeletedTasks(log.deleted_tasks)) {
+      seenTexts.add(deletedTask.text);
+    }
   }
 
   return carryoverTasks;
+}
+
+function getTaskCarryoverKey(text: string) {
+  return text.trim();
 }
 
 function emptyWorkLog(employeeId: string, employeeName: string, workDate: string): WorkLog {
