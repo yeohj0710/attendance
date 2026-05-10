@@ -1,5 +1,4 @@
 import { requireAuth } from "@/lib/auth";
-import { assertOfficeDesktopRequest, verifyApprovedDevice } from "@/lib/device";
 import { withApi } from "@/lib/http";
 import {
   createLocalGreeting,
@@ -14,9 +13,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   return withApi(async () => {
-    assertOfficeDesktopRequest(request);
     const auth = await requireAuth(request);
-    await verifyApprovedDevice(auth, request);
 
     const body = (await request.json().catch(() => ({}))) as {
       event?: GreetingEvent;

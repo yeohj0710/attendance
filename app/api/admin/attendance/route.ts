@@ -5,7 +5,6 @@ import {
   type WorkType,
 } from "@/lib/attendance";
 import { requireAdmin } from "@/lib/auth";
-import { assertOfficeDesktopRequest } from "@/lib/device";
 import { badRequest, withApi } from "@/lib/http";
 import { isValidDateString } from "@/lib/time";
 
@@ -15,7 +14,6 @@ const workTypes: WorkType[] = ["office", "remote", "offsite", "business_trip"];
 
 export async function GET(request: Request) {
   return withApi(async () => {
-    assertOfficeDesktopRequest(request);
     await requireAdmin(request);
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get("startDate");
@@ -37,7 +35,6 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   return withApi(async () => {
-    assertOfficeDesktopRequest(request);
     const auth = await requireAdmin(request);
     const input = validateAttendanceInput(
       (await request.json()) as Partial<AdminAttendanceInput>,

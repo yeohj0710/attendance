@@ -1,4 +1,3 @@
-import { assertOfficeDesktopRequest } from "@/lib/device";
 import { badRequest, unauthorized, withApi } from "@/lib/http";
 
 export const runtime = "nodejs";
@@ -7,7 +6,6 @@ const DEFAULT_ADMIN_PAGE_PASSWORD = "010903";
 
 export async function POST(request: Request) {
   return withApi(async () => {
-    assertOfficeDesktopRequest(request);
 
     const body = (await request.json()) as { password?: string };
     const password = body.password?.trim();

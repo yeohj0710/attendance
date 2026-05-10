@@ -5,7 +5,6 @@ import {
   getTeamMonthAttendance,
   getTeamTodayAttendance,
 } from "@/lib/attendance";
-import { assertOfficeDesktopRequest, verifyApprovedDevice } from "@/lib/device";
 import { getDb } from "@/lib/db";
 import { badRequest, withApi } from "@/lib/http";
 import {
@@ -28,9 +27,7 @@ type EmployeeData = {
 
 export async function POST(request: Request) {
   return withApi(async () => {
-    assertOfficeDesktopRequest(request);
     const auth = await requireAuth(request);
-    await verifyApprovedDevice(auth, request);
 
     const body = (await request.json()) as {
       type?: "dashboard" | "work-log";

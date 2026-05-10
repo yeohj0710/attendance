@@ -1,4 +1,4 @@
-import { assertOfficeDesktopRequest, isLikelyDesktopRequest } from "@/lib/device";
+import { isLikelyDesktopRequest } from "@/lib/device";
 import { getClientIp, isOfficeIp } from "@/lib/ip";
 import { withApi } from "@/lib/http";
 
@@ -12,12 +12,5 @@ export async function GET(request: Request) {
       isOfficeIp: isOfficeIp(ip),
       isDesktop: isLikelyDesktopRequest(request),
     });
-  });
-}
-
-export async function POST(request: Request) {
-  return withApi(async () => {
-    assertOfficeDesktopRequest(request);
-    return Response.json({ ok: true });
   });
 }

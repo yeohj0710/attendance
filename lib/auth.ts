@@ -218,7 +218,7 @@ export async function authenticateRequest(request: Request) {
 
   const employee = employeeDoc.data() as EmployeeData;
   const device = deviceDoc.data() as { status?: string };
-  if (!employee.is_active || device.status !== "approved") {
+  if (!employee.is_active || device.status === "revoked" || device.status === "replaced") {
     return null;
   }
 

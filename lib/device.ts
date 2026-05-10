@@ -6,6 +6,7 @@ import type { AuthContext } from "@/lib/auth";
 
 export type DeviceStatus =
   | "approved"
+  | "unverified"
   | "pending_replacement"
   | "replaced"
   | "revoked";
@@ -62,6 +63,14 @@ export function assertOfficeDesktopRequest(request: Request) {
   }
 }
 
+export async function assertAttendanceActionAllowed(auth: AuthContext, request: Request) {
+  if (isOfficeIp(getClientIp(request))) {
+    return null;
+  }
+
+  return verifyApprovedDevice(auth, request);
+}
+
 export function isLikelyDesktopRequest(request: Request) {
   const mobileHint = request.headers.get("sec-ch-ua-mobile");
   if (mobileHint === "?1") {
@@ -94,6 +103,7 @@ export async function resolveLoginDevice({
   const db = getDb();
   const ip = getClientIp(request);
   const userAgentHash = hashUserAgent(request.headers.get("user-agent") ?? "");
+  const canAutoApproveDevice = isOfficeIp(ip) && isLikelyDesktopRequest(request);
 
   const existingByDeviceSnapshot = await db
     .collection("employee_devices")
@@ -110,9 +120,9 @@ export async function resolveLoginDevice({
       device_id: normalizedDeviceId,
       device_fingerprint: normalizedFingerprint,
       user_agent_hash: userAgentHash,
-      status: "approved",
+      status: canAutoApproveDevice ? "approved" : "unverified",
       requested_at: nowTimestamp(),
-      approved_at: nowTimestamp(),
+      approved_at: canAutoApproveDevice ? nowTimestamp() : null,
       first_ip: ip,
       last_ip: ip,
       last_seen_at: nowTimestamp(),
@@ -125,12 +135,17 @@ export async function resolveLoginDevice({
   }
 
   const existing = existingDoc.data() as DeviceData;
+  const status =
+    existing.status === "approved" || canAutoApproveDevice
+      ? "approved"
+      : existing.status ?? "unverified";
   const data: Partial<DeviceData> = {
     device_id: normalizedDeviceId,
     device_fingerprint: normalizedFingerprint,
     user_agent_hash: userAgentHash,
-    status: "approved",
-    approved_at: existing.approved_at ?? nowTimestamp(),
+    status,
+    approved_at:
+      status === "approved" ? existing.approved_at ?? nowTimestamp() : existing.approved_at ?? null,
     last_ip: ip,
     last_seen_at: nowTimestamp(),
     updated_at: nowTimestamp(),

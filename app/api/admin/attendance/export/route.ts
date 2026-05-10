@@ -1,7 +1,6 @@
 import { listAdminAttendance } from "@/lib/attendance";
 import { requireAdmin } from "@/lib/auth";
 import { attendanceToCsv } from "@/lib/csv";
-import { assertOfficeDesktopRequest } from "@/lib/device";
 import { badRequest, withApi } from "@/lib/http";
 import { isValidDateString } from "@/lib/time";
 
@@ -9,7 +8,6 @@ export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   return withApi(async () => {
-    assertOfficeDesktopRequest(request);
     await requireAdmin(request);
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get("startDate");

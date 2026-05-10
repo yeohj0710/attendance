@@ -1,6 +1,5 @@
 import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { assertOfficeDesktopRequest } from "@/lib/device";
 import { withApi } from "@/lib/http";
 import type { CollectionReference } from "firebase-admin/firestore";
 
@@ -15,7 +14,6 @@ const freeTier = {
 
 export async function GET(request: Request) {
   return withApi(async () => {
-    assertOfficeDesktopRequest(request);
     await requireAdmin(request);
 
     const db = getDb();

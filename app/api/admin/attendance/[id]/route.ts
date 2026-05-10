@@ -4,7 +4,6 @@ import {
   type WorkType,
 } from "@/lib/attendance";
 import { requireAdmin } from "@/lib/auth";
-import { assertOfficeDesktopRequest } from "@/lib/device";
 import { badRequest, withApi } from "@/lib/http";
 import { isValidDateString } from "@/lib/time";
 
@@ -17,7 +16,6 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> },
 ) {
   return withApi(async () => {
-    assertOfficeDesktopRequest(request);
     const auth = await requireAdmin(request);
     const { id } = await context.params;
     const input = validateAttendanceInput(

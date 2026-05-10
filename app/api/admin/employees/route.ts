@@ -1,6 +1,5 @@
 import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { assertOfficeDesktopRequest } from "@/lib/device";
 import { withApi } from "@/lib/http";
 
 export const runtime = "nodejs";
@@ -13,7 +12,6 @@ type EmployeeRow = {
 
 export async function GET(request: Request) {
   return withApi(async () => {
-    assertOfficeDesktopRequest(request);
     await requireAdmin(request);
     const snapshot = await getDb()
       .collection("employees")

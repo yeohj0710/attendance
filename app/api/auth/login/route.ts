@@ -1,13 +1,10 @@
 import { loginWithPin } from "@/lib/auth";
-import { assertOfficeDesktopRequest } from "@/lib/device";
 import { badRequest, withApi } from "@/lib/http";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   return withApi(async () => {
-    assertOfficeDesktopRequest(request);
-
     const body = (await request.json()) as {
       employeeName?: string;
       pin?: string;

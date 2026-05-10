@@ -56,11 +56,6 @@ export function LoginPanel({
     event.preventDefault();
     setMessage("");
 
-    if (network && (!network.isOfficeIp || !network.isDesktop)) {
-      setMessage(getNetworkMessage(network));
-      return;
-    }
-
     if (pin !== pinConfirm) {
       setMessage("PIN이 서로 일치하지 않습니다.");
       return;
@@ -96,7 +91,7 @@ export function LoginPanel({
   }
 
   const networkMessage = network ? getNetworkMessage(network) : "";
-  const isNetworkBlocked = Boolean(networkMessage);
+  const isNetworkRestricted = Boolean(networkMessage);
 
   return (
     <section className="mx-auto flex min-h-dvh w-full max-w-md items-center px-4 py-6">
@@ -125,48 +120,48 @@ export function LoginPanel({
               접속 환경을 확인하고 있어요.
             </span>
           </div>
-        ) : isNetworkBlocked ? (
+        ) : isNetworkRestricted ? (
           <div className="rounded border border-warn/30 bg-warn/10 px-3 py-4 text-sm leading-6 text-warn">
-            <p className="font-semibold">회사 네트워크 전용 페이지입니다.</p>
+            <p className="font-semibold">외부 접속 모드입니다.</p>
             <p className="mt-1">{networkMessage}</p>
           </div>
-        ) : (
-          <div className="space-y-4">
-            <label className="block">
-              <span className="label">이름</span>
-              <input
-                className="field mt-1"
-                value={employeeName}
-                onChange={(event) => setEmployeeName(event.target.value)}
-                autoComplete="username"
-              />
-            </label>
+        ) : null}
 
-            <label className="block">
-              <span className="label">4자리 PIN</span>
-              <input
-                className="field mt-1"
-                value={pin}
-                onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 4))}
-                type="password"
-                inputMode="numeric"
-                autoComplete="current-password"
-              />
-            </label>
+        <div className="mt-4 space-y-4">
+          <label className="block">
+            <span className="label">이름</span>
+            <input
+              className="field mt-1"
+              value={employeeName}
+              onChange={(event) => setEmployeeName(event.target.value)}
+              autoComplete="username"
+            />
+          </label>
 
-            <label className="block">
-              <span className="label">4자리 PIN 한 번 더</span>
-              <input
-                className="field mt-1"
-                value={pinConfirm}
-                onChange={(event) => setPinConfirm(event.target.value.replace(/\D/g, "").slice(0, 4))}
-                type="password"
-                inputMode="numeric"
-                autoComplete="current-password"
-              />
-            </label>
-          </div>
-        )}
+          <label className="block">
+            <span className="label">4자리 PIN</span>
+            <input
+              className="field mt-1"
+              value={pin}
+              onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 4))}
+              type="password"
+              inputMode="numeric"
+              autoComplete="current-password"
+            />
+          </label>
+
+          <label className="block">
+            <span className="label">4자리 PIN 확인</span>
+            <input
+              className="field mt-1"
+              value={pinConfirm}
+              onChange={(event) => setPinConfirm(event.target.value.replace(/\D/g, "").slice(0, 4))}
+              type="password"
+              inputMode="numeric"
+              autoComplete="current-password"
+            />
+          </label>
+        </div>
 
         {message ? (
           <p className="mt-4 rounded border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn">
@@ -176,7 +171,7 @@ export function LoginPanel({
 
         <button
           className="primary-button mt-5 w-full"
-          disabled={isSubmitting || isCheckingNetwork || isNetworkBlocked}
+          disabled={isSubmitting || isCheckingNetwork}
           type="submit"
         >
           {isSubmitting ? (
@@ -195,11 +190,11 @@ export function LoginPanel({
 
 function getNetworkMessage(network: NetworkResponse) {
   if (!network.isDesktop) {
-    return "출퇴근 기록은 회사 컴퓨터에서만 사용할 수 있어요. 모바일이나 태블릿에서는 로그인이 차단됩니다.";
+    return "로그인은 가능하지만, 출퇴근 기록은 회사 IP 또는 승인된 회사 기기에서만 사용할 수 있습니다.";
   }
 
   if (!network.isOfficeIp) {
-    return "회사 네트워크에 연결된 상태에서만 출퇴근 체크를 사용할 수 있어요. 회사 Wi-Fi나 유선 LAN에 연결한 뒤 다시 시도해주세요.";
+    return "회사 IP가 아니어도 로그인과 조회는 가능합니다. 출근, 퇴근, 퇴근 취소만 회사 IP 또는 승인된 회사 기기에서 처리됩니다.";
   }
 
   return "";

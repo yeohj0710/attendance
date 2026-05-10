@@ -1,5 +1,4 @@
 import { requireAuth } from "@/lib/auth";
-import { assertOfficeDesktopRequest, verifyApprovedDevice } from "@/lib/device";
 import { badRequest, withApi } from "@/lib/http";
 import { deleteWorkLogComment, updateWorkLogComment } from "@/lib/work-log";
 
@@ -10,9 +9,7 @@ export async function PATCH(
   context: { params: Promise<{ commentId: string }> },
 ) {
   return withApi(async () => {
-    assertOfficeDesktopRequest(request);
     const auth = await requireAuth(request);
-    await verifyApprovedDevice(auth, request);
 
     const { commentId } = await context.params;
     const body = (await request.json()) as {
@@ -41,9 +38,7 @@ export async function DELETE(
   context: { params: Promise<{ commentId: string }> },
 ) {
   return withApi(async () => {
-    assertOfficeDesktopRequest(request);
     const auth = await requireAuth(request);
-    await verifyApprovedDevice(auth, request);
 
     const { commentId } = await context.params;
     const url = new URL(request.url);
