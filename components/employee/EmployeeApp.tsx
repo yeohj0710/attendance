@@ -3584,22 +3584,22 @@ function TitleCollectionModal({
   const visibleTitles = getVisibleQuestTitles(titles, filter);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-3 py-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-3 py-4">
       <div
         aria-modal="true"
-        className="title-modal flex max-h-[86dvh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl"
+        className="title-modal flex max-h-[78dvh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl"
         role="dialog"
       >
-        <div className="title-collection-header border-b border-line px-4 py-4">
+        <div className="title-collection-header border-b border-line px-3 py-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">
                 Title Codex
               </p>
-              <h3 className="mt-1 text-xl font-black text-ink">
+              <h3 className="mt-1 text-lg font-black text-ink">
                 {ownerName ? `${ownerName} 칭호 도감` : "칭호 도감"}
               </h3>
-              <p className="mt-1 text-sm font-semibold text-slate-600">
+              <p className="mt-1 text-xs font-semibold text-slate-600">
                 Lv.{levelInfo.level} · {totalXp} XP · 누적 출근 {stats.attendanceDays}일
               </p>
             </div>
@@ -3608,14 +3608,14 @@ function TitleCollectionModal({
             </button>
           </div>
 
-          <div className="mt-4 grid gap-2 text-xs sm:grid-cols-4">
+          <div className="mt-3 grid gap-2 text-xs sm:grid-cols-4">
             <TitleSummaryChip label="획득" value={`${achievedCount}/${titles.length}개`} />
             <TitleSummaryChip label="최고 연속" value={`${stats.bestStreak}일`} />
             <TitleSummaryChip label="누적 업무" value={`${stats.completedTasks}개`} />
             <TitleSummaryChip label="활동 월" value={`${stats.activeMonths}개월`} />
           </div>
 
-          <div className="mt-4 inline-flex rounded border border-line bg-field p-1">
+          <div className="mt-3 inline-flex rounded border border-line bg-field p-1">
             {([
               ["all", `전체 ${titles.length}`],
               ["achieved", `획득 ${achievedCount}`],
@@ -3635,10 +3635,10 @@ function TitleCollectionModal({
           </div>
         </div>
 
-        <div className="overflow-y-auto px-4 py-4">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="overflow-y-auto px-3 py-3">
+          <div className="grid gap-2 md:grid-cols-2">
             {visibleTitles.map((title) => (
-              <TitleProgressCard key={title.id} title={title} />
+              <TitleProgressCard compact key={title.id} title={title} />
             ))}
           </div>
         </div>

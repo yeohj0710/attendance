@@ -1302,8 +1302,7 @@ button:disabled {
     overflow: hidden;
     border-color: rgba(69, 104, 245, 0.28);
     background:
-      linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 255, 0.88) 52%, rgba(255, 247, 237, 0.76)),
-      repeating-linear-gradient(90deg, rgba(69, 104, 245, 0.045) 0 1px, transparent 1px 26px);
+      linear-gradient(135deg, rgba(255, 255, 255, 0.97), rgba(247, 250, 255, 0.9) 54%, rgba(255, 247, 237, 0.68));
     box-shadow:
       0 24px 54px -38px rgba(23, 32, 51, 0.42),
       0 0 0 1px rgba(255, 255, 255, 0.84) inset;
@@ -1315,11 +1314,9 @@ button:disabled {
     inset: 0;
     z-index: -2;
     background:
-      linear-gradient(115deg, transparent 0 22%, rgba(255, 255, 255, 0.76) 32%, transparent 44%),
-      linear-gradient(90deg, rgba(69, 104, 245, 0.18), rgba(34, 197, 94, 0.12), rgba(245, 158, 11, 0.16));
-    background-size: 240% 100%, 100% 100%;
-    opacity: 0.68;
-    animation: title-panel-sheen 5.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+      linear-gradient(90deg, rgba(69, 104, 245, 0.1), rgba(34, 197, 94, 0.07), rgba(245, 158, 11, 0.09));
+    background-size: 100% 100%;
+    opacity: 0.32;
   }
 
   .title-quest-panel::after {
@@ -1331,7 +1328,7 @@ button:disabled {
       linear-gradient(90deg, transparent 0 7px, rgba(69, 104, 245, 0.08) 7px 8px, transparent 8px 36px),
       linear-gradient(0deg, transparent 0 7px, rgba(245, 158, 11, 0.07) 7px 8px, transparent 8px 32px);
     mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent 72%);
-    opacity: 0.42;
+    opacity: 0.16;
   }
 
   .title-quest-panel > * {
@@ -1371,8 +1368,8 @@ button:disabled {
 
   .title-quest-scene {
     position: relative;
-    min-height: 6.75rem;
-    margin-top: 0.9rem;
+    min-height: 5.6rem;
+    margin-top: 0.7rem;
     overflow: hidden;
     border: 1px solid rgba(148, 163, 184, 0.34);
     border-radius: 0.5rem;
@@ -1407,10 +1404,11 @@ button:disabled {
 
   .title-scene-worker {
     left: 3.1rem;
-    bottom: 1.58rem;
+    bottom: 1.3rem;
     width: 2.7rem;
     height: 3.65rem;
-    animation: title-worker-focus 1300ms steps(2, end) infinite;
+    transform: scale(0.88);
+    transform-origin: 50% 100%;
   }
 
   .title-scene-head {
@@ -1477,7 +1475,7 @@ button:disabled {
   .title-scene-desk {
     left: 2.1rem;
     right: 2.2rem;
-    bottom: 1.18rem;
+    bottom: 0.92rem;
     height: 0.8rem;
     border: 2px solid #64748b;
     background: #dbeafe;
@@ -1488,7 +1486,7 @@ button:disabled {
 
   .title-scene-monitor {
     right: 4.1rem;
-    bottom: 1.88rem;
+    bottom: 1.56rem;
     width: 2.25rem;
     height: 1.75rem;
     border: 2px solid #172033;
@@ -1521,7 +1519,7 @@ button:disabled {
 
   .title-scene-trophy {
     right: 1.35rem;
-    bottom: 1.92rem;
+    bottom: 1.58rem;
     width: 1.1rem;
     height: 1.25rem;
     border: 2px solid #92400e;
@@ -1530,8 +1528,7 @@ button:disabled {
       -0.34rem 0.18rem 0 -0.16rem #fbbf24,
       0.34rem 0.18rem 0 -0.16rem #fbbf24,
       0 0.72rem 0 -0.3rem #92400e,
-      0 0 1rem -0.2rem rgba(245, 158, 11, 0.88);
-    animation: title-trophy-shine 2.8s ease-in-out infinite;
+      0 0 0.58rem -0.34rem rgba(245, 158, 11, 0.66);
   }
 
   .title-scene-trophy span {
@@ -1545,7 +1542,7 @@ button:disabled {
   .title-scene-level,
   .title-scene-xp {
     position: absolute;
-    top: 0.55rem;
+    top: 0.46rem;
     border: 1px solid rgba(69, 104, 245, 0.24);
     border-radius: 0.25rem;
     background: rgba(255, 255, 255, 0.82);
@@ -1578,7 +1575,7 @@ button:disabled {
   }
 
   .title-progress-track-main {
-    height: 0.9rem;
+    height: 0.72rem;
     border-color: rgba(69, 104, 245, 0.2);
   }
 
@@ -1590,22 +1587,17 @@ button:disabled {
     background:
       linear-gradient(90deg, var(--title-primary), var(--title-secondary) 55%, var(--title-hot)),
       var(--title-primary);
-    background-size: 180% 100%;
+    background-size: 100% 100%;
     box-shadow:
-      0 0 0.9rem -0.28rem var(--title-primary),
+      0 0 0.46rem -0.34rem var(--title-primary),
       inset 0 1px 0 rgba(255, 255, 255, 0.42);
-    animation: title-bar-flow 2.2s linear infinite;
     transition: width 480ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .title-xp-bar::after,
   .title-progress-track > div::after {
     content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(110deg, transparent 0 32%, rgba(255, 255, 255, 0.72) 45%, transparent 58%);
-    transform: translateX(-120%);
-    animation: title-progress-glint 2.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    display: none;
   }
 
   .title-next-panel,
@@ -1639,30 +1631,18 @@ button:disabled {
   .title-rival-card::before,
   .title-card::before {
     content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background: linear-gradient(110deg, transparent 0 38%, rgba(255, 255, 255, 0.72) 48%, transparent 58%);
-    transform: translateX(-120%);
-    opacity: 0;
+    display: none;
   }
 
   .title-summary-chip:hover,
   .title-rival-card:hover,
   .title-card:hover {
     transform: translateY(-1px);
-    box-shadow: 0 16px 34px -28px rgba(23, 32, 51, 0.72);
-  }
-
-  .title-summary-chip:hover::before,
-  .title-rival-card:hover::before,
-  .title-card:hover::before {
-    opacity: 1;
-    animation: title-card-glint 780ms cubic-bezier(0.22, 1, 0.36, 1);
+    box-shadow: 0 10px 22px -20px rgba(23, 32, 51, 0.58);
   }
 
   .title-card {
-    animation: title-card-rise 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: none;
   }
 
   .title-card-progress {
@@ -1673,7 +1653,7 @@ button:disabled {
 
   .title-card-achieved {
     box-shadow:
-      0 14px 30px -28px rgba(23, 32, 51, 0.65),
+      0 10px 22px -22px rgba(23, 32, 51, 0.56),
       inset 0 1px 0 rgba(255, 255, 255, 0.8);
   }
 
@@ -1718,38 +1698,36 @@ button:disabled {
   .title-rival-card-platinum,
   .title-rival-card-legend {
     border-color: color-mix(in srgb, var(--title-hot) 52%, #cbd5e1);
-    box-shadow: 0 14px 30px -28px color-mix(in srgb, var(--title-hot) 72%, transparent);
+    box-shadow: 0 10px 22px -24px color-mix(in srgb, var(--title-hot) 58%, transparent);
   }
 
   .title-medal {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 4.7rem;
-    min-width: 4.7rem;
-    height: 4.7rem;
+    width: 3.8rem;
+    min-width: 3.8rem;
+    height: 3.8rem;
     border: 2px solid rgba(255, 255, 255, 0.82);
-    border-radius: 0.85rem;
+    border-radius: 0.72rem;
     color: #ffffff;
-    font-size: 1.05rem;
+    font-size: 0.94rem;
     font-weight: 950;
     letter-spacing: 0.02em;
     text-shadow: 0 2px 0 rgba(23, 32, 51, 0.28);
     box-shadow:
-      0 18px 32px -24px rgba(23, 32, 51, 0.72),
+      0 12px 24px -20px rgba(23, 32, 51, 0.62),
       inset 0 1px 0 rgba(255, 255, 255, 0.42),
       inset 0 -0.65rem 0 rgba(23, 32, 51, 0.12);
     transform: translateZ(0);
-    animation: title-medal-float 3.4s ease-in-out infinite;
   }
 
   .title-medal-small {
-    width: 2.35rem;
-    min-width: 2.35rem;
-    height: 2.35rem;
-    border-radius: 0.55rem;
-    font-size: 0.78rem;
-    animation-duration: 4.4s;
+    width: 1.95rem;
+    min-width: 1.95rem;
+    height: 1.95rem;
+    border-radius: 0.48rem;
+    font-size: 0.68rem;
   }
 
   .title-medal-bronze {
@@ -1773,8 +1751,8 @@ button:disabled {
   .title-medal-legend {
     background: linear-gradient(135deg, #7f1d1d, #dc2626 42%, #7c3aed 72%, #f59e0b);
     box-shadow:
-      0 18px 34px -22px rgba(220, 38, 38, 0.78),
-      0 0 1.2rem -0.24rem rgba(124, 58, 237, 0.82),
+      0 12px 24px -18px rgba(220, 38, 38, 0.58),
+      0 0 0.62rem -0.28rem rgba(124, 58, 237, 0.58),
       inset 0 1px 0 rgba(255, 255, 255, 0.42);
   }
 
@@ -1794,7 +1772,7 @@ button:disabled {
     position: relative;
     overflow: hidden;
     background:
-      linear-gradient(135deg, rgba(238, 243, 255, 0.92), rgba(255, 247, 237, 0.72)),
+      linear-gradient(135deg, rgba(238, 243, 255, 0.82), rgba(255, 247, 237, 0.44)),
       rgba(255, 255, 255, 0.95);
   }
 
@@ -1802,8 +1780,24 @@ button:disabled {
     content: "";
     position: absolute;
     inset: auto 0 0;
-    height: 3px;
-    background: linear-gradient(90deg, #4568f5, #22c55e, #f59e0b, #dc2626);
+    height: 2px;
+    background: linear-gradient(90deg, rgba(69, 104, 245, 0.72), rgba(34, 197, 94, 0.42), rgba(245, 158, 11, 0.46), rgba(220, 38, 38, 0.58));
+  }
+
+  .title-modal .title-card {
+    padding: 0.62rem;
+  }
+
+  .title-modal .title-progress-track {
+    height: 0.36rem;
+  }
+
+  .title-modal .title-medal-small {
+    width: 1.75rem;
+    min-width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 0.42rem;
+    font-size: 0.62rem;
   }
 }
 
