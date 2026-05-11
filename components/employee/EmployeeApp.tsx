@@ -3107,6 +3107,7 @@ type EmployeeTitle = {
   kind?: "duration";
   name: string;
   progress: number;
+  rank: number;
   target: number;
   tone: EmployeeTitleTone;
   unit?: string;
@@ -3147,7 +3148,7 @@ function MyTitlesPanel({
   const stats = getEmployeeTitleStats(employeeId, teamMonth, todayDate, todayWorkLog);
   const titles = getEmployeeTitles(stats);
   const achievedTitles = titles.filter((title) => title.achieved);
-  const representativeTitle = achievedTitles[0] ?? titles[0];
+  const representativeTitle = getRepresentativeTitle(titles);
   const doneSummary =
     stats.totalTasks > 0 ? `${stats.completedTasks}/${stats.totalTasks}개` : "0개";
 
@@ -3298,6 +3299,7 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       description: "이번 달 출근 기록을 남긴 날",
       id: "attendance-starter",
       name: "출근 스타터",
+      rank: 10,
       target: 1,
       tone: "accent",
       unit: "일",
@@ -3307,6 +3309,7 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       description: `현재 연속 출근 ${stats.currentStreak}일`,
       id: "streak-3",
       name: "3일 연속 출근",
+      rank: 40,
       target: 3,
       tone: "accent",
       unit: "일",
@@ -3316,6 +3319,7 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       description: `현재 연속 출근 ${stats.currentStreak}일`,
       id: "streak-5",
       name: "5일 연속 추진력",
+      rank: 75,
       target: 5,
       tone: "warm",
       unit: "일",
@@ -3325,6 +3329,7 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       description: "하루 10시간 이상 근무한 날",
       id: "ten-hour",
       name: "10시간 돌파",
+      rank: 55,
       target: 1,
       tone: "warm",
       unit: "일",
@@ -3334,6 +3339,7 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       description: "하루 12시간 이상 근무한 날",
       id: "twelve-hour",
       name: "12시간 불꽃근무",
+      rank: 95,
       target: 1,
       tone: "danger",
       unit: "일",
@@ -3343,6 +3349,7 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       description: "하루에 완료 업무 5개 이상",
       id: "task-five",
       name: "완료 5개+",
+      rank: 50,
       target: 1,
       tone: "accent",
       unit: "일",
@@ -3352,6 +3359,7 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       description: "업무 3개 이상을 전부 완료한 날",
       id: "perfect-task-day",
       name: "전부 완료",
+      rank: 65,
       target: 1,
       tone: "complete",
       unit: "일",
@@ -3362,6 +3370,7 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       id: "month-40h",
       kind: "duration",
       name: "월간 40시간",
+      rank: 70,
       target: 40 * 60,
       tone: "ink",
       value: stats.totalWorkedMinutes,
@@ -3371,6 +3380,7 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       id: "month-80h",
       kind: "duration",
       name: "월간 80시간",
+      rank: 100,
       target: 80 * 60,
       tone: "danger",
       value: stats.totalWorkedMinutes,
@@ -3379,6 +3389,7 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       description: "업무 댓글 3개 이상",
       id: "comment-connector",
       name: "댓글 연결자",
+      rank: 45,
       target: 3,
       tone: "ink",
       unit: "개",
@@ -3388,6 +3399,7 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       description: "퇴근 기록까지 남긴 날 5일",
       id: "checkout-routine",
       name: "마무리 루틴",
+      rank: 60,
       target: 5,
       tone: "complete",
       unit: "일",
@@ -3404,9 +3416,20 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
     .sort(
       (a, b) =>
         Number(b.achieved) - Number(a.achieved) ||
+        b.rank - a.rank ||
         b.progress - a.progress ||
-        a.target - b.target,
+        a.name.localeCompare(b.name, "ko"),
     );
+}
+
+function getRepresentativeTitle(titles: EmployeeTitle[]) {
+  return [...titles].sort(
+    (a, b) =>
+      Number(b.achieved) - Number(a.achieved) ||
+      b.rank - a.rank ||
+      b.progress - a.progress ||
+      a.name.localeCompare(b.name, "ko"),
+  )[0];
 }
 
 function getCurrentAttendanceStreak(records: TeamAttendanceRecord[], todayDate?: string) {
