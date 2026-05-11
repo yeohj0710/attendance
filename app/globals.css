@@ -226,12 +226,11 @@ button:disabled {
     border: 1px solid #cbd8ea;
     border-radius: 0.375rem;
     background:
-      linear-gradient(180deg, rgba(230, 237, 248, 0.98) 0 34%, transparent 34%),
-      linear-gradient(135deg, rgba(248, 250, 252, 0.98), rgba(225, 236, 255, 0.96));
+      linear-gradient(180deg, rgba(250, 252, 255, 0.98) 0 43%, rgba(247, 249, 252, 0.98) 43%),
+      linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(229, 238, 252, 0.96));
     background-size: 100% 100%, 100% 100%;
-    image-rendering: pixelated;
     box-shadow:
-      inset 0 -4.8rem 0 rgba(241, 245, 249, 0.95),
+      inset 0 -4.8rem 0 rgba(248, 250, 252, 0.8),
       inset 0 0.35rem 0 rgba(255, 255, 255, 0.58),
       0 18px 34px -32px rgba(23, 32, 51, 0.75);
   }
@@ -239,13 +238,11 @@ button:disabled {
   .team-pixel-room::before {
     content: "";
     position: absolute;
-    inset: 37% 0 0;
+    inset: 42% 0 0;
     background:
-      radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.62), transparent 20rem),
-      linear-gradient(180deg, rgba(255, 255, 255, 0.42), transparent 38%);
+      linear-gradient(180deg, rgba(255, 255, 255, 0.66), rgba(248, 250, 252, 0.78) 42%, rgba(241, 245, 249, 0.9));
     background-size: 100% 100%, 100% 100%;
-    transform: skewY(-4deg) translateY(0.35rem);
-    transform-origin: top left;
+    border-top: 1px solid rgba(203, 213, 225, 0.55);
   }
 
   .team-pixel-room::after {
@@ -318,22 +315,19 @@ button:disabled {
 
   .team-pixel-night {
     background:
-      linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px),
-      linear-gradient(180deg, rgba(37, 50, 78, 0.98) 0 36%, transparent 36%),
+      linear-gradient(180deg, rgba(37, 50, 78, 0.98) 0 42%, rgba(227, 233, 244, 0.96) 42% 63%, rgba(238, 242, 248, 0.98) 63%),
       linear-gradient(135deg, rgba(226, 232, 240, 0.95), rgba(210, 224, 248, 0.96));
   }
 
   .team-pixel-evening {
     background:
-      linear-gradient(90deg, rgba(255, 255, 255, 0.4) 1px, transparent 1px),
-      linear-gradient(180deg, rgba(255, 226, 188, 0.98) 0 36%, transparent 36%),
+      linear-gradient(180deg, rgba(255, 231, 198, 0.98) 0 42%, rgba(242, 247, 255, 0.95) 42% 63%, rgba(248, 250, 252, 0.98) 63%),
       linear-gradient(135deg, rgba(255, 247, 237, 0.98), rgba(229, 239, 255, 0.96));
   }
 
   .team-pixel-morning {
     background:
-      linear-gradient(90deg, rgba(255, 255, 255, 0.5) 1px, transparent 1px),
-      linear-gradient(180deg, rgba(230, 244, 255, 0.98) 0 36%, transparent 36%),
+      linear-gradient(180deg, rgba(235, 247, 255, 0.98) 0 42%, rgba(243, 250, 255, 0.96) 42% 63%, rgba(248, 250, 252, 0.98) 63%),
       linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(232, 246, 255, 0.96));
   }
 
@@ -479,14 +473,15 @@ button:disabled {
   .team-pixel-seat {
     position: relative;
     min-height: 11.4rem;
+    isolation: isolate;
     overflow: hidden;
     border: 1px solid rgba(203, 213, 225, 0.72);
     border-radius: 0.25rem;
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.2) 38%, rgba(226, 232, 240, 0.36)),
-      radial-gradient(circle at 50% 70%, rgba(155, 177, 255, 0.13), transparent 42%);
+      linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(250, 252, 255, 0.58) 48%, rgba(241, 245, 249, 0.68)),
+      radial-gradient(circle at 50% 72%, rgba(69, 104, 245, 0.1), transparent 45%);
     box-shadow:
-      inset 0 -1.2rem 0 rgba(226, 232, 240, 0.5),
+      inset 0 -1.05rem 0 rgba(226, 232, 240, 0.46),
       0 1px 0 rgba(255, 255, 255, 0.7);
     text-align: left;
     transition:
@@ -494,6 +489,18 @@ button:disabled {
       box-shadow 180ms ease,
       transform 180ms ease,
       background 180ms ease;
+  }
+
+  .team-pixel-seat::before {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    z-index: 0;
+    height: 38%;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(226, 232, 240, 0.45)),
+      linear-gradient(90deg, rgba(203, 213, 225, 0.4), rgba(255, 255, 255, 0.1) 18%, rgba(255, 255, 255, 0.1) 82%, rgba(203, 213, 225, 0.35));
+    border-top: 1px solid rgba(203, 213, 225, 0.42);
   }
 
   .team-pixel-seat:hover,
@@ -508,7 +515,7 @@ button:disabled {
   .team-pixel-seat-me {
     border-color: rgba(69, 104, 245, 0.72);
     background:
-      linear-gradient(180deg, rgba(238, 243, 255, 0.92), rgba(255, 255, 255, 0.3) 42%, rgba(219, 234, 254, 0.46)),
+      linear-gradient(180deg, rgba(238, 243, 255, 0.92), rgba(255, 255, 255, 0.5) 48%, rgba(219, 234, 254, 0.5)),
       radial-gradient(circle at 50% 70%, rgba(69, 104, 245, 0.18), transparent 44%);
     box-shadow:
       inset 0 -1.2rem 0 rgba(219, 234, 254, 0.56),
@@ -648,6 +655,7 @@ button:disabled {
     position: absolute;
     left: 50%;
     top: 3.15rem;
+    z-index: 1;
     display: block;
     width: 11.2rem;
     height: 6.75rem;
