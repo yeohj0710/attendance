@@ -1368,8 +1368,8 @@ button:disabled {
 
   .title-quest-scene {
     position: relative;
-    min-height: 5.6rem;
-    margin-top: 0.7rem;
+    min-height: 5.15rem;
+    margin-top: 0.6rem;
     overflow: hidden;
     border: 1px solid rgba(148, 163, 184, 0.34);
     border-radius: 0.5rem;
@@ -1404,10 +1404,10 @@ button:disabled {
 
   .title-scene-worker {
     left: 3.1rem;
-    bottom: 1.3rem;
+    bottom: 1.08rem;
     width: 2.7rem;
     height: 3.65rem;
-    transform: scale(0.88);
+    transform: scale(0.8);
     transform-origin: 50% 100%;
   }
 
@@ -1475,7 +1475,7 @@ button:disabled {
   .title-scene-desk {
     left: 2.1rem;
     right: 2.2rem;
-    bottom: 0.92rem;
+    bottom: 0.72rem;
     height: 0.8rem;
     border: 2px solid #64748b;
     background: #dbeafe;
@@ -1486,7 +1486,7 @@ button:disabled {
 
   .title-scene-monitor {
     right: 4.1rem;
-    bottom: 1.56rem;
+    bottom: 1.34rem;
     width: 2.25rem;
     height: 1.75rem;
     border: 2px solid #172033;
@@ -1519,7 +1519,7 @@ button:disabled {
 
   .title-scene-trophy {
     right: 1.35rem;
-    bottom: 1.58rem;
+    bottom: 1.36rem;
     width: 1.1rem;
     height: 1.25rem;
     border: 2px solid #92400e;
@@ -1542,7 +1542,7 @@ button:disabled {
   .title-scene-level,
   .title-scene-xp {
     position: absolute;
-    top: 0.46rem;
+    top: 0.38rem;
     border: 1px solid rgba(69, 104, 245, 0.24);
     border-radius: 0.25rem;
     background: rgba(255, 255, 255, 0.82);
@@ -1575,7 +1575,7 @@ button:disabled {
   }
 
   .title-progress-track-main {
-    height: 0.72rem;
+    height: 0.64rem;
     border-color: rgba(69, 104, 245, 0.2);
   }
 
@@ -1688,10 +1688,13 @@ button:disabled {
   }
 
   .title-rival-card {
+    appearance: none;
     border-color: rgba(148, 163, 184, 0.32);
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 252, 0.74)),
       rgba(255, 255, 255, 0.82);
+    color: inherit;
+    font: inherit;
   }
 
   .title-rival-card-gold,
@@ -1705,13 +1708,13 @@ button:disabled {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 3.8rem;
-    min-width: 3.8rem;
-    height: 3.8rem;
+    width: 3.45rem;
+    min-width: 3.45rem;
+    height: 3.45rem;
     border: 2px solid rgba(255, 255, 255, 0.82);
     border-radius: 0.72rem;
     color: #ffffff;
-    font-size: 0.94rem;
+    font-size: 0.88rem;
     font-weight: 950;
     letter-spacing: 0.02em;
     text-shadow: 0 2px 0 rgba(23, 32, 51, 0.28);
@@ -1723,11 +1726,11 @@ button:disabled {
   }
 
   .title-medal-small {
-    width: 1.95rem;
-    min-width: 1.95rem;
-    height: 1.95rem;
+    width: 1.7rem;
+    min-width: 1.7rem;
+    height: 1.7rem;
     border-radius: 0.48rem;
-    font-size: 0.68rem;
+    font-size: 0.62rem;
   }
 
   .title-medal-bronze {
@@ -1785,19 +1788,32 @@ button:disabled {
   }
 
   .title-modal .title-card {
-    padding: 0.62rem;
+    padding: 0.5rem;
   }
 
   .title-modal .title-progress-track {
-    height: 0.36rem;
+    height: 0.31rem;
   }
 
   .title-modal .title-medal-small {
-    width: 1.75rem;
-    min-width: 1.75rem;
-    height: 1.75rem;
-    border-radius: 0.42rem;
-    font-size: 0.62rem;
+    width: 1.52rem;
+    min-width: 1.52rem;
+    height: 1.52rem;
+    border-radius: 0.38rem;
+    font-size: 0.56rem;
+  }
+
+  .title-modal .title-summary-chip {
+    padding: 0.38rem 0.5rem;
+  }
+
+  .title-modal .title-summary-chip p:first-child {
+    font-size: 0.68rem;
+  }
+
+  .title-modal .title-summary-chip p:last-child {
+    margin-top: 0.08rem;
+    font-size: 0.75rem;
   }
 }
 

@@ -3271,24 +3271,24 @@ function MyTitlesPanel({
   return (
     <div className="mt-4 border-t border-line pt-4">
       <div
-        className={`title-quest-panel title-quest-panel-${representativeTitle.rarity} rounded-lg border border-slate-300 bg-white p-4 shadow-panel`}
+        className={`title-quest-panel title-quest-panel-${representativeTitle.rarity} rounded-lg border border-slate-300 bg-white p-3 shadow-panel`}
       >
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(16rem,0.85fr)]">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(15rem,0.85fr)]">
           <div className="min-w-0">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">
                   Career Titles
                 </p>
-                <h3 className="mt-1 text-xl font-black text-ink">
+                <h3 className="mt-1 text-lg font-black text-ink">
                   Lv.{levelInfo.level} {representativeTitle.name}
                 </h3>
-                <p className="mt-1 text-sm font-semibold text-slate-600">
+                <p className="mt-1 text-xs font-semibold text-slate-600">
                   누적 {achievedTitles.length}/{titles.length}개 획득 · {totalXp} XP
                 </p>
               </div>
               <button
-                className="secondary-button shrink-0 px-3 py-2 text-xs"
+                className="secondary-button shrink-0 px-2.5 py-1.5 text-xs"
                 onClick={() => setIsCollectionOpen(true)}
                 type="button"
               >
@@ -3302,7 +3302,7 @@ function MyTitlesPanel({
               totalXp={totalXp}
             />
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)]">
+            <div className="mt-3 grid gap-2.5 sm:grid-cols-[auto_minmax(0,1fr)]">
               <TitleMedal title={representativeTitle} />
               <div className="min-w-0">
                 <div className="flex items-center justify-between gap-3 text-xs font-bold text-slate-600">
@@ -3317,7 +3317,7 @@ function MyTitlesPanel({
                     style={{ width: `${Math.round(levelInfo.progress * 100)}%` }}
                   />
                 </div>
-                <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+                <div className="mt-2.5 grid gap-1.5 text-xs sm:grid-cols-3">
                   <TitleSummaryChip label="누적 출근" value={`${titleProfile.stats.attendanceDays}일`} />
                   <TitleSummaryChip label="완료 업무" value={`${titleProfile.stats.completedTasks}개`} />
                   <TitleSummaryChip label="이번 달 완료" value={monthlyDoneSummary} />
@@ -3325,7 +3325,7 @@ function MyTitlesPanel({
               </div>
             </div>
 
-            <div className="mt-4 grid gap-2 text-xs sm:grid-cols-3">
+            <div className="mt-3 grid gap-1.5 text-xs sm:grid-cols-3">
               <TitleSummaryChip
                 label="최고 연속"
                 value={`${titleProfile.stats.bestStreak}일`}
@@ -3341,14 +3341,14 @@ function MyTitlesPanel({
             </div>
           </div>
 
-          <div className="title-next-panel rounded border border-slate-300 bg-white/80 p-3">
+          <div className="title-next-panel rounded border border-slate-300 bg-white/80 p-2.5">
             <div className="flex items-center justify-between gap-3">
               <h4 className="text-sm font-black text-ink">다음에 열릴 칭호</h4>
               <span className="rounded-full border border-accent/25 bg-accentSoft px-2 py-0.5 text-[11px] font-bold text-accent">
                 {nextTitles.length}개 추적
               </span>
             </div>
-            <div className="mt-3 space-y-2">
+            <div className="mt-2.5 space-y-1.5">
               {nextTitles.map((title) => (
                 <TitleProgressCard compact key={title.id} title={title} />
               ))}
@@ -3510,24 +3510,34 @@ function CompanyTitleGalleryCard({
 
   return (
     <div
-      className={`title-rival-card title-rival-card-${entry.representativeTitle.rarity} rounded border border-slate-300/80 bg-white/72 px-3 py-3`}
+      aria-label={`${entry.profile.employeeName || "이름 없음"} 칭호 도감 보기`}
+      className={`title-rival-card title-rival-card-${entry.representativeTitle.rarity} group w-full cursor-pointer rounded border border-slate-300/80 bg-white/72 px-2.5 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent`}
+      onClick={() => onOpenProfile(entry.profile)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpenProfile(entry.profile);
+        }
+      }}
+      role="button"
+      tabIndex={0}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-2.5">
         <TitleMedal small title={entry.representativeTitle} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="truncate text-sm font-black text-ink">
+            <p className="truncate text-[13px] font-black text-ink">
               {entry.profile.employeeName || "이름 없음"}
             </p>
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-black text-slate-600">
               Lv.{entry.levelInfo.level}
             </span>
           </div>
-          <p className="mt-1 truncate text-xs font-bold text-slate-600">
+          <p className="mt-0.5 truncate text-[11px] font-bold text-slate-600">
             대표 칭호 · {entry.representativeTitle.name}
           </p>
-          <div className="mt-2 flex items-center gap-2">
-            <div className="title-progress-track h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200">
+          <div className="mt-1.5 flex items-center gap-2">
+            <div className="title-progress-track h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200">
               <div className="title-xp-bar h-full rounded-full" style={{ width: `${progressPercent}%` }} />
             </div>
             <span className="shrink-0 text-[11px] font-bold text-slate-500">
@@ -3535,15 +3545,14 @@ function CompanyTitleGalleryCard({
             </span>
           </div>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-2 text-right">
-          <p className="text-sm font-black text-ink">{entry.totalXp.toLocaleString()} XP</p>
-          <button
-            className="secondary-button px-2 py-1 text-[11px]"
-            onClick={() => onOpenProfile(entry.profile)}
-            type="button"
+        <div className="flex shrink-0 items-center gap-2 text-right">
+          <p className="text-xs font-black text-ink">{entry.totalXp.toLocaleString()} XP</p>
+          <span
+            aria-hidden="true"
+            className="text-lg font-black leading-none text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-accent"
           >
-            도감 보기
-          </button>
+            ›
+          </span>
         </div>
       </div>
     </div>
@@ -3584,19 +3593,19 @@ function TitleCollectionModal({
   const visibleTitles = getVisibleQuestTitles(titles, filter);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-3 py-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-2.5 py-3">
       <div
         aria-modal="true"
-        className="title-modal flex max-h-[78dvh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl"
+        className="title-modal flex max-h-[76dvh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl"
         role="dialog"
       >
-        <div className="title-collection-header border-b border-line px-3 py-3">
+        <div className="title-collection-header border-b border-line px-2.5 py-2.5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">
                 Title Codex
               </p>
-              <h3 className="mt-1 text-lg font-black text-ink">
+              <h3 className="mt-1 text-base font-black text-ink">
                 {ownerName ? `${ownerName} 칭호 도감` : "칭호 도감"}
               </h3>
               <p className="mt-1 text-xs font-semibold text-slate-600">
@@ -3608,21 +3617,21 @@ function TitleCollectionModal({
             </button>
           </div>
 
-          <div className="mt-3 grid gap-2 text-xs sm:grid-cols-4">
+          <div className="mt-2.5 grid gap-1.5 text-xs sm:grid-cols-4">
             <TitleSummaryChip label="획득" value={`${achievedCount}/${titles.length}개`} />
             <TitleSummaryChip label="최고 연속" value={`${stats.bestStreak}일`} />
             <TitleSummaryChip label="누적 업무" value={`${stats.completedTasks}개`} />
             <TitleSummaryChip label="활동 월" value={`${stats.activeMonths}개월`} />
           </div>
 
-          <div className="mt-3 inline-flex rounded border border-line bg-field p-1">
+          <div className="mt-2.5 inline-flex rounded border border-line bg-field p-0.5">
             {([
               ["all", `전체 ${titles.length}`],
               ["achieved", `획득 ${achievedCount}`],
               ["progress", `진행 ${progressCount}`],
             ] as Array<[QuestTitleFilter, string]>).map(([value, label]) => (
               <button
-                className={`rounded px-3 py-1.5 text-xs font-bold transition ${
+                className={`rounded px-2.5 py-1 text-xs font-bold transition ${
                   filter === value ? "bg-white text-ink shadow-sm" : "text-muted hover:text-ink"
                 }`}
                 key={value}
@@ -3635,8 +3644,8 @@ function TitleCollectionModal({
           </div>
         </div>
 
-        <div className="overflow-y-auto px-3 py-3">
-          <div className="grid gap-2 md:grid-cols-2">
+        <div className="overflow-y-auto px-2.5 py-2.5">
+          <div className="grid gap-1.5 md:grid-cols-2">
             {visibleTitles.map((title) => (
               <TitleProgressCard compact key={title.id} title={title} />
             ))}
@@ -3652,14 +3661,19 @@ function TitleProgressCard({ compact = false, title }: { compact?: boolean; titl
     <div
       className={`title-card title-card-${title.rarity} title-card-${title.category} ${
         title.achieved ? "title-card-achieved" : "title-card-progress"
-      } rounded border p-3 ${getQuestTitleCardClassName(title)}`}
+      } rounded border ${compact ? "p-2" : "p-3"} ${getQuestTitleCardClassName(title)}`}
     >
-      <div className="flex items-start gap-3">
+      <div className={`flex ${compact ? "items-center gap-2" : "items-start gap-3"}`}>
         <TitleMedal small={compact} title={title} />
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="truncate text-sm font-black">{title.name}</p>
+              <p className={`truncate font-black ${compact ? "text-[13px]" : "text-sm"}`}>
+                {title.name}
+              </p>
+              <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500/85">
+                {getQuestTitleRequirement(title)}
+              </p>
               {!compact ? (
                 <p className="mt-1 text-xs font-semibold opacity-75">
                   {getQuestTitleCategoryLabel(title.category)} · {getQuestTitleRarityLabel(title.rarity)}
@@ -3667,9 +3681,9 @@ function TitleProgressCard({ compact = false, title }: { compact?: boolean; titl
               ) : null}
             </div>
             <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-black ${
+              className={`shrink-0 rounded-full font-black ${
                 title.achieved ? "bg-white/80 text-ink" : "bg-slate-100 text-muted"
-              }`}
+              } ${compact ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-0.5 text-[11px]"}`}
             >
               {title.achieved ? "획득" : "진행"}
             </span>
@@ -3677,11 +3691,11 @@ function TitleProgressCard({ compact = false, title }: { compact?: boolean; titl
           {!compact ? (
             <p className="mt-2 text-xs leading-relaxed opacity-80">{title.description}</p>
           ) : null}
-          <div className="mt-3 flex items-center justify-between gap-2 text-[11px] font-bold">
+          <div className={`${compact ? "mt-2" : "mt-3"} flex items-center justify-between gap-2 text-[11px] font-bold`}>
             <span>{formatQuestTitleProgressValue(title)}</span>
             <span>{Math.round(title.progress * 100)}%</span>
           </div>
-          <div className="title-progress-track mt-1.5 h-2 overflow-hidden rounded-full bg-slate-200/80">
+          <div className={`${compact ? "mt-1" : "mt-1.5"} title-progress-track h-2 overflow-hidden rounded-full bg-slate-200/80`}>
             <div
               className={`h-full rounded-full ${getQuestTitleProgressClassName(title)}`}
               style={{ width: `${getQuestTitleProgressWidth(title)}%` }}
@@ -4121,6 +4135,27 @@ function formatQuestTitleProgressValue(title: QuestTitle) {
   return `${title.value}${title.unit ?? ""} / ${title.target}${title.unit ?? ""}`;
 }
 
+function getQuestTitleRequirement(title: QuestTitle) {
+  if (title.kind === "duration") {
+    return `누적 근무 ${formatWorkedDuration(title.target)}`;
+  }
+
+  const target = `${title.target}${title.unit ?? ""}`;
+
+  if (title.id.startsWith("attendance-")) return `누적 출근 ${target}`;
+  if (title.id.startsWith("streak-best-")) return `최고 연속 출근 ${target}`;
+  if (title.id.startsWith("task-")) return `완료 업무 ${target}`;
+  if (title.id.startsWith("perfect-day-")) return `하루 업무 전부 완료 ${target}`;
+  if (title.id.startsWith("heavy-done-")) return `하루 5개 이상 완료 ${target}`;
+  if (title.id.startsWith("ten-hour-")) return `10시간 근무 ${target}`;
+  if (title.id.startsWith("twelve-hour-")) return `12시간 근무 ${target}`;
+  if (title.id.startsWith("comment-")) return `업무 댓글 ${target}`;
+  if (title.id.startsWith("checkout-")) return `퇴근 기록 ${target}`;
+  if (title.id.startsWith("active-month-")) return `활동 월 ${target}`;
+
+  return `${target} 달성`;
+}
+
 function getQuestTitleCategoryLabel(category: QuestTitleCategory) {
   if (category === "attendance") return "출근";
   if (category === "focus") return "업무";
@@ -4286,9 +4321,9 @@ function LegacyMyTitlesPanel({
 
 function TitleSummaryChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="title-summary-chip rounded border border-line bg-white/75 px-3 py-2">
-      <p className="font-semibold text-muted">{label}</p>
-      <p className="mt-1 text-sm font-bold text-ink">{value}</p>
+    <div className="title-summary-chip rounded border border-line bg-white/75 px-2.5 py-1.5">
+      <p className="text-[11px] font-semibold text-muted">{label}</p>
+      <p className="mt-0.5 text-xs font-bold text-ink">{value}</p>
     </div>
   );
 }
