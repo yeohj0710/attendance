@@ -42,24 +42,47 @@ export type AdminAttendanceInput = {
 
 export type EmployeeTitleProfile = {
   generatedAt: string;
-  stats: {
-    activeMonths: number;
-    attendanceDays: number;
-    bestStreak: number;
-    checkoutDays: number;
-    commentCount: number;
-    completedTasks: number;
-    currentStreak: number;
-    firstRecordDate: string | null;
-    heavyDoneDays: number;
-    latestRecordDate: string | null;
-    perfectTaskDays: number;
-    tenHourDays: number;
-    totalTasks: number;
-    totalWorkedMinutes: number;
-    twelveHourDays: number;
+    stats: {
+      activeMonths: number;
+      attendanceDays: number;
+      bestStreak: number;
+      checkoutDays: number;
+      commentCount: number;
+      completedTasks: number;
+      currentStreak: number;
+      christmasAttendanceDays: number;
+      dawnCheckOutDays: number;
+      doubleDateAttendanceDays: number;
+      earlyCheckInDays: number;
+      eveningCheckInDays: number;
+      firstRecordDate: string | null;
+      fridayCheckOutDays: number;
+      heavyDoneDays: number;
+      holidayLongWorkDays: number;
+      latestRecordDate: string | null;
+      lateCheckInDays: number;
+      luckyDropDays: number;
+      mondayAttendanceDays: number;
+      monthEndCheckOutDays: number;
+      monthStartAttendanceDays: number;
+      nextDayCheckOutDays: number;
+      nightCheckOutDays: number;
+      perfectTaskDays: number;
+      publicHolidayAttendanceDays: number;
+      sameNumberClockDays: number;
+      seollalAttendanceDays: number;
+      saturdayAttendanceDays: number;
+      substituteHolidayAttendanceDays: number;
+      sundayAttendanceDays: number;
+      chuseokAttendanceDays: number;
+      tenHourDays: number;
+      totalTasks: number;
+      totalWorkedMinutes: number;
+      twelveHourDays: number;
+      weekendAttendanceDays: number;
+      weekendLongWorkDays: number;
+    };
   };
-};
 
 export type CompanyTitleProfile = EmployeeTitleProfile & {
   employeeId: string;
@@ -96,6 +119,30 @@ type SessionData = {
 };
 
 const formerTeamMemberNames = new Set(["홍현석"]);
+const fixedPublicHolidayNames: Record<string, string> = {
+  "01-01": "신정",
+  "03-01": "삼일절",
+  "05-05": "어린이날",
+  "06-06": "현충일",
+  "08-15": "광복절",
+  "10-03": "개천절",
+  "10-09": "한글날",
+  "12-25": "성탄절",
+};
+const publicHolidayNamesByDate: Record<string, string> = {
+  "2026-02-16": "설 연휴",
+  "2026-02-17": "설날",
+  "2026-02-18": "설 연휴",
+  "2026-03-02": "대체공휴일",
+  "2026-05-24": "부처님오신날",
+  "2026-05-25": "대체공휴일",
+  "2026-06-03": "지방선거일",
+  "2026-08-17": "대체공휴일",
+  "2026-09-24": "추석 연휴",
+  "2026-09-25": "추석",
+  "2026-09-26": "추석 연휴",
+  "2026-10-05": "대체공휴일",
+};
 
 export async function getAttendanceStatus(auth: AuthContext) {
   await autoCloseForgottenCheckOuts(auth);
@@ -157,18 +204,121 @@ export async function getEmployeeTitleProfile(employeeId: string): Promise<Emplo
   let tenHourDays = 0;
   let twelveHourDays = 0;
   let checkoutDays = 0;
+  let christmasAttendanceDays = 0;
+  let dawnCheckOutDays = 0;
+  let doubleDateAttendanceDays = 0;
+  let earlyCheckInDays = 0;
+  let eveningCheckInDays = 0;
+  let fridayCheckOutDays = 0;
+  let holidayLongWorkDays = 0;
+  let lateCheckInDays = 0;
+  let luckyDropDays = 0;
+  let mondayAttendanceDays = 0;
+  let monthEndCheckOutDays = 0;
+  let monthStartAttendanceDays = 0;
+  let nextDayCheckOutDays = 0;
+  let nightCheckOutDays = 0;
+  let publicHolidayAttendanceDays = 0;
+  let sameNumberClockDays = 0;
+  let seollalAttendanceDays = 0;
+  let saturdayAttendanceDays = 0;
+  let substituteHolidayAttendanceDays = 0;
+  let sundayAttendanceDays = 0;
+  let chuseokAttendanceDays = 0;
+  let weekendAttendanceDays = 0;
+  let weekendLongWorkDays = 0;
 
   for (const record of attendanceRecords) {
     const hasAttendance = Boolean(record.checkInAt || record.checkOutAt);
+    const dayOfWeek = getDateDayOfWeek(record.workDate);
+    const publicHolidayName = getPublicHolidayName(record.workDate);
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const isPublicHoliday = Boolean(publicHolidayName);
+    const checkInParts = getKstTimeParts(record.checkInAt);
+    const checkOutParts = getKstTimeParts(record.checkOutAt);
+    const workedMinutes = getRecordWorkedMinutes(record);
+
     if (hasAttendance) {
       recordDates.add(record.workDate);
       attendanceDates.push(record.workDate);
+
+      if (isWeekend) {
+        weekendAttendanceDays += 1;
+      }
+      if (dayOfWeek === 0) {
+        sundayAttendanceDays += 1;
+      }
+      if (dayOfWeek === 1) {
+        mondayAttendanceDays += 1;
+      }
+      if (dayOfWeek === 6) {
+        saturdayAttendanceDays += 1;
+      }
+      if (isPublicHoliday) {
+        publicHolidayAttendanceDays += 1;
+      }
+      if (record.workDate.slice(5) === "12-25") {
+        christmasAttendanceDays += 1;
+      }
+      if (publicHolidayName.includes("설")) {
+        seollalAttendanceDays += 1;
+      }
+      if (publicHolidayName.includes("추석")) {
+        chuseokAttendanceDays += 1;
+      }
+      if (publicHolidayName.includes("대체")) {
+        substituteHolidayAttendanceDays += 1;
+      }
+      if (isDoubleDate(record.workDate)) {
+        doubleDateAttendanceDays += 1;
+      }
+      if (Number(record.workDate.slice(8, 10)) <= 3) {
+        monthStartAttendanceDays += 1;
+      }
+      if (isLuckyTitleDrop(employeeId, record.workDate)) {
+        luckyDropDays += 1;
+      }
     }
     if (record.checkOutAt) {
       checkoutDays += 1;
+      if (dayOfWeek === 5) {
+        fridayCheckOutDays += 1;
+      }
+      if (isMonthEndWindow(record.workDate)) {
+        monthEndCheckOutDays += 1;
+      }
     }
 
-    const workedMinutes = getRecordWorkedMinutes(record);
+    if (checkInParts) {
+      if (checkInParts.hour < 8) {
+        earlyCheckInDays += 1;
+      }
+      if (checkInParts.hour >= 13) {
+        lateCheckInDays += 1;
+      }
+      if (checkInParts.hour >= 18) {
+        eveningCheckInDays += 1;
+      }
+      if (isSameNumberClock(checkInParts)) {
+        sameNumberClockDays += 1;
+      }
+    }
+
+    if (checkOutParts) {
+      if (checkOutParts.hour < 6) {
+        dawnCheckOutDays += 1;
+      }
+      if (checkOutParts.hour >= 22 || checkOutParts.hour < 6) {
+        nightCheckOutDays += 1;
+      }
+      if (checkOutParts.date > record.workDate) {
+        nextDayCheckOutDays += 1;
+      }
+      if (isSameNumberClock(checkOutParts)) {
+        sameNumberClockDays += 1;
+      }
+    }
+
     if (workedMinutes !== null) {
       totalWorkedMinutes += workedMinutes;
       if (workedMinutes >= 10 * 60) {
@@ -176,6 +326,12 @@ export async function getEmployeeTitleProfile(employeeId: string): Promise<Emplo
       }
       if (workedMinutes >= 12 * 60) {
         twelveHourDays += 1;
+      }
+      if (isPublicHoliday && workedMinutes >= 10 * 60) {
+        holidayLongWorkDays += 1;
+      }
+      if (isWeekend && workedMinutes >= 8 * 60) {
+        weekendLongWorkDays += 1;
       }
     }
   }
@@ -212,14 +368,37 @@ export async function getEmployeeTitleProfile(employeeId: string): Promise<Emplo
       commentCount,
       completedTasks,
       currentStreak: getCurrentAttendanceStreak(attendanceDates, getWorkDateString()),
+      christmasAttendanceDays,
+      dawnCheckOutDays,
+      doubleDateAttendanceDays,
+      earlyCheckInDays,
+      eveningCheckInDays,
       firstRecordDate: sortedRecordDates[0] ?? null,
+      fridayCheckOutDays,
       heavyDoneDays,
+      holidayLongWorkDays,
       latestRecordDate: sortedRecordDates[sortedRecordDates.length - 1] ?? null,
+      lateCheckInDays,
+      luckyDropDays,
+      mondayAttendanceDays,
+      monthEndCheckOutDays,
+      monthStartAttendanceDays,
+      nextDayCheckOutDays,
+      nightCheckOutDays,
       perfectTaskDays,
+      publicHolidayAttendanceDays,
+      sameNumberClockDays,
+      seollalAttendanceDays,
+      saturdayAttendanceDays,
+      substituteHolidayAttendanceDays,
+      sundayAttendanceDays,
+      chuseokAttendanceDays,
       tenHourDays,
       totalTasks,
       totalWorkedMinutes,
       twelveHourDays,
+      weekendAttendanceDays,
+      weekendLongWorkDays,
     },
   };
 }
@@ -807,6 +986,59 @@ function getRecordWorkedMinutes(record: Pick<AttendanceRecord, "checkInAt" | "ch
   }
 
   return Math.round((checkOut - checkIn) / 60000);
+}
+
+function getKstTimeParts(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const shifted = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  return {
+    date: shifted.toISOString().slice(0, 10),
+    hour: shifted.getUTCHours(),
+    minute: shifted.getUTCMinutes(),
+  };
+}
+
+function getDateDayOfWeek(date: string) {
+  return dateStringToUtcDate(date).getUTCDay();
+}
+
+function getPublicHolidayName(date: string) {
+  return publicHolidayNamesByDate[date] ?? fixedPublicHolidayNames[date.slice(5)] ?? "";
+}
+
+function isDoubleDate(date: string) {
+  return date.slice(5, 7) === date.slice(8, 10);
+}
+
+function isMonthEndWindow(date: string) {
+  const day = Number(date.slice(8, 10));
+  const monthEnd = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)), 0)).getUTCDate();
+  return day >= Math.max(1, monthEnd - 2);
+}
+
+function isSameNumberClock(parts: { hour: number; minute: number }) {
+  return parts.hour === parts.minute && parts.hour >= 1 && parts.hour <= 23;
+}
+
+function isLuckyTitleDrop(employeeId: string, workDate: string) {
+  return stableHash(`${employeeId}:${workDate}:title-drop`) % 29 === 0;
+}
+
+function stableHash(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
 }
 
 function getCurrentAttendanceStreak(dates: string[], todayDate: string) {

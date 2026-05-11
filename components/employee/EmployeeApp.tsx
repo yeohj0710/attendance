@@ -155,14 +155,37 @@ type CareerTitleStats = {
   commentCount: number;
   completedTasks: number;
   currentStreak: number;
+  christmasAttendanceDays: number;
+  dawnCheckOutDays: number;
+  doubleDateAttendanceDays: number;
+  earlyCheckInDays: number;
+  eveningCheckInDays: number;
   firstRecordDate: string | null;
+  fridayCheckOutDays: number;
   heavyDoneDays: number;
+  holidayLongWorkDays: number;
   latestRecordDate: string | null;
+  lateCheckInDays: number;
+  luckyDropDays: number;
+  mondayAttendanceDays: number;
+  monthEndCheckOutDays: number;
+  monthStartAttendanceDays: number;
+  nextDayCheckOutDays: number;
+  nightCheckOutDays: number;
   perfectTaskDays: number;
+  publicHolidayAttendanceDays: number;
+  sameNumberClockDays: number;
+  seollalAttendanceDays: number;
+  saturdayAttendanceDays: number;
+  substituteHolidayAttendanceDays: number;
+  sundayAttendanceDays: number;
+  chuseokAttendanceDays: number;
   tenHourDays: number;
   totalTasks: number;
   totalWorkedMinutes: number;
   twelveHourDays: number;
+  weekendAttendanceDays: number;
+  weekendLongWorkDays: number;
 };
 
 const workTypeLabels: Record<AttendanceRecord["workType"], string> = {
@@ -3138,7 +3161,7 @@ type EmployeeTitleStats = {
 };
 
 type QuestTitleTone = "accent" | "complete" | "danger" | "ink" | "warm";
-type QuestTitleCategory = "attendance" | "endurance" | "focus" | "team";
+type QuestTitleCategory = "attendance" | "endurance" | "focus" | "special" | "team";
 type QuestTitleRarity = "bronze" | "silver" | "gold" | "platinum" | "legend";
 type QuestTitleFilter = "all" | "achieved" | "progress";
 
@@ -3664,6 +3687,359 @@ function TitleMedal({ small = false, title }: { small?: boolean; title: QuestTit
       {getQuestTitleCategoryMark(title.category)}
     </span>
   );
+}
+
+function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
+  return [
+    {
+      category: "special",
+      description: `주말에도 기록을 남긴 날 ${stats.weekendAttendanceDays}일`,
+      id: "weekend-1",
+      name: "주말 던전 입장",
+      rarity: "silver",
+      target: 1,
+      tone: "accent",
+      unit: "일",
+      value: stats.weekendAttendanceDays ?? 0,
+      xp: 180,
+    },
+    {
+      category: "special",
+      description: `주말에도 기록을 남긴 날 ${stats.weekendAttendanceDays}일`,
+      id: "weekend-10",
+      name: "주말 레이드 고정 멤버",
+      rarity: "gold",
+      target: 10,
+      tone: "warm",
+      unit: "일",
+      value: stats.weekendAttendanceDays ?? 0,
+      xp: 680,
+    },
+    {
+      category: "special",
+      description: `주말에도 기록을 남긴 날 ${stats.weekendAttendanceDays}일`,
+      id: "weekend-30",
+      name: "토일월드 개척자",
+      rarity: "platinum",
+      target: 30,
+      tone: "complete",
+      unit: "일",
+      value: stats.weekendAttendanceDays ?? 0,
+      xp: 1800,
+    },
+    {
+      category: "special",
+      description: `일요일 출근 기록 ${stats.sundayAttendanceDays}일`,
+      id: "sunday-1",
+      name: "일요일 비상 소환",
+      rarity: "gold",
+      target: 1,
+      tone: "danger",
+      unit: "일",
+      value: stats.sundayAttendanceDays ?? 0,
+      xp: 320,
+    },
+    {
+      category: "special",
+      description: `토요일 출근 기록 ${stats.saturdayAttendanceDays}일`,
+      id: "saturday-10",
+      name: "토요일 사무실 탐험가",
+      rarity: "gold",
+      target: 10,
+      tone: "accent",
+      unit: "일",
+      value: stats.saturdayAttendanceDays ?? 0,
+      xp: 640,
+    },
+    {
+      category: "special",
+      description: `공휴일 출근 기록 ${stats.publicHolidayAttendanceDays}일`,
+      id: "public-holiday-1",
+      name: "빨간 날의 모니터",
+      rarity: "gold",
+      target: 1,
+      tone: "danger",
+      unit: "일",
+      value: stats.publicHolidayAttendanceDays ?? 0,
+      xp: 360,
+    },
+    {
+      category: "special",
+      description: `공휴일 출근 기록 ${stats.publicHolidayAttendanceDays}일`,
+      id: "public-holiday-5",
+      name: "달력의 빈칸을 채우는 자",
+      rarity: "platinum",
+      target: 5,
+      tone: "warm",
+      unit: "일",
+      value: stats.publicHolidayAttendanceDays ?? 0,
+      xp: 1300,
+    },
+    {
+      category: "special",
+      description: `성탄절 출근 기록 ${stats.christmasAttendanceDays}일`,
+      id: "christmas-1",
+      name: "산타보다 먼저 체크인",
+      rarity: "legend",
+      target: 1,
+      tone: "complete",
+      unit: "일",
+      value: stats.christmasAttendanceDays ?? 0,
+      xp: 900,
+    },
+    {
+      category: "special",
+      description: `설 연휴 출근 기록 ${stats.seollalAttendanceDays}일`,
+      id: "seollal-1",
+      name: "세뱃돈보다 빠른 로그인",
+      rarity: "legend",
+      target: 1,
+      tone: "warm",
+      unit: "일",
+      value: stats.seollalAttendanceDays ?? 0,
+      xp: 860,
+    },
+    {
+      category: "special",
+      description: `추석 연휴 출근 기록 ${stats.chuseokAttendanceDays}일`,
+      id: "chuseok-1",
+      name: "보름달 아래 체크인",
+      rarity: "legend",
+      target: 1,
+      tone: "ink",
+      unit: "일",
+      value: stats.chuseokAttendanceDays ?? 0,
+      xp: 860,
+    },
+    {
+      category: "special",
+      description: `대체공휴일 출근 기록 ${stats.substituteHolidayAttendanceDays}일`,
+      id: "substitute-holiday-1",
+      name: "대체휴일 출동 버튼",
+      rarity: "platinum",
+      target: 1,
+      tone: "accent",
+      unit: "일",
+      value: stats.substituteHolidayAttendanceDays ?? 0,
+      xp: 620,
+    },
+    {
+      category: "special",
+      description: `공휴일에 10시간 이상 근무한 날 ${stats.holidayLongWorkDays}일`,
+      id: "holiday-long-1",
+      name: "빨간 날 장거리 주행",
+      rarity: "legend",
+      target: 1,
+      tone: "danger",
+      unit: "일",
+      value: stats.holidayLongWorkDays ?? 0,
+      xp: 1200,
+    },
+    {
+      category: "special",
+      description: `주말에 8시간 이상 근무한 날 ${stats.weekendLongWorkDays}일`,
+      id: "weekend-long-3",
+      name: "주말 집중 캠프",
+      rarity: "platinum",
+      target: 3,
+      tone: "warm",
+      unit: "일",
+      value: stats.weekendLongWorkDays ?? 0,
+      xp: 980,
+    },
+    {
+      category: "special",
+      description: `오전 8시 전 출근 기록 ${stats.earlyCheckInDays}일`,
+      id: "early-checkin-10",
+      name: "해 뜨기 전 예열",
+      rarity: "gold",
+      target: 10,
+      tone: "complete",
+      unit: "일",
+      value: stats.earlyCheckInDays ?? 0,
+      xp: 640,
+    },
+    {
+      category: "special",
+      description: `오후 1시 이후 출근 기록 ${stats.lateCheckInDays}일`,
+      id: "late-checkin-1",
+      name: "느지막한 등장씬",
+      rarity: "silver",
+      target: 1,
+      tone: "warm",
+      unit: "일",
+      value: stats.lateCheckInDays ?? 0,
+      xp: 180,
+    },
+    {
+      category: "special",
+      description: `오후 6시 이후 출근 기록 ${stats.eveningCheckInDays}일`,
+      id: "evening-checkin-1",
+      name: "석양 체크인",
+      rarity: "gold",
+      target: 1,
+      tone: "danger",
+      unit: "일",
+      value: stats.eveningCheckInDays ?? 0,
+      xp: 420,
+    },
+    {
+      category: "special",
+      description: `오후 6시 이후 출근 기록 ${stats.eveningCheckInDays}일`,
+      id: "evening-checkin-5",
+      name: "밤의 출근 포털",
+      rarity: "platinum",
+      target: 5,
+      tone: "ink",
+      unit: "일",
+      value: stats.eveningCheckInDays ?? 0,
+      xp: 1100,
+    },
+    {
+      category: "special",
+      description: `밤 10시 이후 또는 새벽 퇴근 기록 ${stats.nightCheckOutDays}일`,
+      id: "night-checkout-1",
+      name: "야간 엔딩 크레딧",
+      rarity: "silver",
+      target: 1,
+      tone: "ink",
+      unit: "일",
+      value: stats.nightCheckOutDays ?? 0,
+      xp: 220,
+    },
+    {
+      category: "special",
+      description: `밤 10시 이후 또는 새벽 퇴근 기록 ${stats.nightCheckOutDays}일`,
+      id: "night-checkout-20",
+      name: "달빛 마감대장",
+      rarity: "platinum",
+      target: 20,
+      tone: "accent",
+      unit: "일",
+      value: stats.nightCheckOutDays ?? 0,
+      xp: 1450,
+    },
+    {
+      category: "special",
+      description: `새벽 0-5시 퇴근 기록 ${stats.dawnCheckOutDays}일`,
+      id: "dawn-checkout-1",
+      name: "새벽 퇴근 생존자",
+      rarity: "gold",
+      target: 1,
+      tone: "danger",
+      unit: "일",
+      value: stats.dawnCheckOutDays ?? 0,
+      xp: 520,
+    },
+    {
+      category: "special",
+      description: `퇴근일이 다음 날로 넘어간 기록 ${stats.nextDayCheckOutDays}일`,
+      id: "next-day-checkout-1",
+      name: "날짜 변경선 통과",
+      rarity: "legend",
+      target: 1,
+      tone: "danger",
+      unit: "일",
+      value: stats.nextDayCheckOutDays ?? 0,
+      xp: 980,
+    },
+    {
+      category: "special",
+      description: `월요일 출근 기록 ${stats.mondayAttendanceDays}일`,
+      id: "monday-20",
+      name: "월요일 재부팅 성공",
+      rarity: "gold",
+      target: 20,
+      tone: "accent",
+      unit: "일",
+      value: stats.mondayAttendanceDays ?? 0,
+      xp: 620,
+    },
+    {
+      category: "special",
+      description: `금요일 퇴근 기록 ${stats.fridayCheckOutDays}일`,
+      id: "friday-checkout-20",
+      name: "금요일 엔딩 담당",
+      rarity: "gold",
+      target: 20,
+      tone: "complete",
+      unit: "일",
+      value: stats.fridayCheckOutDays ?? 0,
+      xp: 620,
+    },
+    {
+      category: "special",
+      description: `매월 1-3일 출근 기록 ${stats.monthStartAttendanceDays}일`,
+      id: "month-start-5",
+      name: "월초 시동키",
+      rarity: "silver",
+      target: 5,
+      tone: "accent",
+      unit: "일",
+      value: stats.monthStartAttendanceDays ?? 0,
+      xp: 260,
+    },
+    {
+      category: "special",
+      description: `월말 3일 안에 퇴근 기록 ${stats.monthEndCheckOutDays}일`,
+      id: "month-end-checkout-5",
+      name: "월말 문 닫는 사람",
+      rarity: "gold",
+      target: 5,
+      tone: "ink",
+      unit: "일",
+      value: stats.monthEndCheckOutDays ?? 0,
+      xp: 520,
+    },
+    {
+      category: "special",
+      description: `5월 5일처럼 월과 일이 같은 날 출근 ${stats.doubleDateAttendanceDays}일`,
+      id: "double-date-1",
+      name: "더블데이 수집가",
+      rarity: "platinum",
+      target: 1,
+      tone: "complete",
+      unit: "일",
+      value: stats.doubleDateAttendanceDays ?? 0,
+      xp: 520,
+    },
+    {
+      category: "special",
+      description: `09:09처럼 시와 분이 같은 체크 기록 ${stats.sameNumberClockDays}회`,
+      id: "same-clock-1",
+      name: "엔젤 넘버 체크",
+      rarity: "platinum",
+      target: 1,
+      tone: "accent",
+      unit: "회",
+      value: stats.sameNumberClockDays ?? 0,
+      xp: 700,
+    },
+    {
+      category: "special",
+      description: `시스템이 몰래 심어둔 희귀 드롭 ${stats.luckyDropDays}회`,
+      id: "lucky-drop-1",
+      name: "칭호 가챠 성공",
+      rarity: "legend",
+      target: 1,
+      tone: "warm",
+      unit: "회",
+      value: stats.luckyDropDays ?? 0,
+      xp: 1200,
+    },
+    {
+      category: "special",
+      description: `시스템이 몰래 심어둔 희귀 드롭 ${stats.luckyDropDays}회`,
+      id: "lucky-drop-3",
+      name: "운빨도 실력",
+      rarity: "legend",
+      target: 3,
+      tone: "danger",
+      unit: "회",
+      value: stats.luckyDropDays ?? 0,
+      xp: 2600,
+    },
+  ];
 }
 
 function getQuestTitles(stats: CareerTitleStats) {
@@ -4508,6 +4884,7 @@ function getQuestTitles(stats: CareerTitleStats) {
       value: stats.activeMonths,
       xp: 7200,
     },
+    ...getSpecialQuestTitleBases(stats),
   ];
 
   return titles
@@ -4674,6 +5051,29 @@ function getQuestTitleRequirement(title: QuestTitle) {
   if (title.id.startsWith("comment-")) return `업무 댓글 ${target}`;
   if (title.id.startsWith("checkout-")) return `퇴근 기록 ${target}`;
   if (title.id.startsWith("active-month-")) return `활동 월 ${target}`;
+  if (title.id.startsWith("weekend-")) return `주말 출근 ${target}`;
+  if (title.id.startsWith("sunday-")) return `일요일 출근 ${target}`;
+  if (title.id.startsWith("saturday-")) return `토요일 출근 ${target}`;
+  if (title.id.startsWith("public-holiday-")) return `공휴일 출근 ${target}`;
+  if (title.id.startsWith("christmas-")) return `성탄절 출근 ${target}`;
+  if (title.id.startsWith("seollal-")) return `설 연휴 출근 ${target}`;
+  if (title.id.startsWith("chuseok-")) return `추석 연휴 출근 ${target}`;
+  if (title.id.startsWith("substitute-holiday-")) return `대체공휴일 출근 ${target}`;
+  if (title.id.startsWith("holiday-long-")) return `공휴일 10시간 근무 ${target}`;
+  if (title.id.startsWith("weekend-long-")) return `주말 8시간 근무 ${target}`;
+  if (title.id.startsWith("early-checkin-")) return `오전 8시 전 출근 ${target}`;
+  if (title.id.startsWith("late-checkin-")) return `오후 출근 ${target}`;
+  if (title.id.startsWith("evening-checkin-")) return `저녁 출근 ${target}`;
+  if (title.id.startsWith("night-checkout-")) return `야간 퇴근 ${target}`;
+  if (title.id.startsWith("dawn-checkout-")) return `새벽 퇴근 ${target}`;
+  if (title.id.startsWith("next-day-checkout-")) return `다음 날 퇴근 ${target}`;
+  if (title.id.startsWith("monday-")) return `월요일 출근 ${target}`;
+  if (title.id.startsWith("friday-checkout-")) return `금요일 퇴근 ${target}`;
+  if (title.id.startsWith("month-start-")) return `월초 출근 ${target}`;
+  if (title.id.startsWith("month-end-checkout-")) return `월말 퇴근 ${target}`;
+  if (title.id.startsWith("double-date-")) return `더블데이 출근 ${target}`;
+  if (title.id.startsWith("same-clock-")) return `같은 숫자 시각 ${target}`;
+  if (title.id.startsWith("lucky-drop-")) return `희귀 드롭 ${target}`;
 
   return `${target} 달성`;
 }
@@ -4681,6 +5081,7 @@ function getQuestTitleRequirement(title: QuestTitle) {
 function getQuestTitleCategoryLabel(category: QuestTitleCategory) {
   if (category === "attendance") return "출근";
   if (category === "focus") return "업무";
+  if (category === "special") return "이벤트";
   if (category === "endurance") return "지속";
   return "팀워크";
 }
@@ -4688,6 +5089,7 @@ function getQuestTitleCategoryLabel(category: QuestTitleCategory) {
 function getQuestTitleCategoryMark(category: QuestTitleCategory) {
   if (category === "attendance") return "출";
   if (category === "focus") return "업";
+  if (category === "special") return "특";
   if (category === "endurance") return "시";
   return "팀";
 }
@@ -4709,10 +5111,11 @@ function getQuestTitleRarityRank(rarity: QuestTitleRarity) {
 }
 
 function getQuestTitleCategoryRank(category: QuestTitleCategory) {
-  if (category === "attendance") return 1;
-  if (category === "focus") return 2;
-  if (category === "team") return 3;
-  return 4;
+  if (category === "special") return 1;
+  if (category === "attendance") return 2;
+  if (category === "focus") return 3;
+  if (category === "team") return 4;
+  return 5;
 }
 
 function getQuestTitleCardClassName(title: QuestTitle) {
