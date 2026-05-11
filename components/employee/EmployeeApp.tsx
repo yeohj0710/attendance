@@ -147,6 +147,14 @@ type CompanyTitleProfile = CareerTitleProfile & {
   employeeName: string;
 };
 
+type CareerTitleSummary = {
+  achievedCount: number;
+  levelInfo: ReturnType<typeof getTitleLevelInfo>;
+  representativeTitle: QuestTitle;
+  titleCount: number;
+  totalXp: number;
+};
+
 type CareerTitleStats = {
   activeMonths: number;
   attendanceDays: number;
@@ -286,6 +294,7 @@ export function EmployeeApp() {
   const [isTodayWorkSaving, setIsTodayWorkSaving] = useState(false);
   const [pendingTodayTaskId, setPendingTodayTaskId] = useState<string | null>(null);
   const [todayTaskText, setTodayTaskText] = useState("");
+  const titleSectionRef = useRef<HTMLDivElement | null>(null);
   const workLogCacheRef = useRef(new Map<string, WorkLog>());
   const teamMonthCacheRef = useRef(new Map<string, TeamMonthAttendance>());
   const workLogLoadRequestIdRef = useRef(0);
@@ -1714,6 +1723,18 @@ export function EmployeeApp() {
   const visibleTeamRecords = workingTeamRecords.filter(
     (record) => record.employeeId !== employee.id,
   );
+  const titleSummary =
+    !isSharedView && titleProfile ? getCareerTitleSummary(titleProfile.stats) : null;
+
+  function scrollToTitleSection() {
+    const section = titleSectionRef.current;
+    if (!section) return;
+
+    section.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.requestAnimationFrame(() => {
+      section.focus({ preventScroll: true });
+    });
+  }
 
   return (
     <>
@@ -1752,6 +1773,9 @@ export function EmployeeApp() {
             )}
           </div>
         </div>
+        {titleSummary ? (
+          <TitleTopHint onOpen={scrollToTitleSection} summary={titleSummary} />
+        ) : null}
         <GreetingTicker
           currentIndex={greetingIndex}
           message={greetingMessages[greetingIndex]}
@@ -1970,16 +1994,22 @@ export function EmployeeApp() {
           onSelectRecord={openWorkLog}
           teamMonth={teamMonth}
         />
-        <MyTitlesPanel
-          employeeId={employee.id}
-          employeeName={employee.name}
-          employeeNo={employee.employeeNo}
-          companyTitleProfiles={companyTitleProfiles}
-          teamMonth={teamMonth}
-          todayDate={status?.kstDate}
-          todayWorkLog={todayWorkLog}
-          titleProfile={titleProfile}
-        />
+        <div
+          className="scroll-mt-5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent/20"
+          ref={titleSectionRef}
+          tabIndex={-1}
+        >
+          <MyTitlesPanel
+            employeeId={employee.id}
+            employeeName={employee.name}
+            employeeNo={employee.employeeNo}
+            companyTitleProfiles={companyTitleProfiles}
+            teamMonth={teamMonth}
+            todayDate={status?.kstDate}
+            todayWorkLog={todayWorkLog}
+            titleProfile={titleProfile}
+          />
+        </div>
       </section>
 
       <section className="mt-4 w-full max-w-4xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
@@ -3187,6 +3217,32 @@ const titleLevelThresholds = [
   0, 120, 320, 620, 1000, 1500, 2200, 3100, 4300, 5800, 7600, 9800, 12500, 15800,
   19800, 24600, 30500, 37600, 46000, 56000, 68000, 82000, 99000, 118000, 140000,
 ];
+
+function TitleTopHint({
+  onOpen,
+  summary,
+}: {
+  onOpen: () => void;
+  summary: CareerTitleSummary;
+}) {
+  return (
+    <button
+      className="mt-3 flex w-full items-center justify-between gap-3 rounded border border-line bg-field/70 px-3 py-2 text-left text-xs transition hover:border-accent/25 hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      onClick={onOpen}
+      type="button"
+    >
+      <span className="min-w-0">
+        <span className="font-black text-ink">칭호 기록</span>
+        <span className="ml-2 inline-block max-w-[11rem] truncate align-bottom font-semibold text-muted sm:max-w-[18rem]">
+          {summary.representativeTitle.name}
+        </span>
+      </span>
+      <span className="shrink-0 rounded-full border border-slate-300 bg-white px-2 py-0.5 font-black text-slate-600">
+        Lv.{summary.levelInfo.level} · {summary.achievedCount}/{summary.titleCount}
+      </span>
+    </button>
+  );
+}
 
 function MyTitlesPanel({
   employeeId,
@@ -4928,6 +4984,19 @@ function getTitleLevelInfo(xp: number) {
     xp,
     xpInLevel,
     xpToNextLevel,
+  };
+}
+
+function getCareerTitleSummary(stats: CareerTitleStats): CareerTitleSummary {
+  const titles = getQuestTitles(stats);
+  const achievedTitles = titles.filter((title) => title.achieved);
+  const totalXp = achievedTitles.reduce((sum, title) => sum + title.xp, 0);
+  return {
+    achievedCount: achievedTitles.length,
+    levelInfo: getTitleLevelInfo(totalXp),
+    representativeTitle: getRepresentativeQuestTitle(titles),
+    titleCount: titles.length,
+    totalXp,
   };
 }
 
