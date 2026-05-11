@@ -45,6 +45,8 @@ export type WorkLogSummary = {
   taskCount: number;
   doneCount: number;
   commentCount: number;
+  tasks: Array<Pick<WorkTask, "done" | "text">>;
+  comments: Array<Pick<WorkComment, "authorEmployeeId" | "createdAt">>;
 };
 
 export type WorkCommentNotification = {
@@ -210,12 +212,18 @@ export async function getWorkLogSummariesForRange(startDate: string, endDate: st
   return snapshot.docs.map((doc) => {
     const data = doc.data() as WorkLogData;
     const tasks = normalizeTasks(data.tasks ?? [], new Date().toISOString());
+    const comments = normalizeComments(data.comments ?? []);
     return {
       employeeId: data.employee_id,
       workDate: data.work_date,
       taskCount: tasks.length,
       doneCount: tasks.filter((task) => task.done).length,
-      commentCount: normalizeComments(data.comments ?? []).length,
+      commentCount: comments.length,
+      tasks: tasks.map(({ done, text }) => ({ done, text })),
+      comments: comments.map(({ authorEmployeeId, createdAt }) => ({
+        authorEmployeeId,
+        createdAt,
+      })),
     } satisfies WorkLogSummary;
   });
 }
@@ -233,14 +241,56 @@ export async function getWorkLogSummariesForEmployee(employeeId: string) {
   return snapshot.docs.map((doc) => {
     const data = doc.data() as WorkLogData;
     const tasks = normalizeTasks(data.tasks ?? [], new Date().toISOString());
+    const comments = normalizeComments(data.comments ?? []);
     return {
       employeeId: data.employee_id,
       workDate: data.work_date,
       taskCount: tasks.length,
       doneCount: tasks.filter((task) => task.done).length,
-      commentCount: normalizeComments(data.comments ?? []).length,
+      commentCount: comments.length,
+      tasks: tasks.map(({ done, text }) => ({ done, text })),
+      comments: comments.map(({ authorEmployeeId, createdAt }) => ({
+        authorEmployeeId,
+        createdAt,
+      })),
     } satisfies WorkLogSummary;
   });
+}
+
+export async function getWorkLogCommentAuthorStats(employeeId: string) {
+  if (!employeeId.trim()) {
+    badRequest("직원을 선택하세요.");
+  }
+
+  const snapshot = await getDb().collection("work_logs").get();
+  const commentedPeerIds = new Set<string>();
+  const commentedPeerDates = new Set<string>();
+  let commentGivenCount = 0;
+
+  for (const doc of snapshot.docs) {
+    const data = doc.data() as WorkLogData;
+    const ownerEmployeeId = data.employee_id;
+    if (!ownerEmployeeId || ownerEmployeeId === employeeId) {
+      continue;
+    }
+
+    const authoredComments = normalizeComments(data.comments ?? []).filter(
+      (comment) => comment.authorEmployeeId === employeeId,
+    );
+    if (!authoredComments.length) {
+      continue;
+    }
+
+    commentGivenCount += authoredComments.length;
+    commentedPeerIds.add(ownerEmployeeId);
+    commentedPeerDates.add(data.work_date);
+  }
+
+  return {
+    commentGivenCount,
+    commentedPeerDays: commentedPeerDates.size,
+    commentedPeerCount: commentedPeerIds.size,
+  };
 }
 
 export async function getWorkCommentNotifications(employeeId: string, since: string) {

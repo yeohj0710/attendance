@@ -23,6 +23,10 @@ export type GreetingContext = {
   teamCount?: number | null;
   taskCount?: number | null;
   doneCount?: number | null;
+  titleName?: string | null;
+  titleLevel?: number | null;
+  titleAchievedCount?: number | null;
+  titleCount?: number | null;
   weather?: GreetingWeather | null;
 };
 
@@ -56,6 +60,12 @@ type GreetingProfile = {
   teamCount: number;
   taskCount: number;
   doneCount: number;
+  title: {
+    name: string;
+    level: number;
+    achievedCount: number;
+    titleCount: number;
+  } | null;
   workedMinutes: number | null;
   previous: PreviousRecordFacts | null;
   currentMissingCheckIn: boolean;
@@ -196,10 +206,25 @@ function buildProfile(context: GreetingContext, event: GreetingEvent): GreetingP
     teamCount: Math.max(0, context.teamCount ?? 0),
     taskCount: Math.max(0, context.taskCount ?? 0),
     doneCount: Math.max(0, context.doneCount ?? 0),
+    title: buildTitleFact(context),
     workedMinutes,
     previous: getPreviousRecordFacts(context.records ?? [], today),
     currentMissingCheckIn: Boolean(record?.checkOutAt && !record.checkInAt),
     currentTooShort: workedMinutes !== null && workedMinutes <= 30,
+  };
+}
+
+function buildTitleFact(context: GreetingContext): GreetingProfile["title"] {
+  const name = (context.titleName ?? "").trim();
+  if (!name) {
+    return null;
+  }
+
+  return {
+    name: name.slice(0, 40),
+    level: Math.max(1, Math.floor(context.titleLevel ?? 1)),
+    achievedCount: Math.max(0, Math.floor(context.titleAchievedCount ?? 0)),
+    titleCount: Math.max(0, Math.floor(context.titleCount ?? 0)),
   };
 }
 
@@ -220,6 +245,7 @@ function buildGreetingCandidates(profile: GreetingProfile) {
   add(getWeekdayMessages(profile));
   add(getWorkloadMessages(profile));
   add(getTeamMessages(profile));
+  add(getTitleMessages(profile), 2);
   add(getGenericMessages(profile));
 
   return candidates.length ? candidates : [`${profile.firstName}님, 오늘도 힘내봅시다!`];
@@ -571,6 +597,28 @@ function getTeamMessages(profile: GreetingProfile) {
     return [`오늘 동료 ${profile.teamCount}명도 함께네요. 같이 가보죠!`];
   }
   return [];
+}
+
+function getTitleMessages(profile: GreetingProfile) {
+  const title = profile.title;
+  if (!title) {
+    return [];
+  }
+
+  const messages = [
+    `대표 칭호 '${title.name}' 보유자답게 오늘도 한 줄만 먼저 잡아봐요.`,
+    `칭호 ${title.achievedCount}/${title.titleCount}개까지 열렸어요. 다음 것도 슬슬 보입니다.`,
+    `Lv.${title.level} '${title.name}' 흐름이에요. 오늘 기록도 가볍게 이어가죠.`,
+  ];
+
+  if (profile.event === "checkIn") {
+    messages.push(`출근 완료. '${title.name}' 칭호에 어울리게 첫 업무부터 가볍게 갑시다.`);
+  }
+  if (profile.event === "checkOut") {
+    messages.push(`오늘도 기록 하나 적립. '${title.name}' 칭호가 더 그럴듯해졌어요.`);
+  }
+
+  return messages;
 }
 
 function getGenericMessages(profile: GreetingProfile) {

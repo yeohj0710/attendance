@@ -160,7 +160,10 @@ type CareerTitleStats = {
   attendanceDays: number;
   bestStreak: number;
   checkoutDays: number;
+  commentGivenCount: number;
   commentCount: number;
+  commentedPeerCount: number;
+  commentedPeerDays: number;
   completedTasks: number;
   currentStreak: number;
   christmasAttendanceDays: number;
@@ -188,6 +191,9 @@ type CareerTitleStats = {
   substituteHolidayAttendanceDays: number;
   sundayAttendanceDays: number;
   chuseokAttendanceDays: number;
+  staleTaskItemCount: number;
+  staleTaskMaxDays: number;
+  tasklessAttendanceDays: number;
   tenHourDays: number;
   totalTasks: number;
   totalWorkedMinutes: number;
@@ -415,6 +421,7 @@ export function EmployeeApp() {
     status?.openRecord?.checkOutAt,
     status?.todayRecord?.checkInAt,
     status?.todayRecord?.checkOutAt,
+    titleProfile?.generatedAt,
   ]);
 
   useEffect(() => {
@@ -627,6 +634,7 @@ export function EmployeeApp() {
         record.employeeId !== employee?.id &&
         !formerTeamMemberNames.has(record.employeeName),
     ).length;
+    const titleSummary = titleProfile ? getCareerTitleSummary(titleProfile.stats) : null;
 
     return {
       employeeName: employee?.name,
@@ -646,6 +654,10 @@ export function EmployeeApp() {
       teamCount: visibleTeamCount,
       taskCount: todayWorkLog?.taskCount ?? myTeamRecord?.taskCount ?? 0,
       doneCount: todayWorkLog?.doneCount ?? myTeamRecord?.doneCount ?? 0,
+      titleName: titleSummary?.representativeTitle.name,
+      titleLevel: titleSummary?.levelInfo.level,
+      titleAchievedCount: titleSummary?.achievedCount,
+      titleCount: titleSummary?.titleCount,
     };
   }
 
@@ -4894,6 +4906,140 @@ function getQuestTitles(stats: CareerTitleStats) {
     },
     {
       category: "team",
+      description: `동료 업무에 남긴 댓글 ${stats.commentGivenCount ?? 0}개`,
+      id: "comment-given-1",
+      name: "첫 참견 성공",
+      rarity: "bronze",
+      target: 1,
+      tone: "accent",
+      unit: "개",
+      value: stats.commentGivenCount ?? 0,
+      xp: 120,
+    },
+    {
+      category: "team",
+      description: `동료 업무에 남긴 댓글 ${stats.commentGivenCount ?? 0}개`,
+      id: "comment-given-5",
+      name: "피드백 핑퐁러",
+      rarity: "silver",
+      target: 5,
+      tone: "complete",
+      unit: "개",
+      value: stats.commentGivenCount ?? 0,
+      xp: 320,
+    },
+    {
+      category: "team",
+      description: `동료 업무에 남긴 댓글 ${stats.commentGivenCount ?? 0}개`,
+      id: "comment-given-20",
+      name: "댓글로 불 붙이는 사람",
+      rarity: "gold",
+      target: 20,
+      tone: "warm",
+      unit: "개",
+      value: stats.commentGivenCount ?? 0,
+      xp: 760,
+    },
+    {
+      category: "team",
+      description: `댓글을 남긴 날짜 ${stats.commentedPeerDays ?? 0}일`,
+      id: "comment-peer-day-7",
+      name: "말 걸어주는 동료",
+      rarity: "gold",
+      target: 7,
+      tone: "accent",
+      unit: "일",
+      value: stats.commentedPeerDays ?? 0,
+      xp: 680,
+    },
+    {
+      category: "team",
+      description: `댓글을 남긴 동료 ${stats.commentedPeerCount ?? 0}명`,
+      id: "commented-peer-3",
+      name: "팀 커넥터",
+      rarity: "platinum",
+      target: 3,
+      tone: "complete",
+      unit: "명",
+      value: stats.commentedPeerCount ?? 0,
+      xp: 1100,
+    },
+    {
+      category: "focus",
+      description: `체크리스트 없이 출근한 날 ${stats.tasklessAttendanceDays ?? 0}일`,
+      id: "taskless-day-1",
+      name: "머릿속 체크리스트",
+      rarity: "bronze",
+      target: 1,
+      tone: "ink",
+      unit: "일",
+      value: stats.tasklessAttendanceDays ?? 0,
+      xp: 90,
+    },
+    {
+      category: "focus",
+      description: `체크리스트 없이 출근한 날 ${stats.tasklessAttendanceDays ?? 0}일`,
+      id: "taskless-day-5",
+      name: "할 일은 마음속에",
+      rarity: "silver",
+      target: 5,
+      tone: "warm",
+      unit: "일",
+      value: stats.tasklessAttendanceDays ?? 0,
+      xp: 280,
+    },
+    {
+      category: "focus",
+      description: `같은 미완료 할 일이 이어진 최대 ${stats.staleTaskMaxDays ?? 0}일`,
+      id: "stale-task-3",
+      name: "할 일 좀 해라!!",
+      rarity: "silver",
+      target: 3,
+      tone: "warm",
+      unit: "일",
+      value: stats.staleTaskMaxDays ?? 0,
+      xp: 260,
+    },
+    {
+      category: "focus",
+      description: `같은 미완료 할 일이 이어진 최대 ${stats.staleTaskMaxDays ?? 0}일`,
+      id: "stale-task-5",
+      name: "TODO 숙성 장인",
+      rarity: "gold",
+      target: 5,
+      tone: "danger",
+      unit: "일",
+      value: stats.staleTaskMaxDays ?? 0,
+      xp: 620,
+    },
+    {
+      category: "focus",
+      description: `3일 이상 방치된 할 일 ${stats.staleTaskItemCount ?? 0}개`,
+      id: "stale-task-item-3",
+      name: "미루기 컬렉터",
+      rarity: "platinum",
+      target: 3,
+      tone: "ink",
+      unit: "개",
+      value: stats.staleTaskItemCount ?? 0,
+      xp: 980,
+    },
+    {
+      category: "focus",
+      description: `같은 미완료 할 일이 이어진 최대 ${stats.staleTaskMaxDays ?? 0}일`,
+      hidden: true,
+      hiddenHint: "한 체크박스가 오래 살아남으면 열립니다.",
+      id: "stale-task-10",
+      name: "화석이 된 체크박스",
+      rarity: "legend",
+      target: 10,
+      tone: "danger",
+      unit: "일",
+      value: stats.staleTaskMaxDays ?? 0,
+      xp: 1900,
+    },
+    {
+      category: "team",
       description: `누적 댓글 ${stats.commentCount}개`,
       id: "comment-1",
       name: "첫 피드백",
@@ -5340,6 +5486,12 @@ function getQuestTitleRequirement(title: QuestTitle) {
   if (title.id.startsWith("heavy-done-")) return `하루 5개 이상 완료 ${target}`;
   if (title.id.startsWith("ten-hour-")) return `10시간 근무 ${target}`;
   if (title.id.startsWith("twelve-hour-")) return `12시간 근무 ${target}`;
+  if (title.id.startsWith("comment-given-")) return `동료에게 댓글 ${target}`;
+  if (title.id.startsWith("comment-peer-day-")) return `댓글 남긴 날 ${target}`;
+  if (title.id.startsWith("commented-peer-")) return `댓글 남긴 동료 ${target}`;
+  if (title.id.startsWith("taskless-day-")) return `체크리스트 없이 근무 ${target}`;
+  if (title.id.startsWith("stale-task-item-")) return `방치된 할 일 ${target}`;
+  if (title.id.startsWith("stale-task-")) return `같은 미완료 할 일 ${target}`;
   if (title.id.startsWith("comment-")) return `업무 댓글 ${target}`;
   if (title.id.startsWith("checkout-")) return `퇴근 기록 ${target}`;
   if (title.id.startsWith("active-month-")) return `활동 월 ${target}`;

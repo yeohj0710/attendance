@@ -3,9 +3,11 @@ import { badRequest, conflict } from "@/lib/http";
 import { getWorkDateString, isValidDateString, parseKstDateTimeInput } from "@/lib/time";
 import {
   ensureCarryoverWorkLog,
+  getWorkLogCommentAuthorStats,
   getWorkLogSummariesForEmployee,
   getWorkLogSummariesForRange,
   getWorkLogsForDate,
+  type WorkLogSummary,
 } from "@/lib/work-log";
 import type { AuthContext } from "@/lib/auth";
 
@@ -47,7 +49,10 @@ export type EmployeeTitleProfile = {
       attendanceDays: number;
       bestStreak: number;
       checkoutDays: number;
+      commentGivenCount: number;
       commentCount: number;
+      commentedPeerCount: number;
+      commentedPeerDays: number;
       completedTasks: number;
       currentStreak: number;
       christmasAttendanceDays: number;
@@ -75,6 +80,9 @@ export type EmployeeTitleProfile = {
       substituteHolidayAttendanceDays: number;
       sundayAttendanceDays: number;
       chuseokAttendanceDays: number;
+      staleTaskItemCount: number;
+      staleTaskMaxDays: number;
+      tasklessAttendanceDays: number;
       tenHourDays: number;
       totalTasks: number;
       totalWorkedMinutes: number;
@@ -187,12 +195,13 @@ export async function getEmployeeTitleProfile(employeeId: string): Promise<Emplo
     badRequest("직원을 선택하세요.");
   }
 
-  const [attendanceSnapshot, workLogSummaries] = await Promise.all([
+  const [attendanceSnapshot, workLogSummaries, commentAuthorStats] = await Promise.all([
     getDb()
       .collection("attendance_records")
       .where("employee_id", "==", employeeId)
       .get(),
     getWorkLogSummariesForEmployee(employeeId),
+    getWorkLogCommentAuthorStats(employeeId),
   ]);
 
   const attendanceRecords = attendanceSnapshot.docs
@@ -341,9 +350,11 @@ export async function getEmployeeTitleProfile(employeeId: string): Promise<Emplo
   let heavyDoneDays = 0;
   let perfectTaskDays = 0;
   let commentCount = 0;
+  const taskCountByDate = new Map<string, number>();
 
   for (const summary of workLogSummaries) {
     recordDates.add(summary.workDate);
+    taskCountByDate.set(summary.workDate, summary.taskCount);
     totalTasks += summary.taskCount;
     completedTasks += summary.doneCount;
     commentCount += summary.commentCount;
@@ -357,6 +368,10 @@ export async function getEmployeeTitleProfile(employeeId: string): Promise<Emplo
 
   const sortedRecordDates = [...recordDates].sort();
   const activeMonths = new Set(sortedRecordDates.map((date) => date.slice(0, 7))).size;
+  const staleTaskStats = getStaleTaskStats(workLogSummaries);
+  const tasklessAttendanceDays = [...new Set(attendanceDates)].filter(
+    (workDate) => (taskCountByDate.get(workDate) ?? 0) === 0,
+  ).length;
 
   return {
     generatedAt: new Date().toISOString(),
@@ -366,6 +381,9 @@ export async function getEmployeeTitleProfile(employeeId: string): Promise<Emplo
       bestStreak: getBestAttendanceStreak(attendanceDates),
       checkoutDays,
       commentCount,
+      commentGivenCount: commentAuthorStats.commentGivenCount,
+      commentedPeerCount: commentAuthorStats.commentedPeerCount,
+      commentedPeerDays: commentAuthorStats.commentedPeerDays,
       completedTasks,
       currentStreak: getCurrentAttendanceStreak(attendanceDates, getWorkDateString()),
       christmasAttendanceDays,
@@ -393,6 +411,9 @@ export async function getEmployeeTitleProfile(employeeId: string): Promise<Emplo
       substituteHolidayAttendanceDays,
       sundayAttendanceDays,
       chuseokAttendanceDays,
+      staleTaskItemCount: staleTaskStats.itemCount,
+      staleTaskMaxDays: staleTaskStats.maxDays,
+      tasklessAttendanceDays,
       tenHourDays,
       totalTasks,
       totalWorkedMinutes,
@@ -401,6 +422,42 @@ export async function getEmployeeTitleProfile(employeeId: string): Promise<Emplo
       weekendLongWorkDays,
     },
   };
+}
+
+function getStaleTaskStats(workLogSummaries: WorkLogSummary[]) {
+  const staleTaskKeys = new Set<string>();
+  let maxDays = 0;
+  let streakByTask = new Map<string, number>();
+
+  for (const summary of [...workLogSummaries].sort((a, b) => a.workDate.localeCompare(b.workDate))) {
+    const openTaskKeys = new Set(
+      summary.tasks
+        .filter((task) => !task.done)
+        .map((task) => getStableTaskKey(task.text))
+        .filter(Boolean),
+    );
+    const nextStreakByTask = new Map<string, number>();
+
+    for (const taskKey of openTaskKeys) {
+      const streak = (streakByTask.get(taskKey) ?? 0) + 1;
+      nextStreakByTask.set(taskKey, streak);
+      maxDays = Math.max(maxDays, streak);
+      if (streak >= 3) {
+        staleTaskKeys.add(taskKey);
+      }
+    }
+
+    streakByTask = nextStreakByTask;
+  }
+
+  return {
+    itemCount: staleTaskKeys.size,
+    maxDays,
+  };
+}
+
+function getStableTaskKey(text: string) {
+  return text.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 export async function getCompanyTitleProfiles(): Promise<CompanyTitleProfile[]> {
