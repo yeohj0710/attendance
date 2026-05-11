@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, DragEvent } from "react";
 import {
   apiFetch,
@@ -1886,8 +1886,8 @@ export function EmployeeApp() {
           onSelectRecord={openWorkLog}
           teamMonth={teamMonth}
         />
-        <MyTitlesPanel
-          employeeId={employee.id}
+        <TeamTitlesPanel
+          currentEmployeeId={employee.id}
           teamMonth={teamMonth}
           todayDate={status?.kstDate}
           todayWorkLog={todayWorkLog}
@@ -3130,50 +3130,114 @@ type EmployeeTitleStats = {
   twelveHourDays: number;
 };
 
-function MyTitlesPanel({
-  employeeId,
+type EmployeeTitleProfile = {
+  achievedTitles: EmployeeTitle[];
+  employeeId: string;
+  employeeName: string;
+  isCurrentEmployee: boolean;
+  representativeTitle: EmployeeTitle;
+  stats: EmployeeTitleStats;
+  titles: EmployeeTitle[];
+};
+
+function TeamTitlesPanel({
+  currentEmployeeId,
   teamMonth,
   todayDate,
   todayWorkLog,
 }: {
-  employeeId: string;
+  currentEmployeeId: string;
   teamMonth: TeamMonthAttendance | null;
   todayDate?: string;
   todayWorkLog: WorkLog | null;
 }) {
-  if (!teamMonth) {
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState(currentEmployeeId);
+  const profiles = useMemo(
+    () =>
+      teamMonth
+        ? getTeamTitleProfiles(currentEmployeeId, teamMonth, todayDate, todayWorkLog)
+        : [],
+    [currentEmployeeId, teamMonth, todayDate, todayWorkLog],
+  );
+
+  useEffect(() => {
+    if (!profiles.length) return;
+    const hasSelectedEmployee = profiles.some((profile) => profile.employeeId === selectedEmployeeId);
+    if (!hasSelectedEmployee) {
+      setSelectedEmployeeId(
+        profiles.find((profile) => profile.employeeId === currentEmployeeId)?.employeeId ??
+          profiles[0].employeeId,
+      );
+    }
+  }, [currentEmployeeId, profiles, selectedEmployeeId]);
+
+  if (!teamMonth || !profiles.length) {
     return null;
   }
 
-  const stats = getEmployeeTitleStats(employeeId, teamMonth, todayDate, todayWorkLog);
-  const titles = getEmployeeTitles(stats);
-  const achievedTitles = titles.filter((title) => title.achieved);
-  const representativeTitle = getRepresentativeTitle(titles);
+  const selectedProfile =
+    profiles.find((profile) => profile.employeeId === selectedEmployeeId) ??
+    profiles.find((profile) => profile.employeeId === currentEmployeeId) ??
+    profiles[0];
   const doneSummary =
-    stats.totalTasks > 0 ? `${stats.completedTasks}/${stats.totalTasks}개` : "0개";
+    selectedProfile.stats.totalTasks > 0
+      ? `${selectedProfile.stats.completedTasks}/${selectedProfile.stats.totalTasks}개`
+      : "0개";
 
   return (
     <div className="mt-4 border-t border-line pt-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-bold text-ink">나의 칭호</h3>
+          <h3 className="text-base font-bold text-ink">팀 칭호</h3>
           <p className="mt-1 text-xs text-muted">
-            이번 달 기록으로 {achievedTitles.length}개 달성했어요. 다음 칭호까지 남은 흐름도 바로 볼 수 있어요.
+            팀원별 이번 달 대표 칭호와 달성 흐름을 볼 수 있어요.
           </p>
         </div>
         <span className="rounded-full border border-accent/25 bg-accentSoft px-3 py-1 text-xs font-bold text-accent">
-          대표 칭호 · {representativeTitle.name}
+          {selectedProfile.employeeName} · {selectedProfile.representativeTitle.name}
         </span>
       </div>
 
+      <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+        {profiles.map((profile) => {
+          const isSelected = profile.employeeId === selectedProfile.employeeId;
+          return (
+            <button
+              className={`min-w-36 rounded border px-3 py-2 text-left transition ${
+                isSelected
+                  ? "border-accent/45 bg-accentSoft text-accent shadow-[0_12px_24px_-22px_rgba(69,104,245,0.9)]"
+                  : "border-line bg-white/80 text-ink hover:border-slate-300 hover:bg-field"
+              }`}
+              key={profile.employeeId}
+              onClick={() => setSelectedEmployeeId(profile.employeeId)}
+              type="button"
+            >
+              <span className="flex items-center justify-between gap-2 text-xs font-bold">
+                <span className="truncate">
+                  {profile.employeeName}
+                  {profile.isCurrentEmployee ? " (나)" : ""}
+                </span>
+                <span className="shrink-0">{profile.achievedTitles.length}개</span>
+              </span>
+              <span className="mt-1 block truncate text-[11px] font-semibold opacity-75">
+                {profile.representativeTitle.name}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
-        <TitleSummaryChip label="이번 달 출근" value={`${stats.attendanceDays}일`} />
-        <TitleSummaryChip label="총 근무시간" value={formatWorkedDuration(stats.totalWorkedMinutes)} />
+        <TitleSummaryChip label="이번 달 출근" value={`${selectedProfile.stats.attendanceDays}일`} />
+        <TitleSummaryChip
+          label="총 근무시간"
+          value={formatWorkedDuration(selectedProfile.stats.totalWorkedMinutes)}
+        />
         <TitleSummaryChip label="완료한 업무" value={doneSummary} />
       </div>
 
       <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        {titles.map((title) => (
+        {selectedProfile.titles.map((title) => (
           <div
             className={`rounded border p-3 transition ${getTitleCardClassName(title)}`}
             key={title.id}
@@ -3206,6 +3270,48 @@ function MyTitlesPanel({
       </div>
     </div>
   );
+}
+
+function getTeamTitleProfiles(
+  currentEmployeeId: string,
+  teamMonth: TeamMonthAttendance,
+  todayDate: string | undefined,
+  todayWorkLog: WorkLog | null,
+) {
+  const employees = new Map<string, string>();
+  for (const record of teamMonth.records) {
+    if (
+      record.workDate < teamMonth.startDate ||
+      record.workDate > teamMonth.endDate ||
+      formerTeamMemberNames.has(record.employeeName)
+    ) {
+      continue;
+    }
+    employees.set(record.employeeId, record.employeeName);
+  }
+
+  return [...employees.entries()]
+    .map(([employeeId, employeeName]): EmployeeTitleProfile => {
+      const stats = getEmployeeTitleStats(employeeId, teamMonth, todayDate, todayWorkLog);
+      const titles = getEmployeeTitles(stats);
+      const achievedTitles = titles.filter((title) => title.achieved);
+      return {
+        achievedTitles,
+        employeeId,
+        employeeName,
+        isCurrentEmployee: employeeId === currentEmployeeId,
+        representativeTitle: getRepresentativeTitle(titles),
+        stats,
+        titles,
+      };
+    })
+    .sort(
+      (a, b) =>
+        Number(b.isCurrentEmployee) - Number(a.isCurrentEmployee) ||
+        b.achievedTitles.length - a.achievedTitles.length ||
+        b.representativeTitle.rank - a.representativeTitle.rank ||
+        a.employeeName.localeCompare(b.employeeName, "ko"),
+    );
 }
 
 function TitleSummaryChip({ label, value }: { label: string; value: string }) {
