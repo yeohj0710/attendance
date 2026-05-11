@@ -3193,12 +3193,16 @@ type EmployeeTitleStats = {
 type QuestTitleTone = "accent" | "complete" | "danger" | "ink" | "warm";
 type QuestTitleCategory = "attendance" | "endurance" | "focus" | "special" | "team";
 type QuestTitleRarity = "bronze" | "silver" | "gold" | "platinum" | "legend";
+type QuestTitleCategoryFilter = "all" | "hidden" | QuestTitleCategory;
 type QuestTitleFilter = "all" | "achieved" | "progress";
+type QuestTitleSortMode = "recommended" | "category" | "progress" | "rarity";
 
 type QuestTitle = {
   achieved: boolean;
   category: QuestTitleCategory;
   description: string;
+  hidden?: boolean;
+  hiddenHint?: string;
   id: string;
   kind?: "duration";
   name: string;
@@ -3267,6 +3271,8 @@ function MyTitlesPanel({
   const [selectedCompanyTitleProfile, setSelectedCompanyTitleProfile] =
     useState<CompanyTitleProfile | null>(null);
   const [filter, setFilter] = useState<QuestTitleFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState<QuestTitleCategoryFilter>("all");
+  const [sortMode, setSortMode] = useState<QuestTitleSortMode>("recommended");
 
   if (!teamMonth || !titleProfile) {
     return null;
@@ -3399,9 +3405,13 @@ function MyTitlesPanel({
       {isCollectionOpen ? (
         <TitleCollectionModal
           filter={filter}
+          categoryFilter={categoryFilter}
           levelInfo={levelInfo}
           onClose={() => setIsCollectionOpen(false)}
+          onCategoryFilterChange={setCategoryFilter}
           onFilterChange={setFilter}
+          onSortModeChange={setSortMode}
+          sortMode={sortMode}
           stats={titleProfile.stats}
           titles={titles}
           totalXp={totalXp}
@@ -3410,10 +3420,14 @@ function MyTitlesPanel({
       {selectedCompanyTitleProfile ? (
         <TitleCollectionModal
           filter={filter}
+          categoryFilter={categoryFilter}
           levelInfo={getTitleLevelInfo(selectedCompanyTotalXp)}
           onClose={() => setSelectedCompanyTitleProfile(null)}
+          onCategoryFilterChange={setCategoryFilter}
           onFilterChange={setFilter}
+          onSortModeChange={setSortMode}
           ownerName={selectedCompanyTitleProfile.employeeName}
+          sortMode={sortMode}
           stats={selectedCompanyTitleProfile.stats}
           titles={selectedCompanyTitles}
           totalXp={selectedCompanyTotalXp}
@@ -3585,20 +3599,28 @@ function CompanyTitleGalleryCard({
 }
 
 function TitleCollectionModal({
+  categoryFilter,
   filter,
   levelInfo,
   onClose,
+  onCategoryFilterChange,
   onFilterChange,
+  onSortModeChange,
   ownerName,
+  sortMode,
   stats,
   titles,
   totalXp,
 }: {
+  categoryFilter: QuestTitleCategoryFilter;
   filter: QuestTitleFilter;
   levelInfo: ReturnType<typeof getTitleLevelInfo>;
   onClose: () => void;
+  onCategoryFilterChange: (filter: QuestTitleCategoryFilter) => void;
   onFilterChange: (filter: QuestTitleFilter) => void;
+  onSortModeChange: (sortMode: QuestTitleSortMode) => void;
   ownerName?: string;
+  sortMode: QuestTitleSortMode;
   stats: CareerTitleStats;
   titles: QuestTitle[];
   totalXp: number;
@@ -3614,8 +3636,9 @@ function TitleCollectionModal({
   }, [onClose]);
 
   const achievedCount = titles.filter((title) => title.achieved).length;
+  const hiddenCount = titles.filter((title) => title.hidden && !title.achieved).length;
   const progressCount = titles.length - achievedCount;
-  const visibleTitles = getVisibleQuestTitles(titles, filter);
+  const visibleTitles = getVisibleQuestTitles(titles, filter, categoryFilter, sortMode);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-2.5 py-3">
@@ -3649,23 +3672,64 @@ function TitleCollectionModal({
             <TitleSummaryChip label="활동 월" value={`${stats.activeMonths}개월`} />
           </div>
 
-          <div className="mt-2.5 inline-flex rounded border border-line bg-field p-0.5">
-            {([
-              ["all", `전체 ${titles.length}`],
-              ["achieved", `획득 ${achievedCount}`],
-              ["progress", `진행 ${progressCount}`],
-            ] as Array<[QuestTitleFilter, string]>).map(([value, label]) => (
-              <button
-                className={`rounded px-2.5 py-1 text-xs font-bold transition ${
-                  filter === value ? "bg-white text-ink shadow-sm" : "text-muted hover:text-ink"
-                }`}
-                key={value}
-                onClick={() => onFilterChange(value)}
-                type="button"
+          <div className="mt-2.5 flex flex-wrap gap-2">
+            <div className="inline-flex rounded border border-line bg-field p-0.5">
+              {([
+                ["all", `전체 ${titles.length}`],
+                ["achieved", `획득 ${achievedCount}`],
+                ["progress", `진행 ${progressCount}`],
+              ] as Array<[QuestTitleFilter, string]>).map(([value, label]) => (
+                <button
+                  className={`rounded px-2.5 py-1 text-xs font-bold transition ${
+                    filter === value ? "bg-white text-ink shadow-sm" : "text-muted hover:text-ink"
+                  }`}
+                  key={value}
+                  onClick={() => onFilterChange(value)}
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {hiddenCount ? (
+              <span className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-600">
+                히든 {hiddenCount}개 잠김
+              </span>
+            ) : null}
+          </div>
+
+          <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2">
+            <label className="min-w-0">
+              <span className="label">종류</span>
+              <select
+                className="field mt-1 py-1.5 text-xs font-bold"
+                onChange={(event) =>
+                  onCategoryFilterChange(event.target.value as QuestTitleCategoryFilter)
+                }
+                value={categoryFilter}
               >
-                {label}
-              </button>
-            ))}
+                <option value="all">전체 종류</option>
+                <option value="special">이벤트</option>
+                <option value="attendance">출근</option>
+                <option value="focus">업무</option>
+                <option value="endurance">지속</option>
+                <option value="team">팀워크</option>
+                <option value="hidden">히든만</option>
+              </select>
+            </label>
+            <label className="min-w-0">
+              <span className="label">정렬</span>
+              <select
+                className="field mt-1 py-1.5 text-xs font-bold"
+                onChange={(event) => onSortModeChange(event.target.value as QuestTitleSortMode)}
+                value={sortMode}
+              >
+                <option value="recommended">추천순</option>
+                <option value="progress">가까운 순</option>
+                <option value="rarity">희귀도순</option>
+                <option value="category">종류별</option>
+              </select>
+            </label>
           </div>
         </div>
 
@@ -3682,6 +3746,8 @@ function TitleCollectionModal({
 }
 
 function TitleProgressCard({ compact = false, title }: { compact?: boolean; title: QuestTitle }) {
+  const isHiddenLocked = isQuestTitleHiddenLocked(title);
+
   return (
     <div
       className={`title-card title-card-${title.rarity} title-card-${title.category} ${
@@ -3694,7 +3760,7 @@ function TitleProgressCard({ compact = false, title }: { compact?: boolean; titl
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <p className={`truncate font-black ${compact ? "text-[13px]" : "text-sm"}`}>
-                {title.name}
+                {getQuestTitleDisplayName(title)}
               </p>
               <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500/85">
                 {getQuestTitleRequirement(title)}
@@ -3710,15 +3776,17 @@ function TitleProgressCard({ compact = false, title }: { compact?: boolean; titl
                 title.achieved ? "bg-white/80 text-ink" : "bg-slate-100 text-muted"
               } ${compact ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-0.5 text-[11px]"}`}
             >
-              {title.achieved ? "획득" : "진행"}
+              {title.achieved ? "획득" : isHiddenLocked ? "히든" : "진행"}
             </span>
           </div>
           {!compact ? (
-            <p className="mt-2 text-xs leading-relaxed opacity-80">{title.description}</p>
+            <p className="mt-2 text-xs leading-relaxed opacity-80">
+              {getQuestTitleDescription(title)}
+            </p>
           ) : null}
           <div className={`${compact ? "mt-2" : "mt-3"} flex items-center justify-between gap-2 text-[11px] font-bold`}>
             <span>{formatQuestTitleProgressValue(title)}</span>
-            <span>{Math.round(title.progress * 100)}%</span>
+            <span>{isHiddenLocked ? "??" : `${Math.round(title.progress * 100)}%`}</span>
           </div>
           <div className={`${compact ? "mt-1" : "mt-1.5"} title-progress-track h-2 overflow-hidden rounded-full bg-slate-200/80`}>
             <div
@@ -3740,7 +3808,7 @@ function TitleMedal({ small = false, title }: { small?: boolean; title: QuestTit
         small ? "title-medal-small" : ""
       }`}
     >
-      {getQuestTitleCategoryMark(title.category)}
+      {isQuestTitleHiddenLocked(title) ? "?" : getQuestTitleCategoryMark(title.category)}
     </span>
   );
 }
@@ -3834,6 +3902,8 @@ function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
     {
       category: "special",
       description: `성탄절 출근 기록 ${stats.christmasAttendanceDays}일`,
+      hidden: true,
+      hiddenHint: "겨울의 가장 반짝이는 빨간 날에 열립니다.",
       id: "christmas-1",
       name: "산타보다 먼저 체크인",
       rarity: "legend",
@@ -3846,6 +3916,8 @@ function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
     {
       category: "special",
       description: `설 연휴 출근 기록 ${stats.seollalAttendanceDays}일`,
+      hidden: true,
+      hiddenHint: "새해 인사보다 빠른 기록을 남기면 열립니다.",
       id: "seollal-1",
       name: "세뱃돈보다 빠른 로그인",
       rarity: "legend",
@@ -3858,6 +3930,8 @@ function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
     {
       category: "special",
       description: `추석 연휴 출근 기록 ${stats.chuseokAttendanceDays}일`,
+      hidden: true,
+      hiddenHint: "보름달이 뜨는 긴 연휴에 숨어 있습니다.",
       id: "chuseok-1",
       name: "보름달 아래 체크인",
       rarity: "legend",
@@ -3882,6 +3956,8 @@ function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
     {
       category: "special",
       description: `공휴일에 10시간 이상 근무한 날 ${stats.holidayLongWorkDays}일`,
+      hidden: true,
+      hiddenHint: "빨간 날인데도 하루가 길어질 때 나타납니다.",
       id: "holiday-long-1",
       name: "빨간 날 장거리 주행",
       rarity: "legend",
@@ -3942,6 +4018,8 @@ function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
     {
       category: "special",
       description: `오후 6시 이후 출근 기록 ${stats.eveningCheckInDays}일`,
+      hidden: true,
+      hiddenHint: "퇴근길 조명이 켜질 무렵 시작하면 열립니다.",
       id: "evening-checkin-5",
       name: "밤의 출근 포털",
       rarity: "platinum",
@@ -3978,6 +4056,8 @@ function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
     {
       category: "special",
       description: `새벽 0-5시 퇴근 기록 ${stats.dawnCheckOutDays}일`,
+      hidden: true,
+      hiddenHint: "모두가 잠든 시간에 하루를 닫으면 나타납니다.",
       id: "dawn-checkout-1",
       name: "새벽 퇴근 생존자",
       rarity: "gold",
@@ -3990,6 +4070,8 @@ function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
     {
       category: "special",
       description: `퇴근일이 다음 날로 넘어간 기록 ${stats.nextDayCheckOutDays}일`,
+      hidden: true,
+      hiddenHint: "오늘의 기록이 내일까지 이어질 때 열립니다.",
       id: "next-day-checkout-1",
       name: "날짜 변경선 통과",
       rarity: "legend",
@@ -4050,6 +4132,8 @@ function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
     {
       category: "special",
       description: `5월 5일처럼 월과 일이 같은 날 출근 ${stats.doubleDateAttendanceDays}일`,
+      hidden: true,
+      hiddenHint: "달력 숫자가 묘하게 겹치는 날을 찾아보세요.",
       id: "double-date-1",
       name: "더블데이 수집가",
       rarity: "platinum",
@@ -4062,6 +4146,8 @@ function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
     {
       category: "special",
       description: `09:09처럼 시와 분이 같은 체크 기록 ${stats.sameNumberClockDays}회`,
+      hidden: true,
+      hiddenHint: "시계 숫자가 거울처럼 맞아떨어질 때 열립니다.",
       id: "same-clock-1",
       name: "엔젤 넘버 체크",
       rarity: "platinum",
@@ -4074,6 +4160,8 @@ function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
     {
       category: "special",
       description: `시스템이 몰래 심어둔 희귀 드롭 ${stats.luckyDropDays}회`,
+      hidden: true,
+      hiddenHint: "조건은 없습니다. 아주 가끔, 기록 자체가 뽑기가 됩니다.",
       id: "lucky-drop-1",
       name: "칭호 가챠 성공",
       rarity: "legend",
@@ -4086,6 +4174,8 @@ function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
     {
       category: "special",
       description: `시스템이 몰래 심어둔 희귀 드롭 ${stats.luckyDropDays}회`,
+      hidden: true,
+      hiddenHint: "한 번으로 끝나지 않는 사람에게만 보입니다.",
       id: "lucky-drop-3",
       name: "운빨도 실력",
       rarity: "legend",
@@ -5063,7 +5153,7 @@ function getCompanyTitleGalleryEntries(profiles: CompanyTitleProfile[]): Company
 
 function getNextQuestTitles(titles: QuestTitle[]) {
   return titles
-    .filter((title) => !title.achieved)
+    .filter((title) => !title.achieved && !isQuestTitleHiddenLocked(title))
     .sort(
       (a, b) =>
         b.progress - a.progress ||
@@ -5073,29 +5163,76 @@ function getNextQuestTitles(titles: QuestTitle[]) {
     .slice(0, 3);
 }
 
-function getVisibleQuestTitles(titles: QuestTitle[], filter: QuestTitleFilter) {
-  const filteredTitles =
-    filter === "achieved"
-      ? titles.filter((title) => title.achieved)
-      : filter === "progress"
-        ? titles.filter((title) => !title.achieved)
-        : titles;
+function getVisibleQuestTitles(
+  titles: QuestTitle[],
+  filter: QuestTitleFilter,
+  categoryFilter: QuestTitleCategoryFilter,
+  sortMode: QuestTitleSortMode,
+) {
+  const filteredTitles = titles.filter((title) => {
+    if (filter === "achieved" && !title.achieved) return false;
+    if (filter === "progress" && title.achieved) return false;
+    if (categoryFilter === "hidden") return Boolean(title.hidden && !title.achieved);
+    if (categoryFilter !== "all" && title.category !== categoryFilter) return false;
+    return true;
+  });
 
-  return [...filteredTitles].sort(
-    (a, b) =>
+  return [...filteredTitles].sort((a, b) => compareQuestTitles(a, b, sortMode));
+}
+
+function compareQuestTitles(a: QuestTitle, b: QuestTitle, sortMode: QuestTitleSortMode) {
+  if (sortMode === "progress") {
+    return (
+      Number(a.hidden && !a.achieved) - Number(b.hidden && !b.achieved) ||
       Number(b.achieved) - Number(a.achieved) ||
-      getQuestTitleCategoryRank(a.category) - getQuestTitleCategoryRank(b.category) ||
+      b.progress - a.progress ||
       getQuestTitleRarityRank(b.rarity) - getQuestTitleRarityRank(a.rarity) ||
-      b.progress - a.progress,
+      b.xp - a.xp
+    );
+  }
+
+  if (sortMode === "rarity") {
+    return (
+      getQuestTitleRarityRank(b.rarity) - getQuestTitleRarityRank(a.rarity) ||
+      b.xp - a.xp ||
+      Number(b.achieved) - Number(a.achieved) ||
+      b.progress - a.progress
+    );
+  }
+
+  if (sortMode === "category") {
+    return (
+      getQuestTitleCategoryRank(a.category) - getQuestTitleCategoryRank(b.category) ||
+      Number(b.achieved) - Number(a.achieved) ||
+      getQuestTitleRarityRank(b.rarity) - getQuestTitleRarityRank(a.rarity) ||
+      b.progress - a.progress
+    );
+  }
+
+  return (
+    Number(b.achieved) - Number(a.achieved) ||
+    Number(a.hidden && !a.achieved) - Number(b.hidden && !b.achieved) ||
+    getQuestTitleCategoryRank(a.category) - getQuestTitleCategoryRank(b.category) ||
+    getQuestTitleRarityRank(b.rarity) - getQuestTitleRarityRank(a.rarity) ||
+    b.progress - a.progress ||
+    b.xp - a.xp
   );
 }
 
 function getQuestTitleProgressWidth(title: QuestTitle) {
+  if (isQuestTitleHiddenLocked(title)) {
+    return 0;
+  }
+
   const width = Math.round(title.progress * 100);
   return title.progress > 0 ? Math.max(8, width) : 0;
 }
 
 function formatQuestTitleProgressValue(title: QuestTitle) {
+  if (isQuestTitleHiddenLocked(title)) {
+    return "???";
+  }
+
   if (title.kind === "duration") {
     return `${formatWorkedDuration(title.value)} / ${formatWorkedDuration(title.target)}`;
   }
@@ -5103,7 +5240,27 @@ function formatQuestTitleProgressValue(title: QuestTitle) {
   return `${title.value}${title.unit ?? ""} / ${title.target}${title.unit ?? ""}`;
 }
 
+function isQuestTitleHiddenLocked(title: QuestTitle) {
+  return Boolean(title.hidden && !title.achieved);
+}
+
+function getQuestTitleDisplayName(title: QuestTitle) {
+  return isQuestTitleHiddenLocked(title) ? "???" : title.name;
+}
+
+function getQuestTitleDescription(title: QuestTitle) {
+  if (isQuestTitleHiddenLocked(title)) {
+    return title.hiddenHint ? `힌트 · ${title.hiddenHint}` : "아직 조건이 공개되지 않은 히든 칭호입니다.";
+  }
+
+  return title.description;
+}
+
 function getQuestTitleRequirement(title: QuestTitle) {
+  if (isQuestTitleHiddenLocked(title)) {
+    return "조건 비공개";
+  }
+
   if (title.kind === "duration") {
     return `누적 근무 ${formatWorkedDuration(title.target)}`;
   }
@@ -5188,6 +5345,10 @@ function getQuestTitleCategoryRank(category: QuestTitleCategory) {
 }
 
 function getQuestTitleCardClassName(title: QuestTitle) {
+  if (isQuestTitleHiddenLocked(title)) {
+    return "border-slate-300 bg-slate-100 text-slate-600";
+  }
+
   if (!title.achieved) {
     return "border-line bg-white text-ink";
   }
@@ -5212,6 +5373,10 @@ function getQuestTitleCardClassName(title: QuestTitle) {
 }
 
 function getQuestTitleProgressClassName(title: QuestTitle) {
+  if (isQuestTitleHiddenLocked(title)) {
+    return "bg-slate-300";
+  }
+
   if (!title.achieved) {
     return "bg-slate-400";
   }
