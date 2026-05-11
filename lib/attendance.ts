@@ -774,10 +774,10 @@ function canCheckOutFromRecords(
   }
 
   if (!todayRecord) {
-    return true;
+    return false;
   }
 
-  return !todayRecord.checkOutAt;
+  return Boolean(todayRecord.checkInAt) && !todayRecord.checkOutAt;
 }
 
 function teamStatusRank(record: {

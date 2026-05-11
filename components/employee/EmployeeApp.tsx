@@ -689,7 +689,7 @@ export function EmployeeApp() {
         todayRecord: record,
         openRecord: record.checkInAt && !record.checkOutAt ? record : null,
         canCheckIn: !record.checkInAt && !record.checkOutAt,
-        canCheckOut: !record.checkOutAt,
+        canCheckOut: Boolean(record.checkInAt) && !record.checkOutAt,
         hasPreviousOpen: false,
       };
     });
@@ -1673,7 +1673,7 @@ export function EmployeeApp() {
   const statusHeatClassName =
     currentWorkingMinutes !== null ? getWorkDurationHeatClassName(currentWorkingMinutes) : "";
   const canPressCheckOut =
-    !isReadOnly && Boolean(status?.canCheckOut) && !isMutating;
+    !isReadOnly && Boolean(status?.canCheckOut && currentRecord?.checkInAt && !currentRecord.checkOutAt) && !isMutating;
   const canCancelCheckOut = !isReadOnly && Boolean(status?.todayRecord?.checkOutAt) && !isMutating;
   const workingTeamRecords = teamRecords.filter(
     (record) =>
@@ -1909,24 +1909,24 @@ export function EmployeeApp() {
             <div className="flex items-center gap-2">
               <button
                 aria-label="이전 달"
-                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-line bg-white text-sm font-bold text-muted transition hover:border-slate-300 hover:bg-field hover:text-ink disabled:bg-slate-100 disabled:text-slate-400"
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-line bg-white text-muted transition hover:border-slate-300 hover:bg-field hover:text-ink disabled:bg-slate-100 disabled:text-slate-400"
                 disabled={isTeamMonthLoading || isSharedView}
                 onClick={() => moveTeamMonth(-1)}
                 type="button"
               >
-                ‹
+                <ChevronLeftIcon className="h-4 w-4" />
               </button>
               <h2 className="min-w-0 truncate text-base font-bold text-ink">
                 {formatMonthLabel(teamMonth?.month)} 팀 달력 🗓️
               </h2>
               <button
                 aria-label="다음 달"
-                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-line bg-white text-sm font-bold text-muted transition hover:border-slate-300 hover:bg-field hover:text-ink disabled:bg-slate-100 disabled:text-slate-400"
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-line bg-white text-muted transition hover:border-slate-300 hover:bg-field hover:text-ink disabled:bg-slate-100 disabled:text-slate-400"
                 disabled={isTeamMonthLoading || isSharedView}
                 onClick={() => moveTeamMonth(1)}
                 type="button"
               >
-                ›
+                <ChevronRightIcon className="h-4 w-4" />
               </button>
             </div>
             <p className="mt-1 text-xs text-muted">날짜별로 서로의 하루 흐름을 가볍게 볼 수 있어요.</p>
@@ -2993,32 +2993,6 @@ function TeamMonthCalendar({
   onSelectRecord: (record: TeamAttendanceRecord) => void;
   teamMonth: TeamMonthAttendance | null;
 }) {
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [scrollProgress, setScrollProgress] = useState(0);
-  const [canScroll, setCanScroll] = useState(false);
-
-  function updateScrollProgress() {
-    const element = scrollRef.current;
-    if (!element) return;
-
-    const maxScrollLeft = element.scrollWidth - element.clientWidth;
-    setCanScroll(maxScrollLeft > 1);
-    setScrollProgress(maxScrollLeft > 0 ? element.scrollLeft / maxScrollLeft : 0);
-  }
-
-  function scrollCalendar(delta: number) {
-    scrollRef.current?.scrollBy({ left: delta, behavior: "smooth" });
-  }
-
-  useEffect(() => {
-    const timer = window.setTimeout(updateScrollProgress, 0);
-    window.addEventListener("resize", updateScrollProgress);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener("resize", updateScrollProgress);
-    };
-  }, [teamMonth?.month]);
-
   if (!teamMonth) {
     return (
       <div className="mt-3 rounded border border-line bg-field/70 px-3 py-5 text-center text-sm text-muted">
@@ -3043,58 +3017,10 @@ function TeamMonthCalendar({
   const calendarGridStyle = {
     gridTemplateColumns: columnWidths.map((width) => `minmax(${width}px, 1fr)`).join(" "),
   };
-  const scrollRangeStyle = {
-    "--calendar-scroll-progress": `${Math.round(scrollProgress * 100)}%`,
-  } as CSSProperties;
-
   return (
     <div className="mt-3">
-      {canScroll ? (
-        <div className="mb-2 flex items-center gap-2 rounded-md border border-line bg-white px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
-          <span className="hidden shrink-0 text-[10px] font-bold tracking-[0.08em] text-muted sm:inline">
-            SCROLL
-          </span>
-          <button
-            aria-label="달력 왼쪽으로 이동"
-            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-line bg-field text-sm font-bold text-muted transition hover:border-slate-300 hover:bg-slate-100 hover:text-ink"
-            onClick={() => scrollCalendar(-260)}
-            type="button"
-          >
-            ‹
-          </button>
-          <input
-            aria-label="달력 좌우 위치"
-            className="calendar-scroll-range w-full"
-            max={100}
-            min={0}
-            onChange={(event) => {
-              const element = scrollRef.current;
-              if (!element) return;
-              const maxScrollLeft = element.scrollWidth - element.clientWidth;
-              element.scrollLeft = (Number(event.target.value) / 100) * maxScrollLeft;
-              updateScrollProgress();
-            }}
-            style={scrollRangeStyle}
-            type="range"
-            value={Math.round(scrollProgress * 100)}
-          />
-          <span className="w-9 shrink-0 text-right text-[10px] font-bold text-muted">
-            {Math.round(scrollProgress * 100)}%
-          </span>
-          <button
-            aria-label="달력 오른쪽으로 이동"
-            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-line bg-field text-sm font-bold text-muted transition hover:border-slate-300 hover:bg-slate-100 hover:text-ink"
-            onClick={() => scrollCalendar(260)}
-            type="button"
-          >
-            ›
-          </button>
-        </div>
-      ) : null}
       <div
-        className="scrollbar-none overflow-x-auto"
-        onScroll={updateScrollProgress}
-        ref={scrollRef}
+        className="calendar-native-scroll overflow-x-auto pb-2"
       >
         <div className="w-full rounded border-l border-t border-line" style={calendarFrameStyle}>
           <div
@@ -6103,6 +6029,40 @@ function ChevronDownIcon({ className = "h-4 w-4" }: { className?: string }) {
       viewBox="0 0 24 24"
     >
       <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+function ChevronLeftIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      viewBox="0 0 24 24"
+    >
+      <path d="m15 18-6-6 6-6" />
+    </svg>
+  );
+}
+
+function ChevronRightIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      viewBox="0 0 24 24"
+    >
+      <path d="m9 18 6-6-6-6" />
     </svg>
   );
 }
