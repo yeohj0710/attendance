@@ -2922,6 +2922,7 @@ function TodayTeamTasks({ record }: { record: TeamAttendanceRecord }) {
   const tasks = record.tasks ?? [];
   const mainTasks = tasks.filter((task) => task.section !== "later");
   const laterTasks = tasks.filter((task) => task.section === "later");
+  const shouldScroll = tasks.length > 6;
 
   if (!tasks.length) {
     return (
@@ -2932,7 +2933,13 @@ function TodayTeamTasks({ record }: { record: TeamAttendanceRecord }) {
   }
 
   return (
-    <div className="mt-3 space-y-3">
+    <div
+      className={`mt-3 space-y-3 ${
+        shouldScroll
+          ? "team-task-scroll max-h-[26rem] overflow-y-auto overscroll-contain pr-1.5"
+          : ""
+      }`}
+    >
       <TaskPreviewList tasks={mainTasks} />
       {laterTasks.length ? (
         <div>
@@ -2950,7 +2957,7 @@ function TaskPreviewList({ tasks }: { tasks: WorkTask[] }) {
   }
 
   return (
-      <ul className="space-y-1.5">
+    <ul className="space-y-1.5">
       {tasks.map((task) => (
         <li
           className="flex items-center gap-2 rounded bg-white/75 px-2.5 py-2 text-sm leading-relaxed text-ink ring-1 ring-line/70"

@@ -61,6 +61,28 @@ button:disabled {
     display: none;
   }
 
+  .team-task-scroll {
+    scrollbar-color: rgba(148, 163, 184, 0.65) transparent;
+    scrollbar-width: thin;
+  }
+
+  .team-task-scroll::-webkit-scrollbar {
+    width: 0.42rem;
+  }
+
+  .team-task-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .team-task-scroll::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.46);
+    border-radius: 999px;
+  }
+
+  .team-task-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 116, 139, 0.58);
+  }
+
   .field {
     @apply w-full rounded border border-line bg-white px-3 py-2 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-accent focus:ring-2 focus:ring-accent/15;
   }
