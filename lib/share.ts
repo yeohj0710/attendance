@@ -6,7 +6,7 @@ export const SHARE_QUERY_PARAM = "share";
 const SHARE_TOKEN_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
 export type ShareTokenPayload = {
-  type: "dashboard" | "work-log";
+  type: "dashboard" | "title-profile" | "work-log";
   ownerEmployeeId: string;
   targetEmployeeId?: string;
   workDate?: string;
@@ -54,7 +54,7 @@ export function verifyShareToken(token: string | null | undefined): ShareTokenPa
   }
 
   if (
-    (payload.type !== "dashboard" && payload.type !== "work-log") ||
+    (payload.type !== "dashboard" && payload.type !== "title-profile" && payload.type !== "work-log") ||
     !payload.ownerEmployeeId ||
     (payload.type === "work-log" && (!payload.targetEmployeeId || !payload.workDate))
   ) {

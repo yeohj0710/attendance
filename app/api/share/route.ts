@@ -1,6 +1,7 @@
 import { requireAuth } from "@/lib/auth";
 import {
   getAttendanceStatusForEmployee,
+  getEmployeeTitleProfile,
   getRecentAttendance,
   getTeamMonthAttendance,
   getTeamTodayAttendance,
@@ -30,11 +31,16 @@ export async function POST(request: Request) {
     const auth = await requireAuth(request);
 
     const body = (await request.json()) as {
-      type?: "dashboard" | "work-log";
+      type?: "dashboard" | "title-profile" | "work-log";
       employeeId?: string;
       workDate?: string;
     };
-    const type = body.type === "work-log" ? "work-log" : "dashboard";
+    const type =
+      body.type === "work-log"
+        ? "work-log"
+        : body.type === "title-profile"
+          ? "title-profile"
+          : "dashboard";
     if (type === "work-log" && (!body.employeeId?.trim() || !body.workDate?.trim())) {
       badRequest("공유할 업무 기록을 찾을 수 없습니다.");
     }
@@ -63,11 +69,12 @@ export async function GET(request: Request) {
     const payload = verifyShareToken(token);
     const owner = await getEmployee(payload.ownerEmployeeId);
 
-    const [status, records, teamRecords, teamMonth] = await Promise.all([
+    const [status, records, teamRecords, teamMonth, titleProfile] = await Promise.all([
       getAttendanceStatusForEmployee(payload.ownerEmployeeId),
       getRecentAttendance(payload.ownerEmployeeId, 10),
       getTeamTodayAttendance(),
       getTeamMonthAttendance(),
+      getEmployeeTitleProfile(payload.ownerEmployeeId),
     ]);
     const todayWorkLog = await getWorkLog(payload.ownerEmployeeId, status.kstDate);
 
@@ -120,6 +127,8 @@ export async function GET(request: Request) {
       records,
       teamRecords,
       teamMonth,
+      titleProfile,
+      companyTitleProfiles: [],
       todayWorkLog,
       targetWorkLog,
       targetWorkRecord,

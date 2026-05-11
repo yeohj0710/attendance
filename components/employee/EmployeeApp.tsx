@@ -65,7 +65,7 @@ type SharedDashboardResponse = DashboardResponse & {
   todayWorkLog: WorkLog | null;
   targetWorkLog: WorkLog | null;
   targetWorkRecord: TeamAttendanceRecord | null;
-  shareType?: "dashboard" | "work-log";
+  shareType?: "dashboard" | "title-profile" | "work-log";
 };
 
 type TeamMonthAttendance = {
@@ -254,6 +254,8 @@ export function EmployeeApp() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isTeamMonthLoading, setIsTeamMonthLoading] = useState(false);
   const [isSharedView, setIsSharedView] = useState(false);
+  const [sharedViewType, setSharedViewType] =
+    useState<SharedDashboardResponse["shareType"] | null>(null);
   const [isMutating, setIsMutating] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [greetingMessages, setGreetingMessages] = useState<string[]>([]);
@@ -295,6 +297,7 @@ export function EmployeeApp() {
   const [pendingTodayTaskId, setPendingTodayTaskId] = useState<string | null>(null);
   const [todayTaskText, setTodayTaskText] = useState("");
   const titleSectionRef = useRef<HTMLDivElement | null>(null);
+  const titleShareAutoScrollRef = useRef(false);
   const workLogCacheRef = useRef(new Map<string, WorkLog>());
   const teamMonthCacheRef = useRef(new Map<string, TeamMonthAttendance>());
   const workLogLoadRequestIdRef = useRef(0);
@@ -328,10 +331,12 @@ export function EmployeeApp() {
   }, []);
 
   useEffect(() => {
+    titleShareAutoScrollRef.current = false;
     const shareParams = getShareRequestParamsFromLocation();
     if (shareParams) {
       setAuth(null);
       setIsSharedView(true);
+      setSharedViewType(null);
       apiFetch<SharedDashboardResponse>(`/api/share?${shareParams.toString()}`)
         .then((dashboard) => applySharedDashboardState(dashboard))
         .catch((error) => {
@@ -347,6 +352,7 @@ export function EmployeeApp() {
     const storedAuth = getStoredAuth();
     setAuth(storedAuth);
     setIsSharedView(false);
+    setSharedViewType(null);
 
     if (!storedAuth) {
       setIsLoading(false);
@@ -494,6 +500,30 @@ export function EmployeeApp() {
       cancelled = true;
     };
   }, [auth, isSharedView, selectedWorkRecord?.employeeId, selectedWorkRecord?.workDate]);
+
+  useEffect(() => {
+    if (
+      sharedViewType !== "title-profile" ||
+      !titleProfile ||
+      !teamMonth?.month ||
+      titleShareAutoScrollRef.current
+    ) {
+      return;
+    }
+
+    titleShareAutoScrollRef.current = true;
+    const timer = window.setTimeout(() => {
+      const section = titleSectionRef.current;
+      if (!section) return;
+
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+      window.requestAnimationFrame(() => {
+        section.focus({ preventScroll: true });
+      });
+    }, 160);
+
+    return () => window.clearTimeout(timer);
+  }, [sharedViewType, titleProfile, teamMonth?.month]);
 
   async function refresh(loginEmployee?: Employee) {
     const storedAuth = getStoredAuth();
@@ -675,6 +705,7 @@ export function EmployeeApp() {
 
   function applySharedDashboardState(dashboard: SharedDashboardResponse) {
     applyDashboardState(dashboard);
+    setSharedViewType(dashboard.shareType ?? "dashboard");
     setTodayWorkLog(dashboard.todayWorkLog ? normalizeWorkLogCounts(dashboard.todayWorkLog) : null);
     if (dashboard.todayWorkLog) {
       rememberWorkLog(normalizeWorkLogCounts(dashboard.todayWorkLog));
@@ -1277,6 +1308,15 @@ export function EmployeeApp() {
     }
   }
 
+  async function copyTitleShareLink() {
+    try {
+      const url = await createShareUrl({ type: "title-profile" });
+      await copyPreparedShareUrl(url);
+    } catch {
+      showShareToast("칭호 공유 링크 복사에 실패했어요.");
+    }
+  }
+
   async function copyPreparedShareUrl(url: string) {
     try {
       await copyTextToClipboard(url);
@@ -1299,7 +1339,7 @@ export function EmployeeApp() {
   }
 
   async function createShareUrl(input: {
-    type: "dashboard" | "work-log";
+    type: "dashboard" | "title-profile" | "work-log";
     employeeId?: string;
     workDate?: string;
   }) {
@@ -2004,6 +2044,7 @@ export function EmployeeApp() {
             employeeName={employee.name}
             employeeNo={employee.employeeNo}
             companyTitleProfiles={companyTitleProfiles}
+            onCopyShare={!isSharedView ? copyTitleShareLink : undefined}
             teamMonth={teamMonth}
             todayDate={status?.kstDate}
             todayWorkLog={todayWorkLog}
@@ -3253,6 +3294,7 @@ function MyTitlesPanel({
   employeeName,
   employeeNo,
   companyTitleProfiles,
+  onCopyShare,
   teamMonth,
   titleProfile,
   todayDate,
@@ -3262,6 +3304,7 @@ function MyTitlesPanel({
   employeeName: string;
   employeeNo: string;
   companyTitleProfiles: CompanyTitleProfile[];
+  onCopyShare?: () => void;
   teamMonth: TeamMonthAttendance | null;
   titleProfile: CareerTitleProfile | null;
   todayDate?: string;
@@ -3318,13 +3361,24 @@ function MyTitlesPanel({
                   누적 {achievedTitles.length}/{titles.length}개 획득 · {totalXp} XP
                 </p>
               </div>
-              <button
-                className="secondary-button shrink-0 px-2.5 py-1.5 text-xs"
-                onClick={() => setIsCollectionOpen(true)}
-                type="button"
-              >
-                칭호 도감
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                {onCopyShare ? (
+                  <button
+                    className="secondary-button px-2.5 py-1.5 text-xs"
+                    onClick={onCopyShare}
+                    type="button"
+                  >
+                    칭호 공유
+                  </button>
+                ) : null}
+                <button
+                  className="secondary-button px-2.5 py-1.5 text-xs"
+                  onClick={() => setIsCollectionOpen(true)}
+                  type="button"
+                >
+                  칭호 도감
+                </button>
+              </div>
             </div>
 
             <TitleQuestScene
@@ -3409,6 +3463,7 @@ function MyTitlesPanel({
           levelInfo={levelInfo}
           onClose={() => setIsCollectionOpen(false)}
           onCategoryFilterChange={setCategoryFilter}
+          onCopyShare={onCopyShare}
           onFilterChange={setFilter}
           onSortModeChange={setSortMode}
           sortMode={sortMode}
@@ -3604,6 +3659,7 @@ function TitleCollectionModal({
   levelInfo,
   onClose,
   onCategoryFilterChange,
+  onCopyShare,
   onFilterChange,
   onSortModeChange,
   ownerName,
@@ -3617,6 +3673,7 @@ function TitleCollectionModal({
   levelInfo: ReturnType<typeof getTitleLevelInfo>;
   onClose: () => void;
   onCategoryFilterChange: (filter: QuestTitleCategoryFilter) => void;
+  onCopyShare?: () => void;
   onFilterChange: (filter: QuestTitleFilter) => void;
   onSortModeChange: (sortMode: QuestTitleSortMode) => void;
   ownerName?: string;
@@ -3660,6 +3717,15 @@ function TitleCollectionModal({
                 Lv.{levelInfo.level} · {totalXp} XP · 누적 출근 {stats.attendanceDays}일
               </p>
             </div>
+            {onCopyShare ? (
+              <button
+                className="secondary-button px-3 py-2 text-xs"
+                onClick={onCopyShare}
+                type="button"
+              >
+                공유
+              </button>
+            ) : null}
             <button className="secondary-button px-3 py-2 text-xs" onClick={onClose} type="button">
               닫기
             </button>
