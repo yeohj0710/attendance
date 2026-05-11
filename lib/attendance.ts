@@ -3,6 +3,7 @@ import { badRequest, conflict } from "@/lib/http";
 import { getWorkDateString, isValidDateString, parseKstDateTimeInput } from "@/lib/time";
 import {
   ensureCarryoverWorkLog,
+  getWorkLogSummariesForEmployee,
   getWorkLogSummariesForRange,
   getWorkLogsForDate,
 } from "@/lib/work-log";
@@ -37,6 +38,33 @@ export type AdminAttendanceInput = {
   workType: WorkType;
   note?: string | null;
   reason?: string | null;
+};
+
+export type EmployeeTitleProfile = {
+  generatedAt: string;
+  stats: {
+    activeMonths: number;
+    attendanceDays: number;
+    bestStreak: number;
+    checkoutDays: number;
+    commentCount: number;
+    completedTasks: number;
+    currentStreak: number;
+    firstRecordDate: string | null;
+    heavyDoneDays: number;
+    latestRecordDate: string | null;
+    perfectTaskDays: number;
+    tenHourDays: number;
+    totalTasks: number;
+    totalWorkedMinutes: number;
+    twelveHourDays: number;
+  };
+};
+
+export type CompanyTitleProfile = EmployeeTitleProfile & {
+  employeeId: string;
+  employeeNo: string;
+  employeeName: string;
 };
 
 type AttendanceData = {
@@ -105,6 +133,120 @@ export async function getRecentAttendance(employeeId: string, limit: number) {
     .map((doc) => mapAttendance(doc.id, doc.data() as AttendanceData))
     .sort((a, b) => b.workDate.localeCompare(a.workDate))
     .slice(0, limit);
+}
+
+export async function getEmployeeTitleProfile(employeeId: string): Promise<EmployeeTitleProfile> {
+  if (!employeeId.trim()) {
+    badRequest("직원을 선택하세요.");
+  }
+
+  const [attendanceSnapshot, workLogSummaries] = await Promise.all([
+    getDb()
+      .collection("attendance_records")
+      .where("employee_id", "==", employeeId)
+      .get(),
+    getWorkLogSummariesForEmployee(employeeId),
+  ]);
+
+  const attendanceRecords = attendanceSnapshot.docs
+    .map((doc) => mapAttendance(doc.id, doc.data() as AttendanceData))
+    .sort((a, b) => a.workDate.localeCompare(b.workDate));
+  const recordDates = new Set<string>();
+  const attendanceDates: string[] = [];
+  let totalWorkedMinutes = 0;
+  let tenHourDays = 0;
+  let twelveHourDays = 0;
+  let checkoutDays = 0;
+
+  for (const record of attendanceRecords) {
+    const hasAttendance = Boolean(record.checkInAt || record.checkOutAt);
+    if (hasAttendance) {
+      recordDates.add(record.workDate);
+      attendanceDates.push(record.workDate);
+    }
+    if (record.checkOutAt) {
+      checkoutDays += 1;
+    }
+
+    const workedMinutes = getRecordWorkedMinutes(record);
+    if (workedMinutes !== null) {
+      totalWorkedMinutes += workedMinutes;
+      if (workedMinutes >= 10 * 60) {
+        tenHourDays += 1;
+      }
+      if (workedMinutes >= 12 * 60) {
+        twelveHourDays += 1;
+      }
+    }
+  }
+
+  let totalTasks = 0;
+  let completedTasks = 0;
+  let heavyDoneDays = 0;
+  let perfectTaskDays = 0;
+  let commentCount = 0;
+
+  for (const summary of workLogSummaries) {
+    recordDates.add(summary.workDate);
+    totalTasks += summary.taskCount;
+    completedTasks += summary.doneCount;
+    commentCount += summary.commentCount;
+    if (summary.doneCount >= 5) {
+      heavyDoneDays += 1;
+    }
+    if (summary.taskCount >= 3 && summary.doneCount === summary.taskCount) {
+      perfectTaskDays += 1;
+    }
+  }
+
+  const sortedRecordDates = [...recordDates].sort();
+  const activeMonths = new Set(sortedRecordDates.map((date) => date.slice(0, 7))).size;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    stats: {
+      activeMonths,
+      attendanceDays: new Set(attendanceDates).size,
+      bestStreak: getBestAttendanceStreak(attendanceDates),
+      checkoutDays,
+      commentCount,
+      completedTasks,
+      currentStreak: getCurrentAttendanceStreak(attendanceDates, getWorkDateString()),
+      firstRecordDate: sortedRecordDates[0] ?? null,
+      heavyDoneDays,
+      latestRecordDate: sortedRecordDates[sortedRecordDates.length - 1] ?? null,
+      perfectTaskDays,
+      tenHourDays,
+      totalTasks,
+      totalWorkedMinutes,
+      twelveHourDays,
+    },
+  };
+}
+
+export async function getCompanyTitleProfiles(): Promise<CompanyTitleProfile[]> {
+  const snapshot = await getDb().collection("employees").where("is_active", "==", true).get();
+  const employees = snapshot.docs
+    .map((doc) => {
+      const employee = doc.data() as EmployeeData;
+      return {
+        employeeId: doc.id,
+        employeeNo: employee.employee_no ?? "",
+        employeeName: employee.name ?? "",
+      };
+    })
+    .filter(
+      (employee) =>
+        !formerTeamMemberNames.has(employee.employeeName.normalize("NFC").replace(/\s+/g, "")),
+    )
+    .sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+
+  return Promise.all(
+    employees.map(async (employee) => ({
+      ...employee,
+      ...(await getEmployeeTitleProfile(employee.employeeId)),
+    })),
+  );
 }
 
 export async function getTeamTodayAttendance() {
@@ -651,6 +793,63 @@ function teamStatusRank(record: {
   }
 
   return 2;
+}
+
+function getRecordWorkedMinutes(record: Pick<AttendanceRecord, "checkInAt" | "checkOutAt">) {
+  if (!record.checkInAt || !record.checkOutAt) {
+    return null;
+  }
+
+  const checkIn = new Date(record.checkInAt).getTime();
+  const checkOut = new Date(record.checkOutAt).getTime();
+  if (!Number.isFinite(checkIn) || !Number.isFinite(checkOut) || checkOut <= checkIn) {
+    return null;
+  }
+
+  return Math.round((checkOut - checkIn) / 60000);
+}
+
+function getCurrentAttendanceStreak(dates: string[], todayDate: string) {
+  const attendanceDates = new Set(dates);
+  if (attendanceDates.size === 0) {
+    return 0;
+  }
+
+  const sortedDates = [...attendanceDates].sort();
+  const latestDate = sortedDates[sortedDates.length - 1];
+  let cursor = attendanceDates.has(todayDate) || todayDate <= latestDate ? todayDate : latestDate;
+  if (!attendanceDates.has(cursor)) {
+    cursor = latestDate;
+  }
+
+  let streak = 0;
+  while (attendanceDates.has(cursor)) {
+    streak += 1;
+    cursor = addDateString(cursor, -1);
+  }
+
+  return streak;
+}
+
+function getBestAttendanceStreak(dates: string[]) {
+  const attendanceDates = [...new Set(dates)].sort();
+  let bestStreak = 0;
+  let currentStreak = 0;
+  let previousDate = "";
+
+  for (const date of attendanceDates) {
+    currentStreak = previousDate && addDateString(previousDate, 1) === date ? currentStreak + 1 : 1;
+    bestStreak = Math.max(bestStreak, currentStreak);
+    previousDate = date;
+  }
+
+  return bestStreak;
+}
+
+function addDateString(value: string, deltaDays: number) {
+  const date = dateStringToUtcDate(value);
+  date.setUTCDate(date.getUTCDate() + deltaDays);
+  return date.toISOString().slice(0, 10);
 }
 
 function getKstMonthRange(value?: string | null) {

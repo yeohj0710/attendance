@@ -220,6 +220,29 @@ export async function getWorkLogSummariesForRange(startDate: string, endDate: st
   });
 }
 
+export async function getWorkLogSummariesForEmployee(employeeId: string) {
+  if (!employeeId.trim()) {
+    badRequest("직원을 선택하세요.");
+  }
+
+  const snapshot = await getDb()
+    .collection("work_logs")
+    .where("employee_id", "==", employeeId)
+    .get();
+
+  return snapshot.docs.map((doc) => {
+    const data = doc.data() as WorkLogData;
+    const tasks = normalizeTasks(data.tasks ?? [], new Date().toISOString());
+    return {
+      employeeId: data.employee_id,
+      workDate: data.work_date,
+      taskCount: tasks.length,
+      doneCount: tasks.filter((task) => task.done).length,
+      commentCount: normalizeComments(data.comments ?? []).length,
+    } satisfies WorkLogSummary;
+  });
+}
+
 export async function getWorkCommentNotifications(employeeId: string, since: string) {
   if (!employeeId.trim()) {
     badRequest("직원을 선택하세요.");

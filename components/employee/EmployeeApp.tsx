@@ -57,6 +57,8 @@ type DashboardResponse = {
   records: AttendanceRecord[];
   teamRecords: TeamAttendanceRecord[];
   teamMonth: TeamMonthAttendance;
+  titleProfile: CareerTitleProfile;
+  companyTitleProfiles?: CompanyTitleProfile[];
 };
 
 type SharedDashboardResponse = DashboardResponse & {
@@ -134,6 +136,35 @@ type WorkLog = {
   updatedAt: string | null;
 };
 
+type CareerTitleProfile = {
+  generatedAt: string;
+  stats: CareerTitleStats;
+};
+
+type CompanyTitleProfile = CareerTitleProfile & {
+  employeeId: string;
+  employeeNo: string;
+  employeeName: string;
+};
+
+type CareerTitleStats = {
+  activeMonths: number;
+  attendanceDays: number;
+  bestStreak: number;
+  checkoutDays: number;
+  commentCount: number;
+  completedTasks: number;
+  currentStreak: number;
+  firstRecordDate: string | null;
+  heavyDoneDays: number;
+  latestRecordDate: string | null;
+  perfectTaskDays: number;
+  tenHourDays: number;
+  totalTasks: number;
+  totalWorkedMinutes: number;
+  twelveHourDays: number;
+};
+
 const workTypeLabels: Record<AttendanceRecord["workType"], string> = {
   office: "사무실",
   remote: "재택",
@@ -184,6 +215,8 @@ export function EmployeeApp() {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [teamRecords, setTeamRecords] = useState<TeamAttendanceRecord[]>([]);
   const [teamMonth, setTeamMonth] = useState<TeamMonthAttendance | null>(null);
+  const [titleProfile, setTitleProfile] = useState<CareerTitleProfile | null>(null);
+  const [companyTitleProfiles, setCompanyTitleProfiles] = useState<CompanyTitleProfile[]>([]);
   const [message, setMessage] = useState("");
   const [clock, setClock] = useState(new Date());
   const [isLoading, setIsLoading] = useState(true);
@@ -576,12 +609,35 @@ export function EmployeeApp() {
       : null;
   }
 
+  async function refreshTitleProfile(requestAuth = auth) {
+    if (!requestAuth || isSharedView) return;
+
+    const result = await apiFetch<{ titleProfile: CareerTitleProfile }>(
+      "/api/attendance/title-profile",
+      { auth: requestAuth },
+    );
+    setTitleProfile(result.titleProfile);
+    if (employee) {
+      const ownProfile: CompanyTitleProfile = {
+        ...result.titleProfile,
+        employeeId: employee.id,
+        employeeName: employee.name,
+        employeeNo: employee.employeeNo,
+      };
+      setCompanyTitleProfiles((currentProfiles) =>
+        upsertCompanyTitleProfile(currentProfiles, ownProfile),
+      );
+    }
+  }
+
   function applyDashboardState(dashboard: DashboardResponse) {
     setEmployee(dashboard.employee);
     setStatus(dashboard.status);
     setRecords(dashboard.records);
     setTeamRecords(dashboard.teamRecords);
     setTeamMonth(dashboard.teamMonth);
+    setTitleProfile(dashboard.titleProfile);
+    setCompanyTitleProfiles(dashboard.companyTitleProfiles ?? []);
     teamMonthCacheRef.current.set(dashboard.teamMonth.month, dashboard.teamMonth);
   }
 
@@ -982,6 +1038,7 @@ export function EmployeeApp() {
       rememberWorkLog(savedLog);
       updateTeamMonthWorkSummary(savedLog);
       updateTeamTodayWorkLog(savedLog);
+      void refreshTitleProfile(auth).catch(() => undefined);
     } catch (error) {
       setWorkLogMessage(error instanceof Error ? error.message : "댓글을 저장하지 못했습니다.");
       void refreshWorkLogFromServer(optimisticLog, auth, "modal");
@@ -1026,6 +1083,7 @@ export function EmployeeApp() {
       rememberWorkLog(savedLog);
       updateTeamMonthWorkSummary(savedLog);
       updateTeamTodayWorkLog(savedLog);
+      void refreshTitleProfile(auth).catch(() => undefined);
     } catch (error) {
       setWorkLogMessage(error instanceof Error ? error.message : "댓글을 수정하지 못했습니다.");
       void refreshWorkLogFromServer(optimisticLog, auth, "modal");
@@ -1064,6 +1122,7 @@ export function EmployeeApp() {
       rememberWorkLog(savedLog);
       updateTeamMonthWorkSummary(savedLog);
       updateTeamTodayWorkLog(savedLog);
+      void refreshTitleProfile(auth).catch(() => undefined);
     } catch (error) {
       setWorkLogMessage(error instanceof Error ? error.message : "댓글을 삭제하지 못했습니다.");
       void refreshWorkLogFromServer(optimisticLog, auth, "modal");
@@ -1124,6 +1183,7 @@ export function EmployeeApp() {
             setTodayWorkLog(savedLog);
             updateTeamMonthWorkSummary(savedLog);
             updateTeamTodayWorkLog(savedLog);
+            void refreshTitleProfile(requestAuth).catch(() => undefined);
             setWorkLog((currentLog) =>
               currentLog?.employeeId === savedLog.employeeId &&
               currentLog.workDate === savedLog.workDate
@@ -1252,6 +1312,7 @@ export function EmployeeApp() {
             setWorkLog(savedLog);
             updateTeamMonthWorkSummary(savedLog);
             updateTeamTodayWorkLog(savedLog);
+            void refreshTitleProfile(requestAuth).catch(() => undefined);
             setTodayWorkLog((currentLog) =>
               currentLog?.employeeId === savedLog.employeeId &&
               currentLog.workDate === savedLog.workDate
@@ -1886,11 +1947,15 @@ export function EmployeeApp() {
           onSelectRecord={openWorkLog}
           teamMonth={teamMonth}
         />
-        <TeamTitlesPanel
-          currentEmployeeId={employee.id}
+        <MyTitlesPanel
+          employeeId={employee.id}
+          employeeName={employee.name}
+          employeeNo={employee.employeeNo}
+          companyTitleProfiles={companyTitleProfiles}
           teamMonth={teamMonth}
           todayDate={status?.kstDate}
           todayWorkLog={todayWorkLog}
+          titleProfile={titleProfile}
         />
       </section>
 
@@ -3107,7 +3172,6 @@ type EmployeeTitle = {
   kind?: "duration";
   name: string;
   progress: number;
-  rank: number;
   target: number;
   tone: EmployeeTitleTone;
   unit?: string;
@@ -3130,114 +3194,1014 @@ type EmployeeTitleStats = {
   twelveHourDays: number;
 };
 
-type EmployeeTitleProfile = {
-  achievedTitles: EmployeeTitle[];
-  employeeId: string;
-  employeeName: string;
-  isCurrentEmployee: boolean;
-  representativeTitle: EmployeeTitle;
-  stats: EmployeeTitleStats;
-  titles: EmployeeTitle[];
+type QuestTitleTone = "accent" | "complete" | "danger" | "ink" | "warm";
+type QuestTitleCategory = "attendance" | "endurance" | "focus" | "team";
+type QuestTitleRarity = "bronze" | "silver" | "gold" | "platinum" | "legend";
+type QuestTitleFilter = "all" | "achieved" | "progress";
+
+type QuestTitle = {
+  achieved: boolean;
+  category: QuestTitleCategory;
+  description: string;
+  id: string;
+  kind?: "duration";
+  name: string;
+  progress: number;
+  rarity: QuestTitleRarity;
+  target: number;
+  tone: QuestTitleTone;
+  unit?: string;
+  value: number;
+  xp: number;
 };
 
-function TeamTitlesPanel({
+type QuestTitleBase = Omit<QuestTitle, "achieved" | "progress">;
+
+const titleLevelThresholds = [0, 120, 320, 620, 1000, 1500, 2200, 3100, 4300, 5800, 7600];
+
+function MyTitlesPanel({
+  employeeId,
+  employeeName,
+  employeeNo,
+  companyTitleProfiles,
+  teamMonth,
+  titleProfile,
+  todayDate,
+  todayWorkLog,
+}: {
+  employeeId: string;
+  employeeName: string;
+  employeeNo: string;
+  companyTitleProfiles: CompanyTitleProfile[];
+  teamMonth: TeamMonthAttendance | null;
+  titleProfile: CareerTitleProfile | null;
+  todayDate?: string;
+  todayWorkLog: WorkLog | null;
+}) {
+  const [isCollectionOpen, setIsCollectionOpen] = useState(false);
+  const [selectedCompanyTitleProfile, setSelectedCompanyTitleProfile] =
+    useState<CompanyTitleProfile | null>(null);
+  const [filter, setFilter] = useState<QuestTitleFilter>("all");
+
+  if (!teamMonth || !titleProfile) {
+    return null;
+  }
+
+  const monthlyStats = getEmployeeTitleStats(employeeId, teamMonth, todayDate, todayWorkLog);
+  const titles = getQuestTitles(titleProfile.stats);
+  const achievedTitles = titles.filter((title) => title.achieved);
+  const totalXp = achievedTitles.reduce((sum, title) => sum + title.xp, 0);
+  const levelInfo = getTitleLevelInfo(totalXp);
+  const representativeTitle = getRepresentativeQuestTitle(titles);
+  const nextTitles = getNextQuestTitles(titles);
+  const completionRate = titles.length ? achievedTitles.length / titles.length : 0;
+  const monthlyDoneSummary =
+    monthlyStats.totalTasks > 0
+      ? `${monthlyStats.completedTasks}/${monthlyStats.totalTasks}개`
+      : "0개";
+  const selectedCompanyTitles = selectedCompanyTitleProfile
+    ? getQuestTitles(selectedCompanyTitleProfile.stats)
+    : [];
+  const selectedCompanyAchievedTitles = selectedCompanyTitles.filter((title) => title.achieved);
+  const selectedCompanyTotalXp = selectedCompanyAchievedTitles.reduce(
+    (sum, title) => sum + title.xp,
+    0,
+  );
+
+  return (
+    <div className="mt-4 border-t border-line pt-4">
+      <div className="title-quest-panel rounded-lg border border-slate-300 bg-white p-4 shadow-panel">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(16rem,0.85fr)]">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">
+                  Career Titles
+                </p>
+                <h3 className="mt-1 text-xl font-black text-ink">
+                  Lv.{levelInfo.level} {representativeTitle.name}
+                </h3>
+                <p className="mt-1 text-sm font-semibold text-slate-600">
+                  누적 {achievedTitles.length}/{titles.length}개 획득 · {totalXp} XP
+                </p>
+              </div>
+              <button
+                className="secondary-button shrink-0 px-3 py-2 text-xs"
+                onClick={() => setIsCollectionOpen(true)}
+                type="button"
+              >
+                칭호 도감
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)]">
+              <TitleMedal title={representativeTitle} />
+              <div className="min-w-0">
+                <div className="flex items-center justify-between gap-3 text-xs font-bold text-slate-600">
+                  <span>레벨 진행도</span>
+                  <span>
+                    {levelInfo.nextXp > 0 ? `${levelInfo.nextXp} XP 남음` : "최고 레벨"}
+                  </span>
+                </div>
+                <div className="mt-2 h-3 overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className="title-xp-bar h-full rounded-full"
+                    style={{ width: `${Math.round(levelInfo.progress * 100)}%` }}
+                  />
+                </div>
+                <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+                  <TitleSummaryChip label="누적 출근" value={`${titleProfile.stats.attendanceDays}일`} />
+                  <TitleSummaryChip label="완료 업무" value={`${titleProfile.stats.completedTasks}개`} />
+                  <TitleSummaryChip label="이번 달 완료" value={monthlyDoneSummary} />
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-2 text-xs sm:grid-cols-3">
+              <TitleSummaryChip
+                label="최고 연속"
+                value={`${titleProfile.stats.bestStreak}일`}
+              />
+              <TitleSummaryChip
+                label="누적 근무"
+                value={formatWorkedDuration(titleProfile.stats.totalWorkedMinutes)}
+              />
+              <TitleSummaryChip
+                label="도감 완성"
+                value={`${Math.round(completionRate * 100)}%`}
+              />
+            </div>
+          </div>
+
+          <div className="rounded border border-slate-300 bg-white/80 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-sm font-black text-ink">다음에 열릴 칭호</h4>
+              <span className="rounded-full border border-accent/25 bg-accentSoft px-2 py-0.5 text-[11px] font-bold text-accent">
+                {nextTitles.length}개 추적
+              </span>
+            </div>
+            <div className="mt-3 space-y-2">
+              {nextTitles.map((title) => (
+                <TitleProgressCard compact key={title.id} title={title} />
+              ))}
+              {nextTitles.length === 0 ? (
+                <p className="rounded border border-line bg-field/70 px-3 py-5 text-center text-sm font-semibold text-muted">
+                  모든 칭호를 열었습니다.
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <CompanyTitleGallery
+          currentEmployeeId={employeeId}
+          currentEmployeeName={employeeName}
+          currentEmployeeNo={employeeNo}
+          companyTitleProfiles={companyTitleProfiles}
+          onOpenProfile={setSelectedCompanyTitleProfile}
+          titleProfile={titleProfile}
+        />
+      </div>
+
+      {isCollectionOpen ? (
+        <TitleCollectionModal
+          filter={filter}
+          levelInfo={levelInfo}
+          onClose={() => setIsCollectionOpen(false)}
+          onFilterChange={setFilter}
+          stats={titleProfile.stats}
+          titles={titles}
+          totalXp={totalXp}
+        />
+      ) : null}
+      {selectedCompanyTitleProfile ? (
+        <TitleCollectionModal
+          filter={filter}
+          levelInfo={getTitleLevelInfo(selectedCompanyTotalXp)}
+          onClose={() => setSelectedCompanyTitleProfile(null)}
+          onFilterChange={setFilter}
+          ownerName={selectedCompanyTitleProfile.employeeName}
+          stats={selectedCompanyTitleProfile.stats}
+          titles={selectedCompanyTitles}
+          totalXp={selectedCompanyTotalXp}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+type CompanyTitleGalleryEntry = {
+  achievedCount: number;
+  completionRate: number;
+  levelInfo: ReturnType<typeof getTitleLevelInfo>;
+  profile: CompanyTitleProfile;
+  representativeTitle: QuestTitle;
+  titleCount: number;
+  totalXp: number;
+};
+
+function CompanyTitleGallery({
   currentEmployeeId,
+  currentEmployeeName,
+  currentEmployeeNo,
+  companyTitleProfiles,
+  onOpenProfile,
+  titleProfile,
+}: {
+  currentEmployeeId: string;
+  currentEmployeeName: string;
+  currentEmployeeNo: string;
+  companyTitleProfiles: CompanyTitleProfile[];
+  onOpenProfile: (profile: CompanyTitleProfile) => void;
+  titleProfile: CareerTitleProfile;
+}) {
+  const profiles = withCurrentCompanyTitleProfile(
+    companyTitleProfiles,
+    currentEmployeeId,
+    currentEmployeeName,
+    currentEmployeeNo,
+    titleProfile,
+  );
+  const entries = getCompanyTitleGalleryEntries(profiles).filter(
+    (entry) => entry.profile.employeeId !== currentEmployeeId,
+  );
+
+  if (!entries.length) {
+    return null;
+  }
+
+  return (
+    <div className="mt-4 border-t border-white/70 pt-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">
+            Employee Titles
+          </p>
+          <h4 className="mt-1 text-base font-black text-ink">다른 직원 칭호</h4>
+        </div>
+        <span className="rounded-full border border-slate-300 bg-white/85 px-3 py-1 text-xs font-black text-ink">
+          {entries.length}명 열람 가능
+        </span>
+      </div>
+
+      <div className="mt-3 grid gap-2 xl:grid-cols-2">
+        {entries.map((entry) => (
+          <CompanyTitleGalleryCard
+            entry={entry}
+            onOpenProfile={onOpenProfile}
+            key={entry.profile.employeeId}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CompanyTitleGalleryCard({
+  entry,
+  onOpenProfile,
+}: {
+  entry: CompanyTitleGalleryEntry;
+  onOpenProfile: (profile: CompanyTitleProfile) => void;
+}) {
+  const progressPercent = Math.round(entry.levelInfo.progress * 100);
+
+  return (
+    <div className="rounded border border-slate-300/80 bg-white/72 px-3 py-3">
+      <div className="flex items-start gap-3">
+        <TitleMedal small title={entry.representativeTitle} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate text-sm font-black text-ink">
+              {entry.profile.employeeName || "이름 없음"}
+            </p>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-black text-slate-600">
+              Lv.{entry.levelInfo.level}
+            </span>
+          </div>
+          <p className="mt-1 truncate text-xs font-bold text-slate-600">
+            대표 칭호 · {entry.representativeTitle.name}
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200">
+              <div className="title-xp-bar h-full rounded-full" style={{ width: `${progressPercent}%` }} />
+            </div>
+            <span className="shrink-0 text-[11px] font-bold text-slate-500">
+              {entry.achievedCount}/{entry.titleCount}
+            </span>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-2 text-right">
+          <p className="text-sm font-black text-ink">{entry.totalXp.toLocaleString()} XP</p>
+          <button
+            className="secondary-button px-2 py-1 text-[11px]"
+            onClick={() => onOpenProfile(entry.profile)}
+            type="button"
+          >
+            도감 보기
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TitleCollectionModal({
+  filter,
+  levelInfo,
+  onClose,
+  onFilterChange,
+  ownerName,
+  stats,
+  titles,
+  totalXp,
+}: {
+  filter: QuestTitleFilter;
+  levelInfo: ReturnType<typeof getTitleLevelInfo>;
+  onClose: () => void;
+  onFilterChange: (filter: QuestTitleFilter) => void;
+  ownerName?: string;
+  stats: CareerTitleStats;
+  titles: QuestTitle[];
+  totalXp: number;
+}) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  const achievedCount = titles.filter((title) => title.achieved).length;
+  const progressCount = titles.length - achievedCount;
+  const visibleTitles = getVisibleQuestTitles(titles, filter);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-3 py-5">
+      <div
+        aria-modal="true"
+        className="flex max-h-[86dvh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl"
+        role="dialog"
+      >
+        <div className="title-collection-header border-b border-line px-4 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">
+                Title Codex
+              </p>
+              <h3 className="mt-1 text-xl font-black text-ink">
+                {ownerName ? `${ownerName} 칭호 도감` : "칭호 도감"}
+              </h3>
+              <p className="mt-1 text-sm font-semibold text-slate-600">
+                Lv.{levelInfo.level} · {totalXp} XP · 누적 출근 {stats.attendanceDays}일
+              </p>
+            </div>
+            <button className="secondary-button px-3 py-2 text-xs" onClick={onClose} type="button">
+              닫기
+            </button>
+          </div>
+
+          <div className="mt-4 grid gap-2 text-xs sm:grid-cols-4">
+            <TitleSummaryChip label="획득" value={`${achievedCount}/${titles.length}개`} />
+            <TitleSummaryChip label="최고 연속" value={`${stats.bestStreak}일`} />
+            <TitleSummaryChip label="누적 업무" value={`${stats.completedTasks}개`} />
+            <TitleSummaryChip label="활동 월" value={`${stats.activeMonths}개월`} />
+          </div>
+
+          <div className="mt-4 inline-flex rounded border border-line bg-field p-1">
+            {([
+              ["all", `전체 ${titles.length}`],
+              ["achieved", `획득 ${achievedCount}`],
+              ["progress", `진행 ${progressCount}`],
+            ] as Array<[QuestTitleFilter, string]>).map(([value, label]) => (
+              <button
+                className={`rounded px-3 py-1.5 text-xs font-bold transition ${
+                  filter === value ? "bg-white text-ink shadow-sm" : "text-muted hover:text-ink"
+                }`}
+                key={value}
+                onClick={() => onFilterChange(value)}
+                type="button"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="overflow-y-auto px-4 py-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {visibleTitles.map((title) => (
+              <TitleProgressCard key={title.id} title={title} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TitleProgressCard({ compact = false, title }: { compact?: boolean; title: QuestTitle }) {
+  return (
+    <div className={`title-card rounded border p-3 ${getQuestTitleCardClassName(title)}`}>
+      <div className="flex items-start gap-3">
+        <TitleMedal small={compact} title={title} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-black">{title.name}</p>
+              {!compact ? (
+                <p className="mt-1 text-xs font-semibold opacity-75">
+                  {getQuestTitleCategoryLabel(title.category)} · {getQuestTitleRarityLabel(title.rarity)}
+                </p>
+              ) : null}
+            </div>
+            <span
+              className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-black ${
+                title.achieved ? "bg-white/80 text-ink" : "bg-slate-100 text-muted"
+              }`}
+            >
+              {title.achieved ? "획득" : "진행"}
+            </span>
+          </div>
+          {!compact ? (
+            <p className="mt-2 text-xs leading-relaxed opacity-80">{title.description}</p>
+          ) : null}
+          <div className="mt-3 flex items-center justify-between gap-2 text-[11px] font-bold">
+            <span>{formatQuestTitleProgressValue(title)}</span>
+            <span>{Math.round(title.progress * 100)}%</span>
+          </div>
+          <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-200/80">
+            <div
+              className={`h-full rounded-full ${getQuestTitleProgressClassName(title)}`}
+              style={{ width: `${getQuestTitleProgressWidth(title)}%` }}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TitleMedal({ small = false, title }: { small?: boolean; title: QuestTitle }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`title-medal title-medal-${title.rarity}${title.achieved ? "" : " title-medal-locked"} ${
+        small ? "title-medal-small" : ""
+      }`}
+    >
+      {getQuestTitleCategoryMark(title.category)}
+    </span>
+  );
+}
+
+function getQuestTitles(stats: CareerTitleStats) {
+  const titles: QuestTitleBase[] = [
+    {
+      category: "attendance",
+      description: `누적 출근 ${stats.attendanceDays}일`,
+      id: "attendance-1",
+      name: "첫 발자국",
+      rarity: "bronze",
+      target: 1,
+      tone: "accent",
+      unit: "일",
+      value: stats.attendanceDays,
+      xp: 80,
+    },
+    {
+      category: "attendance",
+      description: `누적 출근 ${stats.attendanceDays}일`,
+      id: "attendance-5",
+      name: "루틴 장착",
+      rarity: "bronze",
+      target: 5,
+      tone: "accent",
+      unit: "일",
+      value: stats.attendanceDays,
+      xp: 120,
+    },
+    {
+      category: "attendance",
+      description: `누적 출근 ${stats.attendanceDays}일`,
+      id: "attendance-20",
+      name: "출근 리듬메이커",
+      rarity: "silver",
+      target: 20,
+      tone: "complete",
+      unit: "일",
+      value: stats.attendanceDays,
+      xp: 220,
+    },
+    {
+      category: "attendance",
+      description: `누적 출근 ${stats.attendanceDays}일`,
+      id: "attendance-50",
+      name: "근무 베테랑",
+      rarity: "gold",
+      target: 50,
+      tone: "warm",
+      unit: "일",
+      value: stats.attendanceDays,
+      xp: 420,
+    },
+    {
+      category: "attendance",
+      description: `누적 출근 ${stats.attendanceDays}일`,
+      id: "attendance-100",
+      name: "100일의 기록",
+      rarity: "legend",
+      target: 100,
+      tone: "danger",
+      unit: "일",
+      value: stats.attendanceDays,
+      xp: 820,
+    },
+    {
+      category: "attendance",
+      description: `최고 연속 출근 ${stats.bestStreak}일`,
+      id: "streak-best-3",
+      name: "3일 연속 점화",
+      rarity: "bronze",
+      target: 3,
+      tone: "accent",
+      unit: "일",
+      value: stats.bestStreak,
+      xp: 130,
+    },
+    {
+      category: "attendance",
+      description: `최고 연속 출근 ${stats.bestStreak}일`,
+      id: "streak-best-7",
+      name: "7일 루프",
+      rarity: "silver",
+      target: 7,
+      tone: "complete",
+      unit: "일",
+      value: stats.bestStreak,
+      xp: 280,
+    },
+    {
+      category: "focus",
+      description: `누적 완료 업무 ${stats.completedTasks}개`,
+      id: "task-1",
+      name: "첫 업무 클리어",
+      rarity: "bronze",
+      target: 1,
+      tone: "accent",
+      unit: "개",
+      value: stats.completedTasks,
+      xp: 80,
+    },
+    {
+      category: "focus",
+      description: `누적 완료 업무 ${stats.completedTasks}개`,
+      id: "task-30",
+      name: "업무 콤보 30",
+      rarity: "silver",
+      target: 30,
+      tone: "complete",
+      unit: "개",
+      value: stats.completedTasks,
+      xp: 260,
+    },
+    {
+      category: "focus",
+      description: `누적 완료 업무 ${stats.completedTasks}개`,
+      id: "task-100",
+      name: "완료 장인",
+      rarity: "gold",
+      target: 100,
+      tone: "warm",
+      unit: "개",
+      value: stats.completedTasks,
+      xp: 520,
+    },
+    {
+      category: "focus",
+      description: `업무 3개 이상을 모두 끝낸 날 ${stats.perfectTaskDays}일`,
+      id: "perfect-day-1",
+      name: "퍼펙트 데이",
+      rarity: "bronze",
+      target: 1,
+      tone: "complete",
+      unit: "일",
+      value: stats.perfectTaskDays,
+      xp: 130,
+    },
+    {
+      category: "focus",
+      description: `업무 3개 이상을 모두 끝낸 날 ${stats.perfectTaskDays}일`,
+      id: "perfect-day-10",
+      name: "퍼펙트 스프린터",
+      rarity: "platinum",
+      target: 10,
+      tone: "ink",
+      unit: "일",
+      value: stats.perfectTaskDays,
+      xp: 620,
+    },
+    {
+      category: "focus",
+      description: `하루 완료 업무 5개 이상인 날 ${stats.heavyDoneDays}일`,
+      id: "heavy-done-5",
+      name: "클리어 러시",
+      rarity: "silver",
+      target: 5,
+      tone: "warm",
+      unit: "일",
+      value: stats.heavyDoneDays,
+      xp: 300,
+    },
+    {
+      category: "endurance",
+      description: `누적 근무 ${formatWorkedDuration(stats.totalWorkedMinutes)}`,
+      id: "worked-40h",
+      kind: "duration",
+      name: "40시간 축적",
+      rarity: "bronze",
+      target: 40 * 60,
+      tone: "accent",
+      value: stats.totalWorkedMinutes,
+      xp: 150,
+    },
+    {
+      category: "endurance",
+      description: `누적 근무 ${formatWorkedDuration(stats.totalWorkedMinutes)}`,
+      id: "worked-160h",
+      kind: "duration",
+      name: "160시간 항해",
+      rarity: "silver",
+      target: 160 * 60,
+      tone: "complete",
+      value: stats.totalWorkedMinutes,
+      xp: 360,
+    },
+    {
+      category: "endurance",
+      description: `누적 근무 ${formatWorkedDuration(stats.totalWorkedMinutes)}`,
+      id: "worked-400h",
+      kind: "duration",
+      name: "시간의 마스터",
+      rarity: "gold",
+      target: 400 * 60,
+      tone: "ink",
+      value: stats.totalWorkedMinutes,
+      xp: 680,
+    },
+    {
+      category: "endurance",
+      description: `10시간 이상 근무한 날 ${stats.tenHourDays}일`,
+      id: "ten-hour-3",
+      name: "장거리 집중",
+      rarity: "silver",
+      target: 3,
+      tone: "warm",
+      unit: "일",
+      value: stats.tenHourDays,
+      xp: 260,
+    },
+    {
+      category: "endurance",
+      description: `12시간 이상 근무한 날 ${stats.twelveHourDays}일`,
+      id: "twelve-hour-1",
+      name: "긴 하루 생존자",
+      rarity: "platinum",
+      target: 1,
+      tone: "danger",
+      unit: "일",
+      value: stats.twelveHourDays,
+      xp: 240,
+    },
+    {
+      category: "team",
+      description: `누적 댓글 ${stats.commentCount}개`,
+      id: "comment-1",
+      name: "첫 피드백",
+      rarity: "bronze",
+      target: 1,
+      tone: "accent",
+      unit: "개",
+      value: stats.commentCount,
+      xp: 90,
+    },
+    {
+      category: "team",
+      description: `누적 댓글 ${stats.commentCount}개`,
+      id: "comment-10",
+      name: "팀 커넥터",
+      rarity: "silver",
+      target: 10,
+      tone: "ink",
+      unit: "개",
+      value: stats.commentCount,
+      xp: 280,
+    },
+    {
+      category: "team",
+      description: `퇴근 기록까지 남긴 날 ${stats.checkoutDays}일`,
+      id: "checkout-10",
+      name: "마무리 루틴",
+      rarity: "silver",
+      target: 10,
+      tone: "complete",
+      unit: "일",
+      value: stats.checkoutDays,
+      xp: 240,
+    },
+    {
+      category: "team",
+      description: `기록이 남은 활동 월 ${stats.activeMonths}개월`,
+      id: "active-month-6",
+      name: "반년의 궤적",
+      rarity: "gold",
+      target: 6,
+      tone: "warm",
+      unit: "개월",
+      value: stats.activeMonths,
+      xp: 520,
+    },
+  ];
+
+  return titles
+    .map((title) => ({
+      ...title,
+      achieved: title.value >= title.target,
+      progress: Math.min(1, title.value / title.target),
+    }))
+    .sort(
+      (a, b) =>
+        Number(b.achieved) - Number(a.achieved) ||
+        getQuestTitleRarityRank(b.rarity) - getQuestTitleRarityRank(a.rarity) ||
+        b.progress - a.progress ||
+        a.target - b.target,
+    );
+}
+
+function getTitleLevelInfo(xp: number) {
+  const nextIndex = titleLevelThresholds.findIndex((threshold) => threshold > xp);
+  if (nextIndex === -1) {
+    const current = titleLevelThresholds[titleLevelThresholds.length - 1];
+    return {
+      level: titleLevelThresholds.length,
+      nextXp: 0,
+      progress: 1,
+      xp,
+      xpInLevel: xp - current,
+      xpToNextLevel: 0,
+    };
+  }
+
+  const level = Math.max(1, nextIndex);
+  const current = titleLevelThresholds[level - 1] ?? 0;
+  const next = titleLevelThresholds[nextIndex];
+  const xpInLevel = xp - current;
+  const xpToNextLevel = next - current;
+  return {
+    level,
+    nextXp: Math.max(0, next - xp),
+    progress: xpToNextLevel > 0 ? Math.max(0, Math.min(1, xpInLevel / xpToNextLevel)) : 1,
+    xp,
+    xpInLevel,
+    xpToNextLevel,
+  };
+}
+
+function getRepresentativeQuestTitle(titles: QuestTitle[]) {
+  return (
+    [...titles]
+      .filter((title) => title.achieved)
+      .sort(
+        (a, b) =>
+          getQuestTitleRarityRank(b.rarity) - getQuestTitleRarityRank(a.rarity) ||
+          b.xp - a.xp,
+      )[0] ?? titles[0]
+  );
+}
+
+function upsertCompanyTitleProfile(profiles: CompanyTitleProfile[], nextProfile: CompanyTitleProfile) {
+  const nextProfiles = [
+    ...profiles.filter((profile) => profile.employeeId !== nextProfile.employeeId),
+    nextProfile,
+  ];
+  return nextProfiles.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+}
+
+function withCurrentCompanyTitleProfile(
+  profiles: CompanyTitleProfile[],
+  currentEmployeeId: string,
+  currentEmployeeName: string,
+  currentEmployeeNo: string,
+  titleProfile: CareerTitleProfile,
+) {
+  const currentProfile: CompanyTitleProfile = {
+    ...titleProfile,
+    employeeId: currentEmployeeId,
+    employeeName: currentEmployeeName,
+    employeeNo: currentEmployeeNo,
+  };
+  return upsertCompanyTitleProfile(profiles, currentProfile);
+}
+
+function getCompanyTitleGalleryEntries(profiles: CompanyTitleProfile[]): CompanyTitleGalleryEntry[] {
+  return profiles
+    .map((profile) => {
+      const titles = getQuestTitles(profile.stats);
+      const achievedTitles = titles.filter((title) => title.achieved);
+      const totalXp = achievedTitles.reduce((sum, title) => sum + title.xp, 0);
+      return {
+        achievedCount: achievedTitles.length,
+        completionRate: titles.length ? achievedTitles.length / titles.length : 0,
+        levelInfo: getTitleLevelInfo(totalXp),
+        profile,
+        representativeTitle: getRepresentativeQuestTitle(titles),
+        titleCount: titles.length,
+        totalXp,
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.totalXp - a.totalXp ||
+        b.achievedCount - a.achievedCount ||
+        b.completionRate - a.completionRate ||
+        a.profile.employeeName.localeCompare(b.profile.employeeName),
+    );
+}
+
+function getNextQuestTitles(titles: QuestTitle[]) {
+  return titles
+    .filter((title) => !title.achieved)
+    .sort(
+      (a, b) =>
+        b.progress - a.progress ||
+        getQuestTitleRarityRank(b.rarity) - getQuestTitleRarityRank(a.rarity) ||
+        b.xp - a.xp,
+    )
+    .slice(0, 3);
+}
+
+function getVisibleQuestTitles(titles: QuestTitle[], filter: QuestTitleFilter) {
+  const filteredTitles =
+    filter === "achieved"
+      ? titles.filter((title) => title.achieved)
+      : filter === "progress"
+        ? titles.filter((title) => !title.achieved)
+        : titles;
+
+  return [...filteredTitles].sort(
+    (a, b) =>
+      Number(b.achieved) - Number(a.achieved) ||
+      getQuestTitleCategoryRank(a.category) - getQuestTitleCategoryRank(b.category) ||
+      getQuestTitleRarityRank(b.rarity) - getQuestTitleRarityRank(a.rarity) ||
+      b.progress - a.progress,
+  );
+}
+
+function getQuestTitleProgressWidth(title: QuestTitle) {
+  const width = Math.round(title.progress * 100);
+  return title.progress > 0 ? Math.max(8, width) : 0;
+}
+
+function formatQuestTitleProgressValue(title: QuestTitle) {
+  if (title.kind === "duration") {
+    return `${formatWorkedDuration(title.value)} / ${formatWorkedDuration(title.target)}`;
+  }
+
+  return `${title.value}${title.unit ?? ""} / ${title.target}${title.unit ?? ""}`;
+}
+
+function getQuestTitleCategoryLabel(category: QuestTitleCategory) {
+  if (category === "attendance") return "출근";
+  if (category === "focus") return "업무";
+  if (category === "endurance") return "지속";
+  return "팀워크";
+}
+
+function getQuestTitleCategoryMark(category: QuestTitleCategory) {
+  if (category === "attendance") return "출";
+  if (category === "focus") return "업";
+  if (category === "endurance") return "시";
+  return "팀";
+}
+
+function getQuestTitleRarityLabel(rarity: QuestTitleRarity) {
+  if (rarity === "legend") return "전설";
+  if (rarity === "platinum") return "플래티넘";
+  if (rarity === "gold") return "골드";
+  if (rarity === "silver") return "실버";
+  return "브론즈";
+}
+
+function getQuestTitleRarityRank(rarity: QuestTitleRarity) {
+  if (rarity === "legend") return 5;
+  if (rarity === "platinum") return 4;
+  if (rarity === "gold") return 3;
+  if (rarity === "silver") return 2;
+  return 1;
+}
+
+function getQuestTitleCategoryRank(category: QuestTitleCategory) {
+  if (category === "attendance") return 1;
+  if (category === "focus") return 2;
+  if (category === "team") return 3;
+  return 4;
+}
+
+function getQuestTitleCardClassName(title: QuestTitle) {
+  if (!title.achieved) {
+    return "border-line bg-white text-ink";
+  }
+
+  if (title.tone === "danger") {
+    return "border-danger/30 bg-danger/10 text-danger shadow-[0_14px_30px_-26px_rgba(222,69,69,0.85)]";
+  }
+
+  if (title.tone === "warm") {
+    return "border-warn/35 bg-warn/10 text-warn shadow-[0_14px_30px_-26px_rgba(235,133,38,0.85)]";
+  }
+
+  if (title.tone === "complete") {
+    return "border-emerald-300 bg-emerald-50 text-emerald-800 shadow-[0_14px_30px_-26px_rgba(16,185,129,0.85)]";
+  }
+
+  if (title.tone === "ink") {
+    return "border-slate-300 bg-slate-100 text-ink";
+  }
+
+  return "border-accent/30 bg-accentSoft text-accent shadow-[0_14px_30px_-26px_rgba(69,104,245,0.85)]";
+}
+
+function getQuestTitleProgressClassName(title: QuestTitle) {
+  if (!title.achieved) {
+    return "bg-slate-400";
+  }
+
+  if (title.tone === "danger") {
+    return "bg-danger";
+  }
+
+  if (title.tone === "warm") {
+    return "bg-warn";
+  }
+
+  if (title.tone === "complete") {
+    return "bg-emerald-500";
+  }
+
+  if (title.tone === "ink") {
+    return "bg-ink";
+  }
+
+  return "bg-accent";
+}
+
+function LegacyMyTitlesPanel({
+  employeeId,
   teamMonth,
   todayDate,
   todayWorkLog,
 }: {
-  currentEmployeeId: string;
+  employeeId: string;
   teamMonth: TeamMonthAttendance | null;
   todayDate?: string;
   todayWorkLog: WorkLog | null;
 }) {
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState(currentEmployeeId);
-  const profiles = useMemo(
-    () =>
-      teamMonth
-        ? getTeamTitleProfiles(currentEmployeeId, teamMonth, todayDate, todayWorkLog)
-        : [],
-    [currentEmployeeId, teamMonth, todayDate, todayWorkLog],
-  );
-
-  useEffect(() => {
-    if (!profiles.length) return;
-    const hasSelectedEmployee = profiles.some((profile) => profile.employeeId === selectedEmployeeId);
-    if (!hasSelectedEmployee) {
-      setSelectedEmployeeId(
-        profiles.find((profile) => profile.employeeId === currentEmployeeId)?.employeeId ??
-          profiles[0].employeeId,
-      );
-    }
-  }, [currentEmployeeId, profiles, selectedEmployeeId]);
-
-  if (!teamMonth || !profiles.length) {
+  if (!teamMonth) {
     return null;
   }
 
-  const selectedProfile =
-    profiles.find((profile) => profile.employeeId === selectedEmployeeId) ??
-    profiles.find((profile) => profile.employeeId === currentEmployeeId) ??
-    profiles[0];
+  const stats = getEmployeeTitleStats(employeeId, teamMonth, todayDate, todayWorkLog);
+  const titles = getEmployeeTitles(stats);
+  const achievedTitles = titles.filter((title) => title.achieved);
+  const representativeTitle = achievedTitles[0] ?? titles[0];
   const doneSummary =
-    selectedProfile.stats.totalTasks > 0
-      ? `${selectedProfile.stats.completedTasks}/${selectedProfile.stats.totalTasks}개`
-      : "0개";
+    stats.totalTasks > 0 ? `${stats.completedTasks}/${stats.totalTasks}개` : "0개";
 
   return (
     <div className="mt-4 border-t border-line pt-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-bold text-ink">팀 칭호</h3>
+          <h3 className="text-base font-bold text-ink">나의 칭호</h3>
           <p className="mt-1 text-xs text-muted">
-            팀원별 이번 달 대표 칭호와 달성 흐름을 볼 수 있어요.
+            이번 달 기록으로 {achievedTitles.length}개 달성했어요. 다음 칭호까지 남은 흐름도 바로 볼 수 있어요.
           </p>
         </div>
         <span className="rounded-full border border-accent/25 bg-accentSoft px-3 py-1 text-xs font-bold text-accent">
-          {selectedProfile.employeeName} · {selectedProfile.representativeTitle.name}
+          대표 칭호 · {representativeTitle.name}
         </span>
       </div>
 
-      <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-        {profiles.map((profile) => {
-          const isSelected = profile.employeeId === selectedProfile.employeeId;
-          return (
-            <button
-              className={`min-w-36 rounded border px-3 py-2 text-left transition ${
-                isSelected
-                  ? "border-accent/45 bg-accentSoft text-accent shadow-[0_12px_24px_-22px_rgba(69,104,245,0.9)]"
-                  : "border-line bg-white/80 text-ink hover:border-slate-300 hover:bg-field"
-              }`}
-              key={profile.employeeId}
-              onClick={() => setSelectedEmployeeId(profile.employeeId)}
-              type="button"
-            >
-              <span className="flex items-center justify-between gap-2 text-xs font-bold">
-                <span className="truncate">
-                  {profile.employeeName}
-                  {profile.isCurrentEmployee ? " (나)" : ""}
-                </span>
-                <span className="shrink-0">{profile.achievedTitles.length}개</span>
-              </span>
-              <span className="mt-1 block truncate text-[11px] font-semibold opacity-75">
-                {profile.representativeTitle.name}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
       <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
-        <TitleSummaryChip label="이번 달 출근" value={`${selectedProfile.stats.attendanceDays}일`} />
-        <TitleSummaryChip
-          label="총 근무시간"
-          value={formatWorkedDuration(selectedProfile.stats.totalWorkedMinutes)}
-        />
+        <TitleSummaryChip label="이번 달 출근" value={`${stats.attendanceDays}일`} />
+        <TitleSummaryChip label="총 근무시간" value={formatWorkedDuration(stats.totalWorkedMinutes)} />
         <TitleSummaryChip label="완료한 업무" value={doneSummary} />
       </div>
 
       <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        {selectedProfile.titles.map((title) => (
+        {titles.map((title) => (
           <div
             className={`rounded border p-3 transition ${getTitleCardClassName(title)}`}
             key={title.id}
@@ -3270,48 +4234,6 @@ function TeamTitlesPanel({
       </div>
     </div>
   );
-}
-
-function getTeamTitleProfiles(
-  currentEmployeeId: string,
-  teamMonth: TeamMonthAttendance,
-  todayDate: string | undefined,
-  todayWorkLog: WorkLog | null,
-) {
-  const employees = new Map<string, string>();
-  for (const record of teamMonth.records) {
-    if (
-      record.workDate < teamMonth.startDate ||
-      record.workDate > teamMonth.endDate ||
-      formerTeamMemberNames.has(record.employeeName)
-    ) {
-      continue;
-    }
-    employees.set(record.employeeId, record.employeeName);
-  }
-
-  return [...employees.entries()]
-    .map(([employeeId, employeeName]): EmployeeTitleProfile => {
-      const stats = getEmployeeTitleStats(employeeId, teamMonth, todayDate, todayWorkLog);
-      const titles = getEmployeeTitles(stats);
-      const achievedTitles = titles.filter((title) => title.achieved);
-      return {
-        achievedTitles,
-        employeeId,
-        employeeName,
-        isCurrentEmployee: employeeId === currentEmployeeId,
-        representativeTitle: getRepresentativeTitle(titles),
-        stats,
-        titles,
-      };
-    })
-    .sort(
-      (a, b) =>
-        Number(b.isCurrentEmployee) - Number(a.isCurrentEmployee) ||
-        b.achievedTitles.length - a.achievedTitles.length ||
-        b.representativeTitle.rank - a.representativeTitle.rank ||
-        a.employeeName.localeCompare(b.employeeName, "ko"),
-    );
 }
 
 function TitleSummaryChip({ label, value }: { label: string; value: string }) {
@@ -3405,7 +4327,6 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       description: "이번 달 출근 기록을 남긴 날",
       id: "attendance-starter",
       name: "출근 스타터",
-      rank: 10,
       target: 1,
       tone: "accent",
       unit: "일",
@@ -3415,7 +4336,6 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       description: `현재 연속 출근 ${stats.currentStreak}일`,
       id: "streak-3",
       name: "3일 연속 출근",
-      rank: 40,
       target: 3,
       tone: "accent",
       unit: "일",
@@ -3425,7 +4345,6 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       description: `현재 연속 출근 ${stats.currentStreak}일`,
       id: "streak-5",
       name: "5일 연속 추진력",
-      rank: 75,
       target: 5,
       tone: "warm",
       unit: "일",
@@ -3435,7 +4354,6 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       description: "하루 10시간 이상 근무한 날",
       id: "ten-hour",
       name: "10시간 돌파",
-      rank: 55,
       target: 1,
       tone: "warm",
       unit: "일",
@@ -3445,7 +4363,6 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       description: "하루 12시간 이상 근무한 날",
       id: "twelve-hour",
       name: "12시간 불꽃근무",
-      rank: 95,
       target: 1,
       tone: "danger",
       unit: "일",
@@ -3455,7 +4372,6 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       description: "하루에 완료 업무 5개 이상",
       id: "task-five",
       name: "완료 5개+",
-      rank: 50,
       target: 1,
       tone: "accent",
       unit: "일",
@@ -3465,7 +4381,6 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       description: "업무 3개 이상을 전부 완료한 날",
       id: "perfect-task-day",
       name: "전부 완료",
-      rank: 65,
       target: 1,
       tone: "complete",
       unit: "일",
@@ -3476,7 +4391,6 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       id: "month-40h",
       kind: "duration",
       name: "월간 40시간",
-      rank: 70,
       target: 40 * 60,
       tone: "ink",
       value: stats.totalWorkedMinutes,
@@ -3486,7 +4400,6 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       id: "month-80h",
       kind: "duration",
       name: "월간 80시간",
-      rank: 100,
       target: 80 * 60,
       tone: "danger",
       value: stats.totalWorkedMinutes,
@@ -3495,7 +4408,6 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       description: "업무 댓글 3개 이상",
       id: "comment-connector",
       name: "댓글 연결자",
-      rank: 45,
       target: 3,
       tone: "ink",
       unit: "개",
@@ -3505,7 +4417,6 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
       description: "퇴근 기록까지 남긴 날 5일",
       id: "checkout-routine",
       name: "마무리 루틴",
-      rank: 60,
       target: 5,
       tone: "complete",
       unit: "일",
@@ -3522,20 +4433,9 @@ function getEmployeeTitles(stats: EmployeeTitleStats) {
     .sort(
       (a, b) =>
         Number(b.achieved) - Number(a.achieved) ||
-        b.rank - a.rank ||
         b.progress - a.progress ||
-        a.name.localeCompare(b.name, "ko"),
+        a.target - b.target,
     );
-}
-
-function getRepresentativeTitle(titles: EmployeeTitle[]) {
-  return [...titles].sort(
-    (a, b) =>
-      Number(b.achieved) - Number(a.achieved) ||
-      b.rank - a.rank ||
-      b.progress - a.progress ||
-      a.name.localeCompare(b.name, "ko"),
-  )[0];
 }
 
 function getCurrentAttendanceStreak(records: TeamAttendanceRecord[], todayDate?: string) {
