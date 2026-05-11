@@ -2936,7 +2936,7 @@ function TodayTeamTasks({ record }: { record: TeamAttendanceRecord }) {
     <div
       className={`mt-3 space-y-3 ${
         shouldScroll
-          ? "team-task-scroll max-h-[26rem] overflow-y-auto overscroll-contain pr-1.5"
+          ? "team-task-scroll max-h-[26rem] overflow-y-auto overscroll-contain rounded px-1.5 py-1"
           : ""
       }`}
     >
