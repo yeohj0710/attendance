@@ -1,14 +1,14 @@
 import { requireAuth } from "@/lib/auth";
 import { cancelCheckOut } from "@/lib/attendance";
-import { assertAttendanceActionAllowed } from "@/lib/device";
+import { assertOfficeDesktopRequest } from "@/lib/device";
 import { withApi } from "@/lib/http";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   return withApi(async () => {
+    assertOfficeDesktopRequest(request);
     const auth = await requireAuth(request);
-    assertAttendanceActionAllowed(request);
     const record = await cancelCheckOut(auth);
 
     return Response.json({ record });

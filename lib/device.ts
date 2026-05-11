@@ -63,12 +63,6 @@ export function assertOfficeDesktopRequest(request: Request) {
   }
 }
 
-export function assertAttendanceActionAllowed(request: Request) {
-  if (!isOfficeIp(getClientIp(request))) {
-    forbidden(getOfficeNetworkMessage());
-  }
-}
-
 export function isLikelyDesktopRequest(request: Request) {
   const mobileHint = request.headers.get("sec-ch-ua-mobile");
   if (mobileHint === "?1") {
