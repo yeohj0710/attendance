@@ -63,12 +63,10 @@ export function assertOfficeDesktopRequest(request: Request) {
   }
 }
 
-export async function assertAttendanceActionAllowed(auth: AuthContext, request: Request) {
-  if (isOfficeIp(getClientIp(request))) {
-    return null;
+export function assertAttendanceActionAllowed(request: Request) {
+  if (!isOfficeIp(getClientIp(request))) {
+    forbidden(getOfficeNetworkMessage());
   }
-
-  return verifyApprovedDevice(auth, request);
 }
 
 export function isLikelyDesktopRequest(request: Request) {
