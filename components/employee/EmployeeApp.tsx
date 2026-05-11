@@ -3270,7 +3270,9 @@ function MyTitlesPanel({
 
   return (
     <div className="mt-4 border-t border-line pt-4">
-      <div className="title-quest-panel rounded-lg border border-slate-300 bg-white p-4 shadow-panel">
+      <div
+        className={`title-quest-panel title-quest-panel-${representativeTitle.rarity} rounded-lg border border-slate-300 bg-white p-4 shadow-panel`}
+      >
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(16rem,0.85fr)]">
           <div className="min-w-0">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -3294,6 +3296,12 @@ function MyTitlesPanel({
               </button>
             </div>
 
+            <TitleQuestScene
+              level={levelInfo.level}
+              rarity={representativeTitle.rarity}
+              totalXp={totalXp}
+            />
+
             <div className="mt-4 grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)]">
               <TitleMedal title={representativeTitle} />
               <div className="min-w-0">
@@ -3303,7 +3311,7 @@ function MyTitlesPanel({
                     {levelInfo.nextXp > 0 ? `${levelInfo.nextXp} XP 남음` : "최고 레벨"}
                   </span>
                 </div>
-                <div className="mt-2 h-3 overflow-hidden rounded-full bg-slate-200">
+                <div className="title-progress-track title-progress-track-main mt-2 h-3 overflow-hidden rounded-full bg-slate-200">
                   <div
                     className="title-xp-bar h-full rounded-full"
                     style={{ width: `${Math.round(levelInfo.progress * 100)}%` }}
@@ -3333,7 +3341,7 @@ function MyTitlesPanel({
             </div>
           </div>
 
-          <div className="rounded border border-slate-300 bg-white/80 p-3">
+          <div className="title-next-panel rounded border border-slate-300 bg-white/80 p-3">
             <div className="flex items-center justify-between gap-3">
               <h4 className="text-sm font-black text-ink">다음에 열릴 칭호</h4>
               <span className="rounded-full border border-accent/25 bg-accentSoft px-2 py-0.5 text-[11px] font-bold text-accent">
@@ -3386,6 +3394,40 @@ function MyTitlesPanel({
           totalXp={selectedCompanyTotalXp}
         />
       ) : null}
+    </div>
+  );
+}
+
+function TitleQuestScene({
+  level,
+  rarity,
+  totalXp,
+}: {
+  level: number;
+  rarity: QuestTitleRarity;
+  totalXp: number;
+}) {
+  return (
+    <div className={`title-quest-scene title-quest-scene-${rarity}`} aria-hidden="true">
+      <span className="title-scene-grid" />
+      <span className="title-scene-worker">
+        <span className="title-scene-head">
+          <span />
+        </span>
+        <span className="title-scene-body" />
+        <span className="title-scene-arm title-scene-arm-left" />
+        <span className="title-scene-arm title-scene-arm-right" />
+      </span>
+      <span className="title-scene-desk" />
+      <span className="title-scene-monitor">
+        <span />
+        <span />
+      </span>
+      <span className="title-scene-trophy">
+        <span />
+      </span>
+      <span className="title-scene-level">LV {level}</span>
+      <span className="title-scene-xp">{totalXp.toLocaleString()} XP</span>
     </div>
   );
 }
@@ -3467,7 +3509,9 @@ function CompanyTitleGalleryCard({
   const progressPercent = Math.round(entry.levelInfo.progress * 100);
 
   return (
-    <div className="rounded border border-slate-300/80 bg-white/72 px-3 py-3">
+    <div
+      className={`title-rival-card title-rival-card-${entry.representativeTitle.rarity} rounded border border-slate-300/80 bg-white/72 px-3 py-3`}
+    >
       <div className="flex items-start gap-3">
         <TitleMedal small title={entry.representativeTitle} />
         <div className="min-w-0 flex-1">
@@ -3483,7 +3527,7 @@ function CompanyTitleGalleryCard({
             대표 칭호 · {entry.representativeTitle.name}
           </p>
           <div className="mt-2 flex items-center gap-2">
-            <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200">
+            <div className="title-progress-track h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200">
               <div className="title-xp-bar h-full rounded-full" style={{ width: `${progressPercent}%` }} />
             </div>
             <span className="shrink-0 text-[11px] font-bold text-slate-500">
@@ -3543,7 +3587,7 @@ function TitleCollectionModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-3 py-5">
       <div
         aria-modal="true"
-        className="flex max-h-[86dvh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl"
+        className="title-modal flex max-h-[86dvh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl"
         role="dialog"
       >
         <div className="title-collection-header border-b border-line px-4 py-4">
@@ -3605,7 +3649,11 @@ function TitleCollectionModal({
 
 function TitleProgressCard({ compact = false, title }: { compact?: boolean; title: QuestTitle }) {
   return (
-    <div className={`title-card rounded border p-3 ${getQuestTitleCardClassName(title)}`}>
+    <div
+      className={`title-card title-card-${title.rarity} title-card-${title.category} ${
+        title.achieved ? "title-card-achieved" : "title-card-progress"
+      } rounded border p-3 ${getQuestTitleCardClassName(title)}`}
+    >
       <div className="flex items-start gap-3">
         <TitleMedal small={compact} title={title} />
         <div className="min-w-0 flex-1">
@@ -3633,7 +3681,7 @@ function TitleProgressCard({ compact = false, title }: { compact?: boolean; titl
             <span>{formatQuestTitleProgressValue(title)}</span>
             <span>{Math.round(title.progress * 100)}%</span>
           </div>
-          <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-200/80">
+          <div className="title-progress-track mt-1.5 h-2 overflow-hidden rounded-full bg-slate-200/80">
             <div
               className={`h-full rounded-full ${getQuestTitleProgressClassName(title)}`}
               style={{ width: `${getQuestTitleProgressWidth(title)}%` }}
@@ -4238,7 +4286,7 @@ function LegacyMyTitlesPanel({
 
 function TitleSummaryChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border border-line bg-white/75 px-3 py-2">
+    <div className="title-summary-chip rounded border border-line bg-white/75 px-3 py-2">
       <p className="font-semibold text-muted">{label}</p>
       <p className="mt-1 text-sm font-bold text-ink">{value}</p>
     </div>

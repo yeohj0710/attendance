@@ -5,6 +5,14 @@ const config: Config = {
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
   ],
+  safelist: [
+    {
+      pattern: /title-(quest-panel|quest-scene|card|rival-card|medal)-(bronze|silver|gold|platinum|legend)/,
+    },
+    {
+      pattern: /title-card-(attendance|endurance|focus|team)/,
+    },
+  ],
   theme: {
     extend: {
       colors: {
