@@ -3043,14 +3043,20 @@ function TeamMonthCalendar({
   const calendarGridStyle = {
     gridTemplateColumns: columnWidths.map((width) => `minmax(${width}px, 1fr)`).join(" "),
   };
+  const scrollRangeStyle = {
+    "--calendar-scroll-progress": `${Math.round(scrollProgress * 100)}%`,
+  } as CSSProperties;
 
   return (
     <div className="mt-3">
       {canScroll ? (
-        <div className="mb-2 flex items-center gap-2 rounded border border-line bg-field/60 px-2 py-1.5">
+        <div className="mb-2 flex items-center gap-2 rounded-md border border-line bg-white px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+          <span className="hidden shrink-0 text-[10px] font-bold tracking-[0.08em] text-muted sm:inline">
+            SCROLL
+          </span>
           <button
             aria-label="달력 왼쪽으로 이동"
-            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-line bg-white text-sm font-bold text-muted transition hover:border-slate-300 hover:bg-field hover:text-ink"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-line bg-field text-sm font-bold text-muted transition hover:border-slate-300 hover:bg-slate-100 hover:text-ink"
             onClick={() => scrollCalendar(-260)}
             type="button"
           >
@@ -3068,12 +3074,16 @@ function TeamMonthCalendar({
               element.scrollLeft = (Number(event.target.value) / 100) * maxScrollLeft;
               updateScrollProgress();
             }}
+            style={scrollRangeStyle}
             type="range"
             value={Math.round(scrollProgress * 100)}
           />
+          <span className="w-9 shrink-0 text-right text-[10px] font-bold text-muted">
+            {Math.round(scrollProgress * 100)}%
+          </span>
           <button
             aria-label="달력 오른쪽으로 이동"
-            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-line bg-white text-sm font-bold text-muted transition hover:border-slate-300 hover:bg-field hover:text-ink"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-line bg-field text-sm font-bold text-muted transition hover:border-slate-300 hover:bg-slate-100 hover:text-ink"
             onClick={() => scrollCalendar(260)}
             type="button"
           >
