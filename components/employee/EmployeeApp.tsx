@@ -1771,13 +1771,13 @@ export function EmployeeApp() {
       !formerTeamMemberNames.has(record.employeeName),
   );
   const liveDeskRecords = getLiveDeskRecords({
-    currentEmployeeId: employee.id,
     currentRecord,
     employee,
     records: workingTeamRecords,
+    shuffleSeed: deskRefreshSeed,
     todayWorkLog,
   });
-  const visibleTeamRecords = workingTeamRecords.filter(
+  const visibleTeamRecords = liveDeskRecords.filter(
     (record) => record.employeeId !== employee.id,
   );
   const titleSummary =
@@ -2851,16 +2851,16 @@ function getDeskEventLabel(parts: { month: number; day: number }) {
 }
 
 function getLiveDeskRecords({
-  currentEmployeeId,
   currentRecord,
   employee,
   records,
+  shuffleSeed,
   todayWorkLog,
 }: {
-  currentEmployeeId: string;
   currentRecord: AttendanceRecord | null | undefined;
   employee: Employee;
   records: TeamAttendanceRecord[];
+  shuffleSeed: number;
   todayWorkLog: WorkLog | null;
 }) {
   const currentEmployeeRecord =
@@ -2887,10 +2887,10 @@ function getLiveDeskRecords({
       ]
     : records;
 
-  return [...mergedRecords].sort(
-    (a, b) =>
-      Number(b.employeeId === currentEmployeeId) - Number(a.employeeId === currentEmployeeId) ||
-      a.employeeName.localeCompare(b.employeeName, "ko"),
+  return getSeededShuffledItems(
+    mergedRecords,
+    shuffleSeed,
+    (record) => `${record.employeeId}:${record.workDate}`,
   );
 }
 
@@ -2949,6 +2949,14 @@ function hashString(value: string) {
 
 function pickBySeed<T>(items: T[], seed: number) {
   return items[Math.abs(seed) % items.length];
+}
+
+function getSeededShuffledItems<T>(items: T[], seed: number, getKey: (item: T) => string) {
+  return [...items].sort((a, b) => {
+    const aKey = getKey(a);
+    const bKey = getKey(b);
+    return hashString(`${seed}:${aKey}`) - hashString(`${seed}:${bKey}`) || aKey.localeCompare(bKey);
+  });
 }
 
 function GreetingTicker({
@@ -3422,6 +3430,7 @@ function MyTitlesPanel({
   const [filter, setFilter] = useState<QuestTitleFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<QuestTitleCategoryFilter>("all");
   const [sortMode, setSortMode] = useState<QuestTitleSortMode>("recommended");
+  const [titleShuffleSeed] = useState(() => Math.floor(Math.random() * 1_000_000));
 
   if (!teamMonth || !titleProfile) {
     return null;
@@ -3434,7 +3443,13 @@ function MyTitlesPanel({
   const levelInfo = getTitleLevelInfo(totalXp);
   const representativeTitle = getRepresentativeQuestTitle(titles);
   const nextTitles = getNextQuestTitles(titles);
-  const collectionPreviewTitles = getVisibleQuestTitles(titles, "all", "all", "recommended");
+  const collectionPreviewTitles = getVisibleQuestTitles(
+    titles,
+    "all",
+    "all",
+    "recommended",
+    titleShuffleSeed,
+  );
   const completionRate = titles.length ? achievedTitles.length / titles.length : 0;
   const monthlyDoneSummary =
     monthlyStats.totalTasks > 0
@@ -3662,6 +3677,7 @@ function MyTitlesPanel({
           onSortModeChange={setSortMode}
           sortMode={sortMode}
           stats={titleProfile.stats}
+          shuffleSeed={titleShuffleSeed}
           titles={titles}
           totalXp={totalXp}
         />
@@ -3687,6 +3703,7 @@ function MyTitlesPanel({
           ownerName={selectedCompanyTitleProfile.employeeName}
           sortMode={sortMode}
           stats={selectedCompanyTitleProfile.stats}
+          shuffleSeed={titleShuffleSeed}
           titles={selectedCompanyTitles}
           totalXp={selectedCompanyTotalXp}
         />
@@ -3882,6 +3899,7 @@ function TitleCollectionModal({
   ownerName,
   sortMode,
   stats,
+  shuffleSeed,
   titles,
   totalXp,
 }: {
@@ -3897,6 +3915,7 @@ function TitleCollectionModal({
   ownerName?: string;
   sortMode: QuestTitleSortMode;
   stats: CareerTitleStats;
+  shuffleSeed: number;
   titles: QuestTitle[];
   totalXp: number;
 }) {
@@ -3922,7 +3941,7 @@ function TitleCollectionModal({
   const achievedCount = titles.filter((title) => title.achieved).length;
   const hiddenCount = titles.filter((title) => title.hidden && !title.achieved).length;
   const progressCount = titles.length - achievedCount;
-  const visibleTitles = getVisibleQuestTitles(titles, filter, categoryFilter, sortMode);
+  const visibleTitles = getVisibleQuestTitles(titles, filter, categoryFilter, sortMode, shuffleSeed);
 
   return (
     <div
@@ -5949,6 +5968,7 @@ function getVisibleQuestTitles(
   filter: QuestTitleFilter,
   categoryFilter: QuestTitleCategoryFilter,
   sortMode: QuestTitleSortMode,
+  shuffleSeed?: number,
 ) {
   const filteredTitles = titles.filter((title) => {
     if (filter === "achieved" && !title.achieved) return false;
@@ -5957,6 +5977,15 @@ function getVisibleQuestTitles(
     if (categoryFilter !== "all" && title.category !== categoryFilter) return false;
     return true;
   });
+
+  if (
+    shuffleSeed !== undefined &&
+    filter === "all" &&
+    categoryFilter === "all" &&
+    sortMode === "recommended"
+  ) {
+    return getSeededShuffledItems(filteredTitles, shuffleSeed, (title) => title.id);
+  }
 
   return [...filteredTitles].sort((a, b) => compareQuestTitles(a, b, sortMode));
 }
