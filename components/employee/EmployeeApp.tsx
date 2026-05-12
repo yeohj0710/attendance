@@ -2997,13 +2997,13 @@ function GreetingTicker({
 
 function GreetingTickerLine({ animated, message }: { animated?: boolean; message: string }) {
   return (
-    <div className="flex items-center justify-center gap-2">
+    <div className="flex min-h-[2.875rem] items-center justify-center gap-2">
       <span
         aria-hidden="true"
         className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent shadow-[0_0_0_4px_rgba(69,104,245,0.10)]"
       />
       <p
-        className={`${animated ? "greeting-marquee-line " : ""}min-w-0 truncate whitespace-nowrap text-sm font-semibold leading-relaxed text-muted`}
+        className={`${animated ? "greeting-marquee-line " : ""}greeting-ticker-text min-w-0 text-left text-sm font-semibold leading-relaxed text-muted`}
       >
         {message}
       </p>

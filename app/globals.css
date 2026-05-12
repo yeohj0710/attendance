@@ -103,6 +103,14 @@ button:disabled {
     animation: greeting-slide-in 420ms ease-out both;
   }
 
+  .greeting-ticker-text {
+    display: -webkit-box;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
   .work-status-pill {
     position: relative;
     isolation: isolate;
