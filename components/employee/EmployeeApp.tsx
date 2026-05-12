@@ -313,6 +313,7 @@ export function EmployeeApp() {
   const todayWorkLogSaveSeqRef = useRef(0);
   const workLogSaveChainRef = useRef<Promise<void>>(Promise.resolve());
   const todayWorkLogSaveChainRef = useRef<Promise<void>>(Promise.resolve());
+  const titleHintSeedRef = useRef(Math.random());
   const prefetchingWorkLogKeysRef = useRef(new Set<string>());
   const workLogShareMessageTimerRef = useRef<number | null>(null);
   const commentNotificationCheckedRef = useRef(false);
@@ -1777,6 +1778,10 @@ export function EmployeeApp() {
   );
   const titleSummary =
     !isSharedView && titleProfile ? getCareerTitleSummary(titleProfile.stats) : null;
+  const titleRequirementHint =
+    !isSharedView && titleProfile
+      ? getRandomAchievedQuestTitleRequirement(titleProfile.stats, titleHintSeedRef.current)
+      : null;
 
   function scrollToTitleSection() {
     const section = titleSectionRef.current;
@@ -1802,7 +1807,16 @@ export function EmployeeApp() {
               width={140}
             />
             <p className="text-xs font-semibold text-muted">{formatKstClock(clock)}</p>
-            <h1 className="mt-1 text-2xl font-bold text-ink">{employee.name}</h1>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-bold text-ink">{employee.name}</h1>
+              {titleSummary ? (
+                <TitleTopHint
+                  detail={titleRequirementHint}
+                  onOpen={scrollToTitleSection}
+                  summary={titleSummary}
+                />
+              ) : null}
+            </div>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-2">
             <span
@@ -1825,9 +1839,6 @@ export function EmployeeApp() {
             )}
           </div>
         </div>
-        {titleSummary ? (
-          <TitleTopHint onOpen={scrollToTitleSection} summary={titleSummary} />
-        ) : null}
         <GreetingTicker
           currentIndex={greetingIndex}
           message={greetingMessages[greetingIndex]}
@@ -3276,25 +3287,29 @@ const titleLevelThresholds = [
 ];
 
 function TitleTopHint({
+  detail,
   onOpen,
   summary,
 }: {
+  detail?: string | null;
   onOpen: () => void;
   summary: CareerTitleSummary;
 }) {
   return (
     <button
-      className="mt-3 flex w-full items-center justify-between gap-3 rounded border border-line bg-field/70 px-3 py-2 text-left text-xs transition hover:border-accent/25 hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-line bg-field/80 px-2.5 py-1 text-left text-[11px] font-bold text-slate-600 transition hover:border-accent/30 hover:bg-white hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       onClick={onOpen}
       type="button"
     >
-      <span className="min-w-0">
-        <span className="font-black text-ink">칭호 기록</span>
-        <span className="ml-2 inline-block max-w-[11rem] truncate align-bottom font-semibold text-muted sm:max-w-[18rem]">
-          {summary.representativeTitle.name}
-        </span>
+      <span className="min-w-0 truncate">
+        <span className="font-black text-ink">{summary.representativeTitle.name}</span>
+        {detail ? (
+          <span className="ml-1 hidden max-w-[12rem] truncate align-bottom text-slate-500 sm:inline-block">
+            · {detail}
+          </span>
+        ) : null}
       </span>
-      <span className="shrink-0 rounded-full border border-slate-300 bg-white px-2 py-0.5 font-black text-slate-600">
+      <span className="shrink-0 rounded-full border border-slate-300 bg-white px-1.5 py-0.5 font-black text-slate-600">
         Lv.{summary.levelInfo.level} · {summary.achievedCount}/{summary.titleCount}
       </span>
     </button>
@@ -3340,6 +3355,7 @@ function MyTitlesPanel({
   const levelInfo = getTitleLevelInfo(totalXp);
   const representativeTitle = getRepresentativeQuestTitle(titles);
   const nextTitles = getNextQuestTitles(titles);
+  const collectionPreviewTitles = getVisibleQuestTitles(titles, "all", "all", "recommended");
   const completionRate = titles.length ? achievedTitles.length / titles.length : 0;
   const monthlyDoneSummary =
     monthlyStats.totalTasks > 0
@@ -3357,7 +3373,12 @@ function MyTitlesPanel({
   return (
     <div className="mt-4 border-t border-line pt-4">
       <div
-        className={`title-quest-panel title-quest-panel-${representativeTitle.rarity} rounded-lg border border-slate-300 bg-white p-3 shadow-panel`}
+        className={`title-quest-panel title-quest-panel-${representativeTitle.rarity} cursor-pointer rounded-lg border border-slate-300 bg-white p-3 shadow-panel`}
+        onClick={(event) => {
+          if (shouldOpenTitleCollectionFromTarget(event.target)) {
+            setIsCollectionOpen(true);
+          }
+        }}
       >
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(15rem,0.85fr)]">
           <div className="min-w-0">
@@ -3377,7 +3398,10 @@ function MyTitlesPanel({
                 {onCopyShare ? (
                   <button
                     className="secondary-button px-2.5 py-1.5 text-xs"
-                    onClick={onCopyShare}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onCopyShare();
+                    }}
                     type="button"
                   >
                     칭호 공유
@@ -3385,7 +3409,10 @@ function MyTitlesPanel({
                 ) : null}
                 <button
                   className="secondary-button px-2.5 py-1.5 text-xs"
-                  onClick={() => setIsCollectionOpen(true)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setIsCollectionOpen(true);
+                  }}
                   type="button"
                 >
                   칭호 도감
@@ -3454,6 +3481,22 @@ function MyTitlesPanel({
                   모든 칭호를 열었습니다.
                 </p>
               ) : null}
+            </div>
+
+            <div className="mt-3 border-t border-white/70 pt-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <h4 className="text-sm font-black text-ink">칭호 도감</h4>
+                <span className="rounded-full border border-slate-300 bg-white/85 px-2 py-0.5 text-[11px] font-black text-slate-600">
+                  전체 {titles.length}개
+                </span>
+              </div>
+              <div className="title-inline-collection mt-2 max-h-[22rem] overflow-y-auto overscroll-contain pr-1">
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(9.75rem,1fr))] gap-1.5">
+                  {collectionPreviewTitles.map((title) => (
+                    <TitleProgressCard compact key={title.id} title={title} />
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -3618,10 +3661,14 @@ function CompanyTitleGalleryCard({
     <div
       aria-label={`${entry.profile.employeeName || "이름 없음"} 칭호 도감 보기`}
       className={`title-rival-card title-rival-card-${entry.representativeTitle.rarity} group w-full cursor-pointer rounded border border-slate-300/80 bg-white/72 px-2.5 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent`}
-      onClick={() => onOpenProfile(entry.profile)}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpenProfile(entry.profile);
+      }}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
+          event.stopPropagation();
           onOpenProfile(entry.profile);
         }
       }}
@@ -3695,13 +3742,23 @@ function TitleCollectionModal({
   totalXp: number;
 }) {
   useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const previousOverscrollBehavior = document.body.style.overscrollBehavior;
+
+    document.body.style.overflow = "hidden";
+    document.body.style.overscrollBehavior = "contain";
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         onClose();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      document.body.style.overscrollBehavior = previousOverscrollBehavior;
+    };
   }, [onClose]);
 
   const achievedCount = titles.filter((title) => title.achieved).length;
@@ -3710,7 +3767,14 @@ function TitleCollectionModal({
   const visibleTitles = getVisibleQuestTitles(titles, filter, categoryFilter, sortMode);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-2.5 py-3">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden overscroll-contain bg-slate-950/45 px-2.5 py-3"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
       <div
         aria-modal="true"
         className="title-modal flex max-h-[76dvh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl"
@@ -3729,18 +3793,20 @@ function TitleCollectionModal({
                 Lv.{levelInfo.level} · {totalXp} XP · 누적 출근 {stats.attendanceDays}일
               </p>
             </div>
-            {onCopyShare ? (
-              <button
-                className="secondary-button px-3 py-2 text-xs"
-                onClick={onCopyShare}
-                type="button"
-              >
-                공유
+            <div className="flex shrink-0 items-center gap-2">
+              {onCopyShare ? (
+                <button
+                  className="secondary-button px-3 py-2 text-xs"
+                  onClick={onCopyShare}
+                  type="button"
+                >
+                  공유
+                </button>
+              ) : null}
+              <button className="secondary-button px-3 py-2 text-xs" onClick={onClose} type="button">
+                닫기
               </button>
-            ) : null}
-            <button className="secondary-button px-3 py-2 text-xs" onClick={onClose} type="button">
-              닫기
-            </button>
+            </div>
           </div>
 
           <div className="mt-2.5 grid gap-1.5 text-xs sm:grid-cols-4">
@@ -3811,8 +3877,8 @@ function TitleCollectionModal({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-3">
-          <div className="grid gap-1.5 md:grid-cols-2">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2.5 py-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] gap-1.5">
             {visibleTitles.map((title) => (
               <TitleProgressCard compact key={title.id} title={title} />
             ))}
@@ -5300,6 +5366,24 @@ function getCareerTitleSummary(stats: CareerTitleStats): CareerTitleSummary {
     titleCount: titles.length,
     totalXp,
   };
+}
+
+function getRandomAchievedQuestTitleRequirement(stats: CareerTitleStats, seed: number) {
+  const achievedTitles = getQuestTitles(stats).filter((title) => title.achieved);
+  if (!achievedTitles.length) {
+    return null;
+  }
+
+  const index = Math.floor(seed * achievedTitles.length) % achievedTitles.length;
+  return getQuestTitleRequirement(achievedTitles[index]);
+}
+
+function shouldOpenTitleCollectionFromTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return true;
+  }
+
+  return !target.closest("button, a, input, select, textarea, [role='button']");
 }
 
 function getRepresentativeQuestTitle(titles: QuestTitle[]) {
