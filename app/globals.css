@@ -1845,7 +1845,7 @@ button:disabled {
 
   .title-responsive-title-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.75rem), 1fr));
+    grid-template-columns: 1fr;
   }
 
   .title-modal-summary-grid {
@@ -1904,6 +1904,12 @@ button:disabled {
 
     .title-filter-tabs {
       flex-basis: 100%;
+    }
+  }
+
+  @media (min-width: 360px) {
+    .title-responsive-title-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 

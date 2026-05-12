@@ -4104,7 +4104,7 @@ function TitleDetailModal({
 
           <div className="mt-4">
             <div className="flex items-center justify-between gap-3">
-              <h4 className="text-sm font-black text-ink">획득한 직원</h4>
+              <h4 className="text-sm font-black text-ink">획득한 사람</h4>
               <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-black text-slate-600">
                 {owners.length}명
               </span>
@@ -4126,7 +4126,7 @@ function TitleDetailModal({
               </div>
             ) : (
               <p className="mt-2 rounded border border-line bg-field/70 px-3 py-3 text-sm font-semibold text-muted">
-                아직 이 칭호를 획득한 직원이 없습니다.
+                아직 이 칭호를 획득한 사람이 없습니다.
               </p>
             )}
           </div>
@@ -4561,6 +4561,20 @@ function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
     },
     {
       category: "special",
+      description: `5월 5일처럼 월과 일이 같은 날 출근 ${stats.doubleDateAttendanceDays}일`,
+      hidden: true,
+      hiddenHint: "같은 숫자가 한 번으로 끝나지 않을 때, 달력이 몰래 반응합니다.",
+      id: "double-date-3",
+      name: "달력 암호 해독자",
+      rarity: "legend",
+      target: 3,
+      tone: "accent",
+      unit: "일",
+      value: stats.doubleDateAttendanceDays ?? 0,
+      xp: 1500,
+    },
+    {
+      category: "special",
       description: `09:09처럼 시와 분이 같은 체크 기록 ${stats.sameNumberClockDays}회`,
       hidden: true,
       hiddenHint: "시계 숫자가 거울처럼 맞아떨어질 때 열립니다.",
@@ -4575,6 +4589,20 @@ function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
     },
     {
       category: "special",
+      description: `09:09처럼 시와 분이 같은 체크 기록 ${stats.sameNumberClockDays}회`,
+      hidden: true,
+      hiddenHint: "시계가 몇 번이고 같은 표정을 지을 때 나타납니다.",
+      id: "same-clock-3",
+      name: "시계와 눈 마주친 사람",
+      rarity: "legend",
+      target: 3,
+      tone: "ink",
+      unit: "회",
+      value: stats.sameNumberClockDays ?? 0,
+      xp: 1700,
+    },
+    {
+      category: "special",
       description: `비 오는 출근 시점 기록 ${stats.rainCheckInDays ?? 0}일`,
       id: "rain-checkin-1",
       name: "빗길 체크인",
@@ -4584,6 +4612,20 @@ function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
       unit: "일",
       value: stats.rainCheckInDays ?? 0,
       xp: 520,
+    },
+    {
+      category: "special",
+      description: `비 오는 출근 시점 기록 ${stats.rainCheckInDays ?? 0}일`,
+      hidden: true,
+      hiddenHint: "젖은 아침 로그가 여러 번 겹치면 우산 그림자가 남습니다.",
+      id: "rain-checkin-5",
+      name: "우산 아래 루틴",
+      rarity: "platinum",
+      target: 5,
+      tone: "accent",
+      unit: "일",
+      value: stats.rainCheckInDays ?? 0,
+      xp: 1250,
     },
     {
       category: "special",
@@ -4601,6 +4643,20 @@ function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
     },
     {
       category: "special",
+      description: `눈 오는 출근 시점 기록 ${stats.snowCheckInDays ?? 0}일`,
+      hidden: true,
+      hiddenHint: "하얀 출근길이 우연이 아니게 되면 조용히 열립니다.",
+      id: "snow-checkin-3",
+      name: "설원 출근 루트",
+      rarity: "legend",
+      target: 3,
+      tone: "complete",
+      unit: "일",
+      value: stats.snowCheckInDays ?? 0,
+      xp: 2400,
+    },
+    {
+      category: "special",
       description: `체감 0도 이하 출근 시점 기록 ${stats.freezeCheckInDays ?? 0}일`,
       id: "freeze-checkin-1",
       name: "영하 출근 생존자",
@@ -4610,6 +4666,20 @@ function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
       unit: "일",
       value: stats.freezeCheckInDays ?? 0,
       xp: 860,
+    },
+    {
+      category: "special",
+      description: `체감 0도 이하 출근 시점 기록 ${stats.freezeCheckInDays ?? 0}일`,
+      hidden: true,
+      hiddenHint: "손끝이 차가운 아침에도 루틴이 끊기지 않으면 나타납니다.",
+      id: "freeze-checkin-3",
+      name: "얼음장 모닝콜",
+      rarity: "legend",
+      target: 3,
+      tone: "ink",
+      unit: "일",
+      value: stats.freezeCheckInDays ?? 0,
+      xp: 2100,
     },
     {
       category: "special",
@@ -4625,6 +4695,20 @@ function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
     },
     {
       category: "special",
+      description: `체감 28도 이상 출근 시점 기록 ${stats.heatCheckInDays ?? 0}일`,
+      hidden: true,
+      hiddenHint: "공기가 뜨거운 날의 출근 기록이 쌓이면 열기가 이름을 남깁니다.",
+      id: "heat-checkin-3",
+      name: "아스팔트 예열러",
+      rarity: "legend",
+      target: 3,
+      tone: "danger",
+      unit: "일",
+      value: stats.heatCheckInDays ?? 0,
+      xp: 2100,
+    },
+    {
+      category: "special",
       description: `강풍 퇴근 시점 기록 ${stats.windyCheckOutDays ?? 0}일`,
       id: "windy-checkout-1",
       name: "바람길 퇴근자",
@@ -4634,6 +4718,20 @@ function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
       unit: "일",
       value: stats.windyCheckOutDays ?? 0,
       xp: 620,
+    },
+    {
+      category: "special",
+      description: `강풍 퇴근 시점 기록 ${stats.windyCheckOutDays ?? 0}일`,
+      hidden: true,
+      hiddenHint: "퇴근길 바람이 몇 번이고 등을 밀어줄 때 보입니다.",
+      id: "windy-checkout-3",
+      name: "바람을 타고 퇴근",
+      rarity: "platinum",
+      target: 3,
+      tone: "warm",
+      unit: "일",
+      value: stats.windyCheckOutDays ?? 0,
+      xp: 1450,
     },
   ];
 }
