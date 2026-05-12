@@ -3296,6 +3296,8 @@ type QuestTitleOwner = {
 let bodyScrollLockCount = 0;
 let bodyScrollLockPreviousOverflow = "";
 let bodyScrollLockPreviousOverscrollBehavior = "";
+let modalLayerNextId = 1;
+const modalLayerStack: number[] = [];
 
 function lockBodyScroll() {
   if (typeof document === "undefined") {
@@ -3327,6 +3329,32 @@ function lockBodyScroll() {
       bodyScrollLockPreviousOverscrollBehavior = "";
     }
   };
+}
+
+function useTopModalLayer() {
+  const layerIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const layerId = modalLayerNextId;
+    modalLayerNextId += 1;
+    layerIdRef.current = layerId;
+    modalLayerStack.push(layerId);
+
+    return () => {
+      const layerIndex = modalLayerStack.lastIndexOf(layerId);
+      if (layerIndex >= 0) {
+        modalLayerStack.splice(layerIndex, 1);
+      }
+      if (layerIdRef.current === layerId) {
+        layerIdRef.current = null;
+      }
+    };
+  }, []);
+
+  return useCallback(() => {
+    const layerId = layerIdRef.current;
+    return layerId !== null && modalLayerStack[modalLayerStack.length - 1] === layerId;
+  }, []);
 }
 
 const titleLevelThresholds = [
@@ -3872,11 +3900,15 @@ function TitleCollectionModal({
   titles: QuestTitle[];
   totalXp: number;
 }) {
+  const isTopModalLayer = useTopModalLayer();
+
   useEffect(() => {
     const releaseBodyScrollLock = lockBodyScroll();
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && isTopModalLayer()) {
+        event.preventDefault();
+        event.stopPropagation();
         onClose();
       }
     };
@@ -3885,7 +3917,7 @@ function TitleCollectionModal({
       window.removeEventListener("keydown", handleKeyDown);
       releaseBodyScrollLock();
     };
-  }, [onClose]);
+  }, [isTopModalLayer, onClose]);
 
   const achievedCount = titles.filter((title) => title.achieved).length;
   const hiddenCount = titles.filter((title) => title.hidden && !title.achieved).length;
@@ -3896,7 +3928,8 @@ function TitleCollectionModal({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden overscroll-contain bg-slate-950/45 px-2.5 py-3"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
+        if (event.target === event.currentTarget && isTopModalLayer()) {
+          event.stopPropagation();
           onClose();
         }
       }}
@@ -4033,11 +4066,15 @@ function TitleDetailModal({
   ownerProfile: CompanyTitleProfile;
   title: QuestTitle;
 }) {
+  const isTopModalLayer = useTopModalLayer();
+
   useEffect(() => {
     const releaseBodyScrollLock = lockBodyScroll();
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && isTopModalLayer()) {
+        event.preventDefault();
+        event.stopPropagation();
         onClose();
       }
     };
@@ -4046,7 +4083,7 @@ function TitleDetailModal({
       window.removeEventListener("keydown", handleKeyDown);
       releaseBodyScrollLock();
     };
-  }, [onClose]);
+  }, [isTopModalLayer, onClose]);
 
   const isHiddenLocked = isQuestTitleHiddenLocked(title);
   const owners = getQuestTitleOwners(title.id, comparisonProfiles);
@@ -4064,7 +4101,8 @@ function TitleDetailModal({
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center overflow-hidden overscroll-contain bg-slate-950/50 px-3 py-4"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
+        if (event.target === event.currentTarget && isTopModalLayer()) {
+          event.stopPropagation();
           onClose();
         }
       }}
