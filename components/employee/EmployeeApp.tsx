@@ -321,6 +321,7 @@ export function EmployeeApp() {
   const prefetchingWorkLogKeysRef = useRef(new Set<string>());
   const workLogShareMessageTimerRef = useRef<number | null>(null);
   const commentNotificationCheckedRef = useRef(false);
+  const greetingLoadRequestIdRef = useRef(0);
 
   const load = useCallback(async (storedAuth: StoredAuth, knownEmployee?: Employee) => {
     setMessage("");
@@ -405,11 +406,16 @@ export function EmployeeApp() {
   useEffect(() => {
     if (!auth || !employee || !status?.kstDate) return;
 
+    const requestId = greetingLoadRequestIdRef.current + 1;
+    greetingLoadRequestIdRef.current = requestId;
     const context = getGreetingContext();
     const fallbackMessages = createLocalGreetings(context, "visit", 6);
     setGreetingMessages(fallbackMessages);
     setGreetingIndex(0);
     void fetchGreeting("visit", context).then((nextGreeting) => {
+      if (greetingLoadRequestIdRef.current !== requestId) {
+        return;
+      }
       if (nextGreeting?.messages.length) {
         setGreetingMessages(nextGreeting.messages);
         setGreetingIndex(0);
@@ -426,6 +432,9 @@ export function EmployeeApp() {
     status?.openRecord?.checkOutAt,
     status?.todayRecord?.checkInAt,
     status?.todayRecord?.checkOutAt,
+    todayWorkLog?.workDate,
+    todayWorkLog?.taskCount,
+    todayWorkLog?.doneCount,
     titleProfile?.generatedAt,
   ]);
 
@@ -632,7 +641,17 @@ export function EmployeeApp() {
 
   function getGreetingContext(recordOverride?: AttendanceRecord | null): GreetingContext {
     const greetingRecord = recordOverride ?? status?.openRecord ?? status?.todayRecord ?? null;
-    const myTeamRecord = teamRecords.find((record) => record.employeeId === employee?.id);
+    const todayDate = status?.kstDate ?? greetingRecord?.workDate;
+    const myTeamRecord = teamRecords.find(
+      (record) =>
+        record.employeeId === employee?.id && (!todayDate || record.workDate === todayDate),
+    );
+    const matchingTodayWorkLog =
+      todayWorkLog &&
+      todayWorkLog.employeeId === employee?.id &&
+      todayWorkLog.workDate === todayDate
+        ? todayWorkLog
+        : null;
     const visibleTeamCount = teamRecords.filter(
       (record) =>
         record.checkInAt &&
@@ -643,7 +662,7 @@ export function EmployeeApp() {
 
     return {
       employeeName: employee?.name,
-      kstDate: status?.kstDate ?? greetingRecord?.workDate,
+      kstDate: todayDate,
       record: greetingRecord
         ? {
             workDate: greetingRecord.workDate,
@@ -657,8 +676,8 @@ export function EmployeeApp() {
         checkOutAt: record.checkOutAt,
       })),
       teamCount: visibleTeamCount,
-      taskCount: todayWorkLog?.taskCount ?? myTeamRecord?.taskCount ?? 0,
-      doneCount: todayWorkLog?.doneCount ?? myTeamRecord?.doneCount ?? 0,
+      taskCount: matchingTodayWorkLog?.taskCount ?? myTeamRecord?.taskCount ?? 0,
+      doneCount: matchingTodayWorkLog?.doneCount ?? myTeamRecord?.doneCount ?? 0,
       titleName: titleSummary?.representativeTitle.name,
       titleLevel: titleSummary?.levelInfo.level,
       titleAchievedCount: titleSummary?.achievedCount,
@@ -2997,7 +3016,7 @@ function GreetingTicker({
 
 function GreetingTickerLine({ animated, message }: { animated?: boolean; message: string }) {
   return (
-    <div className="flex min-h-[2.875rem] items-center justify-center gap-2">
+    <div className="flex items-center justify-center gap-2">
       <span
         aria-hidden="true"
         className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent shadow-[0_0_0_4px_rgba(69,104,245,0.10)]"
