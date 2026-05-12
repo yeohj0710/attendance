@@ -6223,7 +6223,7 @@ function LegacyMyTitlesPanel({
         <div>
           <h3 className="text-base font-bold text-ink">나의 칭호</h3>
           <p className="mt-1 text-xs text-muted">
-            이번 달 기록으로 {achievedTitles.length}개 달성했어요. 다음 칭호까지 남은 흐름도 바로 볼 수 있어요.
+            이번 달 기록으로 {achievedTitles.length}개 달성했어요. 다음 칭호까지 남은 진행도도 바로 볼 수 있어요.
           </p>
         </div>
         <span className="rounded-full border border-accent/25 bg-accentSoft px-3 py-1 text-xs font-bold text-accent">

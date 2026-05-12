@@ -605,17 +605,18 @@ function getTitleMessages(profile: GreetingProfile) {
     return [];
   }
 
+  const titleLabel = `'${title.name}'`;
   const messages = [
-    `대표 칭호 '${title.name}' 보유자답게 오늘도 한 줄만 먼저 잡아봐요.`,
-    `칭호 ${title.achievedCount}/${title.titleCount}개까지 열렸어요. 다음 것도 슬슬 보입니다.`,
-    `Lv.${title.level} '${title.name}' 흐름이에요. 오늘 기록도 가볍게 이어가죠.`,
+    `현재 대표 칭호는 ${titleLabel}이에요. 오늘 기록도 가볍게 이어가요.`,
+    `칭호 ${title.achievedCount}/${title.titleCount}개까지 열렸어요. 다음 칭호도 슬슬 보입니다.`,
+    `Lv.${title.level}까지 왔네요. 오늘은 기록 하나만 가볍게 남겨도 좋아요.`,
   ];
 
   if (profile.event === "checkIn") {
-    messages.push(`출근 완료. '${title.name}' 칭호에 어울리게 첫 업무부터 가볍게 갑시다.`);
+    messages.push(`출근 완료. 대표 칭호 ${titleLabel}로 오늘을 시작했어요.`);
   }
   if (profile.event === "checkOut") {
-    messages.push(`오늘도 기록 하나 적립. '${title.name}' 칭호가 더 그럴듯해졌어요.`);
+    messages.push(`퇴근 기록까지 남겼어요. 대표 칭호 ${titleLabel}에 오늘 기록이 하나 더 쌓였네요.`);
   }
 
   return messages;
