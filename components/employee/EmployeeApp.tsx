@@ -3293,6 +3293,42 @@ type QuestTitleOwner = {
   title: QuestTitle;
 };
 
+let bodyScrollLockCount = 0;
+let bodyScrollLockPreviousOverflow = "";
+let bodyScrollLockPreviousOverscrollBehavior = "";
+
+function lockBodyScroll() {
+  if (typeof document === "undefined") {
+    return () => undefined;
+  }
+
+  if (bodyScrollLockCount === 0) {
+    bodyScrollLockPreviousOverflow = document.body.style.overflow;
+    bodyScrollLockPreviousOverscrollBehavior = document.body.style.overscrollBehavior;
+    document.body.style.overflow = "hidden";
+    document.body.style.overscrollBehavior = "contain";
+  }
+
+  bodyScrollLockCount += 1;
+  let released = false;
+
+  return () => {
+    if (released) {
+      return;
+    }
+
+    released = true;
+    bodyScrollLockCount = Math.max(0, bodyScrollLockCount - 1);
+
+    if (bodyScrollLockCount === 0) {
+      document.body.style.overflow = bodyScrollLockPreviousOverflow;
+      document.body.style.overscrollBehavior = bodyScrollLockPreviousOverscrollBehavior;
+      bodyScrollLockPreviousOverflow = "";
+      bodyScrollLockPreviousOverscrollBehavior = "";
+    }
+  };
+}
+
 const titleLevelThresholds = [
   0, 120, 320, 620, 1000, 1500, 2200, 3100, 4300, 5800, 7600, 9800, 12500, 15800,
   19800, 24600, 30500, 37600, 46000, 56000, 68000, 82000, 99000, 118000, 140000,
@@ -3837,11 +3873,7 @@ function TitleCollectionModal({
   totalXp: number;
 }) {
   useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    const previousOverscrollBehavior = document.body.style.overscrollBehavior;
-
-    document.body.style.overflow = "hidden";
-    document.body.style.overscrollBehavior = "contain";
+    const releaseBodyScrollLock = lockBodyScroll();
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -3851,8 +3883,7 @@ function TitleCollectionModal({
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = previousOverflow;
-      document.body.style.overscrollBehavior = previousOverscrollBehavior;
+      releaseBodyScrollLock();
     };
   }, [onClose]);
 
@@ -4003,11 +4034,7 @@ function TitleDetailModal({
   title: QuestTitle;
 }) {
   useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    const previousOverscrollBehavior = document.body.style.overscrollBehavior;
-
-    document.body.style.overflow = "hidden";
-    document.body.style.overscrollBehavior = "contain";
+    const releaseBodyScrollLock = lockBodyScroll();
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -4017,8 +4044,7 @@ function TitleDetailModal({
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = previousOverflow;
-      document.body.style.overscrollBehavior = previousOverscrollBehavior;
+      releaseBodyScrollLock();
     };
   }, [onClose]);
 
