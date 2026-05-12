@@ -572,7 +572,36 @@ export async function getTeamMonthAttendance(monthValue?: string | null) {
       taskCount: workSummaryByKey.get(`${record.employeeId}:${record.workDate}`)?.taskCount ?? 0,
       doneCount: workSummaryByKey.get(`${record.employeeId}:${record.workDate}`)?.doneCount ?? 0,
       commentCount: workSummaryByKey.get(`${record.employeeId}:${record.workDate}`)?.commentCount ?? 0,
-    }))
+    }));
+  const attendanceRecordKeys = new Set(
+    records.map((record) => `${record.employeeId}:${record.workDate}`),
+  );
+  const workLogOnlyRecords = workLogSummaries
+    .filter(
+      (summary) =>
+        employees.has(summary.employeeId) &&
+        !attendanceRecordKeys.has(`${summary.employeeId}:${summary.workDate}`) &&
+        (summary.taskCount > 0 || summary.commentCount > 0),
+    )
+    .map((summary) => {
+      const employee = employees.get(summary.employeeId);
+
+      return {
+        employeeId: summary.employeeId,
+        employeeNo: employee?.employee_no ?? "",
+        employeeName: employee?.name ?? "",
+        workDate: summary.workDate,
+        checkInAt: null,
+        checkOutAt: null,
+        workType: "remote" as const,
+        note: null,
+        taskCount: summary.taskCount,
+        doneCount: summary.doneCount,
+        commentCount: summary.commentCount,
+      };
+    });
+
+  const sortedRecords = [...records, ...workLogOnlyRecords]
     .sort(
       (a, b) =>
         a.workDate.localeCompare(b.workDate) ||
@@ -585,7 +614,7 @@ export async function getTeamMonthAttendance(monthValue?: string | null) {
     endDate,
     calendarStartDate,
     calendarEndDate,
-    records,
+    records: sortedRecords,
   };
 }
 

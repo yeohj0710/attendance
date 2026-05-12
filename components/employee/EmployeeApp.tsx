@@ -3491,7 +3491,7 @@ function MyTitlesPanel({
                 </span>
               </div>
               <div className="title-inline-collection mt-2 max-h-[22rem] overflow-y-auto overscroll-contain pr-1">
-                <div className="grid grid-cols-[repeat(auto-fit,minmax(9.75rem,1fr))] gap-1.5">
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                   {collectionPreviewTitles.map((title) => (
                     <TitleProgressCard compact key={title.id} title={title} />
                   ))}
@@ -3878,7 +3878,7 @@ function TitleCollectionModal({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2.5 py-3">
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] gap-1.5">
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {visibleTitles.map((title) => (
               <TitleProgressCard compact key={title.id} title={title} />
             ))}
@@ -6144,7 +6144,7 @@ function TeamCalendarRecord({
   const checkInText = formatKstTime(record.checkInAt);
   const timeRangeText = formatKstTimeRange(record);
   const workedMinutes = getWorkedMinutes(record);
-  const durationText = workedMinutes === null ? "" : formatWorkedDuration(workedMinutes);
+  const durationText = getCalendarRecordDurationText(record, workedMinutes);
   const marker = getCalendarMarker(record, workedMinutes);
   const markerClassName = marker?.className ?? "border-line bg-field/80 text-ink";
 
@@ -6400,6 +6400,7 @@ function WorkLogModal({
             </h3>
             <p className="mt-1 text-xs text-muted">
               {formatKstTimeRange(record)}
+              {getCalendarRecordDurationText(record) ? ` · ${getCalendarRecordDurationText(record)}` : ""}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -7161,6 +7162,25 @@ function getWorkedMinutes(record: Pick<AttendanceRecord, "checkInAt" | "checkOut
   }
 
   return Math.round((checkOut - checkIn) / 60000);
+}
+
+function getCalendarRecordDurationText(
+  record: Pick<TeamAttendanceRecord, "checkInAt" | "checkOutAt" | "commentCount" | "doneCount" | "taskCount">,
+  workedMinutes = getWorkedMinutes(record),
+) {
+  if (workedMinutes !== null) {
+    return formatWorkedDuration(workedMinutes);
+  }
+
+  if (
+    !record.checkInAt &&
+    !record.checkOutAt &&
+    ((record.taskCount ?? 0) > 0 || (record.doneCount ?? 0) > 0 || (record.commentCount ?? 0) > 0)
+  ) {
+    return "0분";
+  }
+
+  return "";
 }
 
 function formatWorkedDuration(minutes: number) {
