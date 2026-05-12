@@ -6864,6 +6864,7 @@ function WorkLogModal({
   workLog: WorkLog | null;
 }) {
   const tasks = workLog?.tasks ?? [];
+  const displayTasks = getCompletedFirstTaskDisplay(tasks);
   const comments = workLog?.comments ?? [];
   const holidayName = getPublicHolidayName(record.workDate);
   const dateToneClassName = getDateToneTextClass(record.workDate);
@@ -6934,7 +6935,7 @@ function WorkLogModal({
                 onToggleTask={onToggleTask}
                 onUpdateTask={onUpdateTask}
                 processingTaskId={processingTaskId}
-                tasks={tasks}
+                tasks={displayTasks}
                 title="오늘의 업무"
               />
 
@@ -8166,6 +8167,17 @@ function withTaskOrder(tasks: WorkTask[]) {
           : (a.order ?? 0) - (b.order ?? 0)) ||
         a.createdAt.localeCompare(b.createdAt),
     );
+}
+
+function getCompletedFirstTaskDisplay(tasks: WorkTask[]) {
+  return [...tasks].sort(
+    (a, b) =>
+      Number(b.done) - Number(a.done) ||
+      (a.done
+        ? getDoneTaskSortOrder(a) - getDoneTaskSortOrder(b)
+        : (getFiniteNumber(a.order) ?? 0) - (getFiniteNumber(b.order) ?? 0)) ||
+      a.createdAt.localeCompare(b.createdAt),
+  );
 }
 
 function getNextTaskOrder(tasks: WorkTask[]) {
