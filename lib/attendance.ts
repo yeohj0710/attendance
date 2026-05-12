@@ -10,8 +10,18 @@ import {
   type WorkLogSummary,
 } from "@/lib/work-log";
 import type { AuthContext } from "@/lib/auth";
+import { getOfficeWeather } from "@/lib/weather";
 
 export type WorkType = "office" | "remote" | "offsite" | "business_trip";
+
+export type AttendanceWeatherSnapshot = {
+  apparentTemperature: number | null;
+  label: string;
+  precipitation: number | null;
+  recordedAt: string | null;
+  temperature: number | null;
+  windSpeed: number | null;
+};
 
 export type AttendanceRecord = {
   id: string;
@@ -23,6 +33,8 @@ export type AttendanceRecord = {
   checkOutAt: string | null;
   checkInIp: string | null;
   checkOutIp: string | null;
+  checkInWeather: AttendanceWeatherSnapshot | null;
+  checkOutWeather: AttendanceWeatherSnapshot | null;
   checkInDeviceId?: string | null;
   checkOutDeviceId?: string | null;
   workType: WorkType;
@@ -66,7 +78,8 @@ export type EmployeeTitleProfile = {
       holidayLongWorkDays: number;
       latestRecordDate: string | null;
       lateCheckInDays: number;
-      luckyDropDays: number;
+      freezeCheckInDays: number;
+      heatCheckInDays: number;
       mondayAttendanceDays: number;
       monthEndCheckOutDays: number;
       monthStartAttendanceDays: number;
@@ -74,8 +87,10 @@ export type EmployeeTitleProfile = {
       nightCheckOutDays: number;
       perfectTaskDays: number;
       publicHolidayAttendanceDays: number;
+      rainCheckInDays: number;
       sameNumberClockDays: number;
       seollalAttendanceDays: number;
+      snowCheckInDays: number;
       saturdayAttendanceDays: number;
       substituteHolidayAttendanceDays: number;
       sundayAttendanceDays: number;
@@ -89,6 +104,7 @@ export type EmployeeTitleProfile = {
       twelveHourDays: number;
       weekendAttendanceDays: number;
       weekendLongWorkDays: number;
+      windyCheckOutDays: number;
     };
   };
 
@@ -107,6 +123,8 @@ type AttendanceData = {
   check_out_ip?: string | null;
   check_in_session_id?: string | null;
   check_out_session_id?: string | null;
+  check_in_weather?: AttendanceWeatherData | null;
+  check_out_weather?: AttendanceWeatherData | null;
   work_type: WorkType;
   note?: string | null;
   source: "employee" | "admin";
@@ -136,6 +154,15 @@ const fixedPublicHolidayNames: Record<string, string> = {
   "10-03": "개천절",
   "10-09": "한글날",
   "12-25": "성탄절",
+};
+
+type AttendanceWeatherData = {
+  apparent_temperature?: number | null;
+  label?: string | null;
+  precipitation?: number | null;
+  recorded_at?: string | null;
+  temperature?: number | null;
+  wind_speed?: number | null;
 };
 const publicHolidayNamesByDate: Record<string, string> = {
   "2026-02-16": "설 연휴",
@@ -218,24 +245,28 @@ export async function getEmployeeTitleProfile(employeeId: string): Promise<Emplo
   let doubleDateAttendanceDays = 0;
   let earlyCheckInDays = 0;
   let eveningCheckInDays = 0;
+  let freezeCheckInDays = 0;
   let fridayCheckOutDays = 0;
+  let heatCheckInDays = 0;
   let holidayLongWorkDays = 0;
   let lateCheckInDays = 0;
-  let luckyDropDays = 0;
   let mondayAttendanceDays = 0;
   let monthEndCheckOutDays = 0;
   let monthStartAttendanceDays = 0;
   let nextDayCheckOutDays = 0;
   let nightCheckOutDays = 0;
   let publicHolidayAttendanceDays = 0;
+  let rainCheckInDays = 0;
   let sameNumberClockDays = 0;
   let seollalAttendanceDays = 0;
+  let snowCheckInDays = 0;
   let saturdayAttendanceDays = 0;
   let substituteHolidayAttendanceDays = 0;
   let sundayAttendanceDays = 0;
   let chuseokAttendanceDays = 0;
   let weekendAttendanceDays = 0;
   let weekendLongWorkDays = 0;
+  let windyCheckOutDays = 0;
 
   for (const record of attendanceRecords) {
     const hasAttendance = Boolean(record.checkInAt || record.checkOutAt);
@@ -284,9 +315,6 @@ export async function getEmployeeTitleProfile(employeeId: string): Promise<Emplo
       if (Number(record.workDate.slice(8, 10)) <= 3) {
         monthStartAttendanceDays += 1;
       }
-      if (isLuckyTitleDrop(employeeId, record.workDate)) {
-        luckyDropDays += 1;
-      }
     }
     if (record.checkOutAt) {
       checkoutDays += 1;
@@ -311,6 +339,19 @@ export async function getEmployeeTitleProfile(employeeId: string): Promise<Emplo
       if (isSameNumberClock(checkInParts)) {
         sameNumberClockDays += 1;
       }
+      if (record.checkInWeather?.label === "rain") {
+        rainCheckInDays += 1;
+      }
+      if (record.checkInWeather?.label === "snow") {
+        snowCheckInDays += 1;
+      }
+      const checkInTemperature = getWeatherFeelsLike(record.checkInWeather);
+      if (checkInTemperature !== null && checkInTemperature <= 0) {
+        freezeCheckInDays += 1;
+      }
+      if (checkInTemperature !== null && checkInTemperature >= 28) {
+        heatCheckInDays += 1;
+      }
     }
 
     if (checkOutParts) {
@@ -325,6 +366,12 @@ export async function getEmployeeTitleProfile(employeeId: string): Promise<Emplo
       }
       if (isSameNumberClock(checkOutParts)) {
         sameNumberClockDays += 1;
+      }
+      if (
+        record.checkOutWeather?.label === "windy" ||
+        (record.checkOutWeather?.windSpeed ?? 0) >= 22
+      ) {
+        windyCheckOutDays += 1;
       }
     }
 
@@ -391,13 +438,14 @@ export async function getEmployeeTitleProfile(employeeId: string): Promise<Emplo
       doubleDateAttendanceDays,
       earlyCheckInDays,
       eveningCheckInDays,
+      freezeCheckInDays,
       firstRecordDate: sortedRecordDates[0] ?? null,
       fridayCheckOutDays,
       heavyDoneDays,
+      heatCheckInDays,
       holidayLongWorkDays,
       latestRecordDate: sortedRecordDates[sortedRecordDates.length - 1] ?? null,
       lateCheckInDays,
-      luckyDropDays,
       mondayAttendanceDays,
       monthEndCheckOutDays,
       monthStartAttendanceDays,
@@ -405,8 +453,10 @@ export async function getEmployeeTitleProfile(employeeId: string): Promise<Emplo
       nightCheckOutDays,
       perfectTaskDays,
       publicHolidayAttendanceDays,
+      rainCheckInDays,
       sameNumberClockDays,
       seollalAttendanceDays,
+      snowCheckInDays,
       saturdayAttendanceDays,
       substituteHolidayAttendanceDays,
       sundayAttendanceDays,
@@ -420,6 +470,7 @@ export async function getEmployeeTitleProfile(employeeId: string): Promise<Emplo
       twelveHourDays,
       weekendAttendanceDays,
       weekendLongWorkDays,
+      windyCheckOutDays,
     },
   };
 }
@@ -581,7 +632,7 @@ export async function getTeamMonthAttendance(monthValue?: string | null) {
       (summary) =>
         employees.has(summary.employeeId) &&
         !attendanceRecordKeys.has(`${summary.employeeId}:${summary.workDate}`) &&
-        (summary.taskCount > 0 || summary.commentCount > 0),
+        summary.doneCount > 0,
     )
     .map((summary) => {
       const employee = employees.get(summary.employeeId);
@@ -637,6 +688,7 @@ export async function checkIn(auth: AuthContext, ip: string | null) {
 
   const ref = db.collection("attendance_records").doc(attendanceDocId(auth.employee.id, today));
   const now = nowTimestamp();
+  const weather = await createAttendanceWeatherSnapshot();
   const data: AttendanceData = {
     employee_id: auth.employee.id,
     work_date: today,
@@ -646,6 +698,8 @@ export async function checkIn(auth: AuthContext, ip: string | null) {
     check_out_ip: null,
     check_in_session_id: auth.session.id,
     check_out_session_id: null,
+    check_in_weather: weather,
+    check_out_weather: null,
     work_type: "office",
     note: null,
     source: "employee",
@@ -675,6 +729,8 @@ export async function checkOut(auth: AuthContext, ip: string | null) {
     conflict("이미 퇴근 처리되었습니다. 다시 퇴근하려면 퇴근 취소 후 시도하세요.");
   }
 
+  const weather = await createAttendanceWeatherSnapshot();
+
   if (!targetRecord) {
     const ref = db.collection("attendance_records").doc(attendanceDocId(auth.employee.id, workDate));
     const data: AttendanceData = {
@@ -686,6 +742,8 @@ export async function checkOut(auth: AuthContext, ip: string | null) {
       check_out_ip: ip,
       check_in_session_id: null,
       check_out_session_id: auth.session.id,
+      check_in_weather: null,
+      check_out_weather: weather,
       work_type: "office",
       note: "출근 미기록",
       source: "employee",
@@ -704,6 +762,7 @@ export async function checkOut(auth: AuthContext, ip: string | null) {
     check_out_at: now,
     check_out_ip: ip,
     check_out_session_id: auth.session.id,
+    check_out_weather: weather,
     updated_by: auth.employee.id,
     updated_at: nowTimestamp(),
   });
@@ -726,6 +785,7 @@ export async function cancelCheckOut(auth: AuthContext) {
     check_out_at: null,
     check_out_ip: null,
     check_out_session_id: null,
+    check_out_weather: null,
     updated_by: auth.employee.id,
     updated_at: nowTimestamp(),
   });
@@ -913,6 +973,8 @@ export function mapAttendance(
     checkOutAt,
     checkInIp: data.check_in_ip ?? null,
     checkOutIp: data.check_out_ip ?? null,
+    checkInWeather: mapAttendanceWeather(data.check_in_weather),
+    checkOutWeather: mapAttendanceWeather(data.check_out_weather),
     checkInDeviceId: data.check_in_session_id
       ? sessions?.get(data.check_in_session_id)?.device_id ?? null
       : null,
@@ -925,6 +987,43 @@ export function mapAttendance(
     createdAt: timestampToIso(data.created_at) ?? "",
     updatedAt: timestampToIso(data.updated_at) ?? "",
   };
+}
+
+async function createAttendanceWeatherSnapshot(): Promise<AttendanceWeatherData | null> {
+  const weather = await getOfficeWeather().catch(() => null);
+  if (!weather) {
+    return null;
+  }
+
+  return {
+    apparent_temperature: normalizeWeatherNumber(weather.apparentTemperature),
+    label: weather.label,
+    precipitation: normalizeWeatherNumber(weather.precipitation),
+    recorded_at: new Date().toISOString(),
+    temperature: normalizeWeatherNumber(weather.temperature),
+    wind_speed: normalizeWeatherNumber(weather.windSpeed),
+  };
+}
+
+function mapAttendanceWeather(
+  weather: AttendanceWeatherData | null | undefined,
+): AttendanceWeatherSnapshot | null {
+  if (!weather?.label) {
+    return null;
+  }
+
+  return {
+    apparentTemperature: normalizeWeatherNumber(weather.apparent_temperature),
+    label: weather.label,
+    precipitation: normalizeWeatherNumber(weather.precipitation),
+    recordedAt: weather.recorded_at ?? null,
+    temperature: normalizeWeatherNumber(weather.temperature),
+    windSpeed: normalizeWeatherNumber(weather.wind_speed),
+  };
+}
+
+function normalizeWeatherNumber(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 async function getRecordByEmployeeDate(employeeId: string, workDate: string) {
@@ -1114,17 +1213,9 @@ function isSameNumberClock(parts: { hour: number; minute: number }) {
   return parts.hour === parts.minute && parts.hour >= 1 && parts.hour <= 23;
 }
 
-function isLuckyTitleDrop(employeeId: string, workDate: string) {
-  return stableHash(`${employeeId}:${workDate}:title-drop`) % 29 === 0;
-}
-
-function stableHash(value: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
+function getWeatherFeelsLike(weather: AttendanceWeatherSnapshot | null | undefined) {
+  const temperature = weather?.apparentTemperature ?? weather?.temperature;
+  return typeof temperature === "number" && Number.isFinite(temperature) ? temperature : null;
 }
 
 function getCurrentAttendanceStreak(dates: string[], todayDate: string) {

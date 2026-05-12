@@ -1651,6 +1651,47 @@ button:disabled {
     box-shadow: 0 10px 22px -20px rgba(23, 32, 51, 0.58);
   }
 
+  .title-card-button {
+    width: 100%;
+    appearance: none;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+  }
+
+  .title-representative-trigger,
+  .title-medal-trigger {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    padding: 0;
+  }
+
+  .title-representative-trigger:hover {
+    color: var(--title-primary);
+  }
+
+  .title-medal-trigger {
+    display: inline-flex;
+    width: max-content;
+    border-radius: 0.78rem;
+  }
+
+  .title-card-button:focus-visible {
+    outline: 2px solid rgba(69, 104, 245, 0.65);
+    outline-offset: 2px;
+  }
+
+  .title-representative-trigger:focus-visible,
+  .title-medal-trigger:focus-visible {
+    outline: 2px solid rgba(69, 104, 245, 0.65);
+    outline-offset: 3px;
+  }
+
   .title-card {
     animation: none;
   }
@@ -1797,6 +1838,34 @@ button:disabled {
     background: linear-gradient(90deg, rgba(69, 104, 245, 0.72), rgba(34, 197, 94, 0.42), rgba(245, 158, 11, 0.46), rgba(220, 38, 38, 0.58));
   }
 
+  .title-next-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13.25rem), 1fr));
+  }
+
+  .title-responsive-title-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.75rem), 1fr));
+  }
+
+  .title-modal-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .title-modal-control-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .title-filter-tabs {
+    display: grid;
+    flex: 1 1 13.5rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .title-inline-collection {
+    overscroll-behavior: auto;
+  }
+
   .title-modal .title-card {
     padding: 0.5rem;
   }
@@ -1824,6 +1893,47 @@ button:disabled {
   .title-modal .title-summary-chip p:last-child {
     margin-top: 0.08rem;
     font-size: 0.75rem;
+  }
+
+  @media (max-width: 359px) {
+    .title-responsive-title-grid,
+    .title-modal-summary-grid,
+    .title-modal-control-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .title-filter-tabs {
+      flex-basis: 100%;
+    }
+  }
+
+  @media (max-width: 430px) {
+    .title-modal .title-card {
+      padding: 0.42rem;
+    }
+
+    .title-modal .title-medal-small {
+      width: 1.36rem;
+      min-width: 1.36rem;
+      height: 1.36rem;
+      border-radius: 0.34rem;
+      font-size: 0.52rem;
+    }
+
+    .title-modal .title-card-status {
+      padding: 0.08rem 0.32rem;
+      font-size: 0.56rem;
+    }
+
+    .title-modal .title-card-progress-line {
+      font-size: 0.64rem;
+    }
+  }
+
+  @media (min-width: 640px) {
+    .title-modal-summary-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
   }
 }
 

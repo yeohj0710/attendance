@@ -177,7 +177,8 @@ type CareerTitleStats = {
   holidayLongWorkDays: number;
   latestRecordDate: string | null;
   lateCheckInDays: number;
-  luckyDropDays: number;
+  freezeCheckInDays: number;
+  heatCheckInDays: number;
   mondayAttendanceDays: number;
   monthEndCheckOutDays: number;
   monthStartAttendanceDays: number;
@@ -185,8 +186,10 @@ type CareerTitleStats = {
   nightCheckOutDays: number;
   perfectTaskDays: number;
   publicHolidayAttendanceDays: number;
+  rainCheckInDays: number;
   sameNumberClockDays: number;
   seollalAttendanceDays: number;
+  snowCheckInDays: number;
   saturdayAttendanceDays: number;
   substituteHolidayAttendanceDays: number;
   sundayAttendanceDays: number;
@@ -200,6 +203,7 @@ type CareerTitleStats = {
   twelveHourDays: number;
   weekendAttendanceDays: number;
   weekendLongWorkDays: number;
+  windyCheckOutDays: number;
 };
 
 const workTypeLabels: Record<AttendanceRecord["workType"], string> = {
@@ -3280,6 +3284,14 @@ type QuestTitle = {
 };
 
 type QuestTitleBase = Omit<QuestTitle, "achieved" | "progress">;
+type TitleDetailSelection = {
+  ownerProfile: CompanyTitleProfile;
+  title: QuestTitle;
+};
+type QuestTitleOwner = {
+  profile: CompanyTitleProfile;
+  title: QuestTitle;
+};
 
 const titleLevelThresholds = [
   0, 120, 320, 620, 1000, 1500, 2200, 3100, 4300, 5800, 7600, 9800, 12500, 15800,
@@ -3340,6 +3352,9 @@ function MyTitlesPanel({
   const [isCollectionOpen, setIsCollectionOpen] = useState(false);
   const [selectedCompanyTitleProfile, setSelectedCompanyTitleProfile] =
     useState<CompanyTitleProfile | null>(null);
+  const [selectedTitleDetail, setSelectedTitleDetail] = useState<TitleDetailSelection | null>(
+    null,
+  );
   const [filter, setFilter] = useState<QuestTitleFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<QuestTitleCategoryFilter>("all");
   const [sortMode, setSortMode] = useState<QuestTitleSortMode>("recommended");
@@ -3369,6 +3384,31 @@ function MyTitlesPanel({
     (sum, title) => sum + title.xp,
     0,
   );
+  const titleComparisonProfiles = withCurrentCompanyTitleProfile(
+    companyTitleProfiles,
+    employeeId,
+    employeeName,
+    employeeNo,
+    titleProfile,
+  );
+  const currentTitleOwnerProfile =
+    titleComparisonProfiles.find((profile) => profile.employeeId === employeeId) ?? {
+      ...titleProfile,
+      employeeId,
+      employeeName,
+      employeeNo,
+    };
+  const selectedCompanyOwnerProfile = selectedCompanyTitleProfile
+    ? titleComparisonProfiles.find(
+        (profile) => profile.employeeId === selectedCompanyTitleProfile.employeeId,
+      ) ?? selectedCompanyTitleProfile
+    : null;
+  const openCurrentTitleDetail = (selectedTitle: QuestTitle) => {
+    setSelectedTitleDetail({
+      ownerProfile: currentTitleOwnerProfile,
+      title: selectedTitle,
+    });
+  };
 
   return (
     <div className="mt-4 border-t border-line pt-4">
@@ -3387,9 +3427,19 @@ function MyTitlesPanel({
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">
                   Career Titles
                 </p>
-                <h3 className="mt-1 text-lg font-black text-ink">
-                  Lv.{levelInfo.level} {representativeTitle.name}
-                </h3>
+                <button
+                  className="title-representative-trigger mt-1 block max-w-full text-left text-lg font-black text-ink"
+                  data-title-detail-trigger="true"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openCurrentTitleDetail(representativeTitle);
+                  }}
+                  type="button"
+                >
+                  <span className="block truncate">
+                    Lv.{levelInfo.level} {representativeTitle.name}
+                  </span>
+                </button>
                 <p className="mt-1 text-xs font-semibold text-slate-600">
                   누적 {achievedTitles.length}/{titles.length}개 획득 · {totalXp} XP
                 </p>
@@ -3427,7 +3477,18 @@ function MyTitlesPanel({
             />
 
             <div className="mt-3 grid gap-2.5 sm:grid-cols-[auto_minmax(0,1fr)]">
-              <TitleMedal title={representativeTitle} />
+              <button
+                aria-label={`${representativeTitle.name} 칭호 자세히 보기`}
+                className="title-medal-trigger"
+                data-title-detail-trigger="true"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openCurrentTitleDetail(representativeTitle);
+                }}
+                type="button"
+              >
+                <TitleMedal title={representativeTitle} />
+              </button>
               <div className="min-w-0">
                 <div className="flex items-center justify-between gap-3 text-xs font-bold text-slate-600">
                   <span>레벨 진행도</span>
@@ -3472,9 +3533,14 @@ function MyTitlesPanel({
                 {nextTitles.length}개 추적
               </span>
             </div>
-            <div className="mt-2.5 space-y-1.5">
+            <div className="title-next-grid mt-2.5 gap-1.5">
               {nextTitles.map((title) => (
-                <TitleProgressCard compact key={title.id} title={title} />
+                <TitleProgressCard
+                  compact
+                  key={title.id}
+                  onOpenTitle={openCurrentTitleDetail}
+                  title={title}
+                />
               ))}
               {nextTitles.length === 0 ? (
                 <p className="rounded border border-line bg-field/70 px-3 py-5 text-center text-sm font-semibold text-muted">
@@ -3490,10 +3556,15 @@ function MyTitlesPanel({
                   전체 {titles.length}개
                 </span>
               </div>
-              <div className="title-inline-collection mt-2 max-h-[22rem] overflow-y-auto overscroll-contain pr-1">
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+              <div className="title-inline-collection mt-2 max-h-[22rem] overflow-y-auto pr-1">
+                <div className="title-responsive-title-grid gap-1.5">
                   {collectionPreviewTitles.map((title) => (
-                    <TitleProgressCard compact key={title.id} title={title} />
+                    <TitleProgressCard
+                      compact
+                      key={title.id}
+                      onOpenTitle={openCurrentTitleDetail}
+                      title={title}
+                    />
                   ))}
                 </div>
               </div>
@@ -3516,10 +3587,14 @@ function MyTitlesPanel({
           filter={filter}
           categoryFilter={categoryFilter}
           levelInfo={levelInfo}
-          onClose={() => setIsCollectionOpen(false)}
+          onClose={() => {
+            setIsCollectionOpen(false);
+            setSelectedTitleDetail(null);
+          }}
           onCategoryFilterChange={setCategoryFilter}
           onCopyShare={onCopyShare}
           onFilterChange={setFilter}
+          onOpenTitle={openCurrentTitleDetail}
           onSortModeChange={setSortMode}
           sortMode={sortMode}
           stats={titleProfile.stats}
@@ -3532,15 +3607,33 @@ function MyTitlesPanel({
           filter={filter}
           categoryFilter={categoryFilter}
           levelInfo={getTitleLevelInfo(selectedCompanyTotalXp)}
-          onClose={() => setSelectedCompanyTitleProfile(null)}
+          onClose={() => {
+            setSelectedCompanyTitleProfile(null);
+            setSelectedTitleDetail(null);
+          }}
           onCategoryFilterChange={setCategoryFilter}
           onFilterChange={setFilter}
+          onOpenTitle={(selectedTitle) =>
+            setSelectedTitleDetail({
+              ownerProfile: selectedCompanyOwnerProfile ?? selectedCompanyTitleProfile,
+              title: selectedTitle,
+            })
+          }
           onSortModeChange={setSortMode}
           ownerName={selectedCompanyTitleProfile.employeeName}
           sortMode={sortMode}
           stats={selectedCompanyTitleProfile.stats}
           titles={selectedCompanyTitles}
           totalXp={selectedCompanyTotalXp}
+        />
+      ) : null}
+      {selectedTitleDetail ? (
+        <TitleDetailModal
+          comparisonProfiles={titleComparisonProfiles}
+          currentEmployeeId={employeeId}
+          onClose={() => setSelectedTitleDetail(null)}
+          ownerProfile={selectedTitleDetail.ownerProfile}
+          title={selectedTitleDetail.title}
         />
       ) : null}
     </div>
@@ -3720,6 +3813,7 @@ function TitleCollectionModal({
   onCategoryFilterChange,
   onCopyShare,
   onFilterChange,
+  onOpenTitle,
   onSortModeChange,
   ownerName,
   sortMode,
@@ -3734,6 +3828,7 @@ function TitleCollectionModal({
   onCategoryFilterChange: (filter: QuestTitleCategoryFilter) => void;
   onCopyShare?: () => void;
   onFilterChange: (filter: QuestTitleFilter) => void;
+  onOpenTitle: (title: QuestTitle) => void;
   onSortModeChange: (sortMode: QuestTitleSortMode) => void;
   ownerName?: string;
   sortMode: QuestTitleSortMode;
@@ -3777,7 +3872,7 @@ function TitleCollectionModal({
     >
       <div
         aria-modal="true"
-        className="title-modal flex max-h-[76dvh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl"
+        className="title-modal flex max-h-[calc(100dvh-1rem)] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl sm:max-h-[86dvh]"
         role="dialog"
       >
         <div className="title-collection-header shrink-0 border-b border-line px-2.5 py-2.5">
@@ -3809,7 +3904,7 @@ function TitleCollectionModal({
             </div>
           </div>
 
-          <div className="mt-2.5 grid gap-1.5 text-xs sm:grid-cols-4">
+          <div className="title-modal-summary-grid mt-2.5 grid gap-1.5 text-xs">
             <TitleSummaryChip label="획득" value={`${achievedCount}/${titles.length}개`} />
             <TitleSummaryChip label="최고 연속" value={`${stats.bestStreak}일`} />
             <TitleSummaryChip label="누적 업무" value={`${stats.completedTasks}개`} />
@@ -3817,7 +3912,7 @@ function TitleCollectionModal({
           </div>
 
           <div className="mt-2.5 flex flex-wrap gap-2">
-            <div className="inline-flex rounded border border-line bg-field p-0.5">
+            <div className="title-filter-tabs rounded border border-line bg-field p-0.5">
               {([
                 ["all", `전체 ${titles.length}`],
                 ["achieved", `획득 ${achievedCount}`],
@@ -3842,7 +3937,7 @@ function TitleCollectionModal({
             ) : null}
           </div>
 
-          <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2">
+          <div className="title-modal-control-grid mt-2 grid gap-2 text-xs">
             <label className="min-w-0">
               <span className="label">종류</span>
               <select
@@ -3878,9 +3973,14 @@ function TitleCollectionModal({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2.5 py-3">
-          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+          <div className="title-responsive-title-grid gap-1.5">
             {visibleTitles.map((title) => (
-              <TitleProgressCard compact key={title.id} title={title} />
+              <TitleProgressCard
+                compact
+                key={title.id}
+                onOpenTitle={onOpenTitle}
+                title={title}
+              />
             ))}
           </div>
         </div>
@@ -3889,58 +3989,230 @@ function TitleCollectionModal({
   );
 }
 
-function TitleProgressCard({ compact = false, title }: { compact?: boolean; title: QuestTitle }) {
+function TitleDetailModal({
+  comparisonProfiles,
+  currentEmployeeId,
+  onClose,
+  ownerProfile,
+  title,
+}: {
+  comparisonProfiles: CompanyTitleProfile[];
+  currentEmployeeId: string;
+  onClose: () => void;
+  ownerProfile: CompanyTitleProfile;
+  title: QuestTitle;
+}) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const previousOverscrollBehavior = document.body.style.overscrollBehavior;
+
+    document.body.style.overflow = "hidden";
+    document.body.style.overscrollBehavior = "contain";
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      document.body.style.overscrollBehavior = previousOverscrollBehavior;
+    };
+  }, [onClose]);
+
   const isHiddenLocked = isQuestTitleHiddenLocked(title);
+  const owners = getQuestTitleOwners(title.id, comparisonProfiles);
+  const soleOwner = owners.length === 1 ? owners[0] : null;
+  const ownerName = ownerProfile.employeeName || "이 직원";
+  const ownerLabel = ownerProfile.employeeId === currentEmployeeId ? "나" : ownerName;
+  const statusLabel = title.achieved ? "획득" : isHiddenLocked ? "히든" : "진행";
+  const uniqueLabel = soleOwner
+    ? soleOwner.profile.employeeId === currentEmployeeId
+      ? "나만 획득한 칭호"
+      : `${soleOwner.profile.employeeName || "이 직원"}님만 획득한 칭호`
+    : null;
 
   return (
     <div
-      className={`title-card title-card-${title.rarity} title-card-${title.category} ${
-        title.achieved ? "title-card-achieved" : "title-card-progress"
-      } rounded border ${compact ? "p-2" : "p-3"} ${getQuestTitleCardClassName(title)}`}
+      className="fixed inset-0 z-[60] flex items-center justify-center overflow-hidden overscroll-contain bg-slate-950/50 px-3 py-4"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
     >
-      <div className={`flex ${compact ? "items-center gap-2" : "items-start gap-3"}`}>
-        <TitleMedal small={compact} title={title} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className={`truncate font-black ${compact ? "text-[13px]" : "text-sm"}`}>
-                {getQuestTitleDisplayName(title)}
-              </p>
-              <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500/85">
-                {getQuestTitleRequirement(title)}
-              </p>
-              {!compact ? (
-                <p className="mt-1 text-xs font-semibold opacity-75">
-                  {getQuestTitleCategoryLabel(title.category)} · {getQuestTitleRarityLabel(title.rarity)}
-                </p>
-              ) : null}
-            </div>
-            <span
-              className={`shrink-0 rounded-full font-black ${
-                title.achieved ? "bg-white/80 text-ink" : "bg-slate-100 text-muted"
-              } ${compact ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-0.5 text-[11px]"}`}
-            >
-              {title.achieved ? "획득" : isHiddenLocked ? "히든" : "진행"}
-            </span>
-          </div>
-          {!compact ? (
-            <p className="mt-2 text-xs leading-relaxed opacity-80">
-              {getQuestTitleDescription(title)}
+      <div
+        aria-modal="true"
+        className="title-modal w-full max-w-lg overflow-hidden rounded-lg border border-slate-300 bg-white shadow-2xl"
+        role="dialog"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">
+              Title Detail
             </p>
-          ) : null}
-          <div className={`${compact ? "mt-2" : "mt-3"} flex items-center justify-between gap-2 text-[11px] font-bold`}>
-            <span>{formatQuestTitleProgressValue(title)}</span>
-            <span>{isHiddenLocked ? "??" : `${Math.round(title.progress * 100)}%`}</span>
+            <h3 className="mt-1 truncate text-lg font-black text-ink">
+              {isHiddenLocked ? "잠긴 히든 칭호" : title.name}
+            </h3>
+            <p className="mt-1 text-xs font-semibold text-slate-600">
+              {ownerLabel} 기준 · {getQuestTitleCategoryLabel(title.category)} ·{" "}
+              {getQuestTitleRarityLabel(title.rarity)}
+            </p>
           </div>
-          <div className={`${compact ? "mt-1" : "mt-1.5"} title-progress-track h-2 overflow-hidden rounded-full bg-slate-200/80`}>
-            <div
-              className={`h-full rounded-full ${getQuestTitleProgressClassName(title)}`}
-              style={{ width: `${getQuestTitleProgressWidth(title)}%` }}
-            />
+          <button className="secondary-button px-3 py-2 text-xs" onClick={onClose} type="button">
+            닫기
+          </button>
+        </div>
+
+        <div className="px-4 py-4">
+          <div className="flex items-start gap-3">
+            <TitleMedal title={title} />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[11px] font-black ${
+                    title.achieved ? "bg-accentSoft text-accent" : "bg-slate-100 text-muted"
+                  }`}
+                >
+                  {statusLabel}
+                </span>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-black text-slate-600">
+                  {title.xp.toLocaleString()} XP
+                </span>
+              </div>
+              <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-700">
+                {getQuestTitleDescription(title)}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-2 text-xs min-[380px]:grid-cols-2">
+            <TitleSummaryChip label={isHiddenLocked ? "힌트" : "조건"} value={getQuestTitleRequirement(title)} />
+            <TitleSummaryChip label="진행" value={formatQuestTitleProgressValue(title)} />
+          </div>
+
+          {uniqueLabel ? (
+            <div className="mt-4 rounded border border-accent/25 bg-accentSoft px-3 py-2.5">
+              <p className="text-sm font-black text-accent">{uniqueLabel}</p>
+              <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">
+                현재 회사원 칭호 기록 기준으로 이 칭호의 단독 획득자입니다.
+              </p>
+            </div>
+          ) : null}
+
+          <div className="mt-4">
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-sm font-black text-ink">획득한 직원</h4>
+              <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-black text-slate-600">
+                {owners.length}명
+              </span>
+            </div>
+            {owners.length ? (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {owners.map((owner) => (
+                  <span
+                    className={`rounded-full border px-2.5 py-1 text-xs font-black ${
+                      owner.profile.employeeId === ownerProfile.employeeId
+                        ? "border-accent/30 bg-accentSoft text-accent"
+                        : "border-slate-300 bg-white text-slate-700"
+                    }`}
+                    key={owner.profile.employeeId}
+                  >
+                    {formatTitleOwnerName(owner.profile, currentEmployeeId)}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 rounded border border-line bg-field/70 px-3 py-3 text-sm font-semibold text-muted">
+                아직 이 칭호를 획득한 직원이 없습니다.
+              </p>
+            )}
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function TitleProgressCard({
+  compact = false,
+  onOpenTitle,
+  title,
+}: {
+  compact?: boolean;
+  onOpenTitle?: (title: QuestTitle) => void;
+  title: QuestTitle;
+}) {
+  const isHiddenLocked = isQuestTitleHiddenLocked(title);
+  const cardClassName = `title-card title-card-${title.rarity} title-card-${title.category} ${
+    title.achieved ? "title-card-achieved" : "title-card-progress"
+  } rounded border ${compact ? "p-2" : "p-3"} ${getQuestTitleCardClassName(title)}`;
+  const cardContent = (
+    <div className={`flex ${compact ? "items-center gap-2" : "items-start gap-3"}`}>
+      <TitleMedal small={compact} title={title} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className={`truncate font-black ${compact ? "text-[13px]" : "text-sm"}`}>
+              {getQuestTitleDisplayName(title)}
+            </p>
+            <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500/85">
+              {getQuestTitleRequirement(title)}
+            </p>
+            {!compact ? (
+              <p className="mt-1 text-xs font-semibold opacity-75">
+                {getQuestTitleCategoryLabel(title.category)} · {getQuestTitleRarityLabel(title.rarity)}
+              </p>
+            ) : null}
+          </div>
+          <span
+            className={`shrink-0 rounded-full font-black title-card-status ${
+              title.achieved ? "bg-white/80 text-ink" : "bg-slate-100 text-muted"
+            } ${compact ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-0.5 text-[11px]"}`}
+          >
+            {title.achieved ? "획득" : isHiddenLocked ? "히든" : "진행"}
+          </span>
+        </div>
+        {!compact ? (
+          <p className="mt-2 text-xs leading-relaxed opacity-80">
+            {getQuestTitleDescription(title)}
+          </p>
+        ) : null}
+        <div className={`${compact ? "mt-2" : "mt-3"} title-card-progress-line flex items-center justify-between gap-2 text-[11px] font-bold`}>
+          <span>{formatQuestTitleProgressValue(title)}</span>
+          <span>{isHiddenLocked ? "??" : `${Math.round(title.progress * 100)}%`}</span>
+        </div>
+        <div className={`${compact ? "mt-1" : "mt-1.5"} title-progress-track h-2 overflow-hidden rounded-full bg-slate-200/80`}>
+          <div
+            className={`h-full rounded-full ${getQuestTitleProgressClassName(title)}`}
+            style={{ width: `${getQuestTitleProgressWidth(title)}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+
+  if (onOpenTitle) {
+    return (
+      <button
+        aria-label={`${getQuestTitleDisplayName(title)} 칭호 자세히 보기`}
+        className={`title-card-button ${cardClassName}`}
+        data-title-detail-trigger="true"
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpenTitle(title);
+        }}
+        type="button"
+      >
+        {cardContent}
+      </button>
+    );
+  }
+
+  return (
+    <div className={cardClassName}>{cardContent}</div>
   );
 }
 
@@ -4303,31 +4575,65 @@ function getSpecialQuestTitleBases(stats: CareerTitleStats): QuestTitleBase[] {
     },
     {
       category: "special",
-      description: `시스템이 몰래 심어둔 희귀 드롭 ${stats.luckyDropDays}회`,
-      hidden: true,
-      hiddenHint: "조건은 없습니다. 아주 가끔, 기록 자체가 뽑기가 됩니다.",
-      id: "lucky-drop-1",
-      name: "칭호 가챠 성공",
-      rarity: "legend",
+      description: `비 오는 출근 시점 기록 ${stats.rainCheckInDays ?? 0}일`,
+      id: "rain-checkin-1",
+      name: "빗길 체크인",
+      rarity: "gold",
       target: 1,
-      tone: "warm",
-      unit: "회",
-      value: stats.luckyDropDays ?? 0,
-      xp: 1200,
+      tone: "accent",
+      unit: "일",
+      value: stats.rainCheckInDays ?? 0,
+      xp: 520,
     },
     {
       category: "special",
-      description: `시스템이 몰래 심어둔 희귀 드롭 ${stats.luckyDropDays}회`,
+      description: `눈 오는 출근 시점 기록 ${stats.snowCheckInDays ?? 0}일`,
       hidden: true,
-      hiddenHint: "한 번으로 끝나지 않는 사람에게만 보입니다.",
-      id: "lucky-drop-3",
-      name: "운빨도 실력",
+      hiddenHint: "창밖이 하얘지는 날, 출근 버튼 근처에 숨어 있습니다.",
+      id: "snow-checkin-1",
+      name: "눈발 속 로그인",
       rarity: "legend",
-      target: 3,
+      target: 1,
+      tone: "complete",
+      unit: "일",
+      value: stats.snowCheckInDays ?? 0,
+      xp: 1300,
+    },
+    {
+      category: "special",
+      description: `체감 0도 이하 출근 시점 기록 ${stats.freezeCheckInDays ?? 0}일`,
+      id: "freeze-checkin-1",
+      name: "영하 출근 생존자",
+      rarity: "platinum",
+      target: 1,
+      tone: "ink",
+      unit: "일",
+      value: stats.freezeCheckInDays ?? 0,
+      xp: 860,
+    },
+    {
+      category: "special",
+      description: `체감 28도 이상 출근 시점 기록 ${stats.heatCheckInDays ?? 0}일`,
+      id: "heat-checkin-1",
+      name: "폭염 예열 완료",
+      rarity: "platinum",
+      target: 1,
       tone: "danger",
-      unit: "회",
-      value: stats.luckyDropDays ?? 0,
-      xp: 2600,
+      unit: "일",
+      value: stats.heatCheckInDays ?? 0,
+      xp: 860,
+    },
+    {
+      category: "special",
+      description: `강풍 퇴근 시점 기록 ${stats.windyCheckOutDays ?? 0}일`,
+      id: "windy-checkout-1",
+      name: "바람길 퇴근자",
+      rarity: "gold",
+      target: 1,
+      tone: "warm",
+      unit: "일",
+      value: stats.windyCheckOutDays ?? 0,
+      xp: 620,
     },
   ];
 }
@@ -5094,7 +5400,7 @@ function getQuestTitles(stats: CareerTitleStats) {
       category: "focus",
       description: `같은 미완료 할 일이 이어진 최대 ${stats.staleTaskMaxDays ?? 0}일`,
       hidden: true,
-      hiddenHint: "한 체크박스가 오래 살아남으면 열립니다.",
+      hiddenHint: "지워지지 않는 체크박스가 시간을 충분히 머금으면 보입니다.",
       id: "stale-task-10",
       name: "화석이 된 체크박스",
       rarity: "legend",
@@ -5383,7 +5689,9 @@ function shouldOpenTitleCollectionFromTarget(target: EventTarget | null) {
     return true;
   }
 
-  return !target.closest("button, a, input, select, textarea, [role='button']");
+  return !target.closest(
+    "button, a, input, select, textarea, [role='button'], [data-title-detail-trigger='true']",
+  );
 }
 
 function getRepresentativeQuestTitle(titles: QuestTitle[]) {
@@ -5445,6 +5753,21 @@ function getCompanyTitleGalleryEntries(profiles: CompanyTitleProfile[]): Company
         b.completionRate - a.completionRate ||
         a.profile.employeeName.localeCompare(b.profile.employeeName),
     );
+}
+
+function getQuestTitleOwners(titleId: string, profiles: CompanyTitleProfile[]): QuestTitleOwner[] {
+  return profiles
+    .map((profile) => {
+      const title = getQuestTitles(profile.stats).find((candidate) => candidate.id === titleId);
+      return title?.achieved ? { profile, title } : null;
+    })
+    .filter((owner): owner is QuestTitleOwner => Boolean(owner))
+    .sort((a, b) => a.profile.employeeName.localeCompare(b.profile.employeeName));
+}
+
+function formatTitleOwnerName(profile: CompanyTitleProfile, currentEmployeeId: string) {
+  const name = profile.employeeName || "이름 없음";
+  return profile.employeeId === currentEmployeeId ? `${name} (나)` : name;
 }
 
 function getNextQuestTitles(titles: QuestTitle[]) {
@@ -5546,7 +5869,7 @@ function getQuestTitleDisplayName(title: QuestTitle) {
 
 function getQuestTitleDescription(title: QuestTitle) {
   if (isQuestTitleHiddenLocked(title)) {
-    return title.hiddenHint ? `힌트 · ${title.hiddenHint}` : "아직 조건이 공개되지 않은 히든 칭호입니다.";
+    return `힌트 · ${getQuestTitleHiddenHint(title)}`;
   }
 
   return title.description;
@@ -5554,7 +5877,7 @@ function getQuestTitleDescription(title: QuestTitle) {
 
 function getQuestTitleRequirement(title: QuestTitle) {
   if (isQuestTitleHiddenLocked(title)) {
-    return "조건 비공개";
+    return getQuestTitleHiddenHint(title);
   }
 
   if (title.kind === "duration") {
@@ -5601,9 +5924,17 @@ function getQuestTitleRequirement(title: QuestTitle) {
   if (title.id.startsWith("month-end-checkout-")) return `월말 퇴근 ${target}`;
   if (title.id.startsWith("double-date-")) return `더블데이 출근 ${target}`;
   if (title.id.startsWith("same-clock-")) return `같은 숫자 시각 ${target}`;
-  if (title.id.startsWith("lucky-drop-")) return `희귀 드롭 ${target}`;
+  if (title.id.startsWith("rain-checkin-")) return `비 오는 날 출근 ${target}`;
+  if (title.id.startsWith("snow-checkin-")) return `눈 오는 날 출근 ${target}`;
+  if (title.id.startsWith("freeze-checkin-")) return `체감 0도 이하 출근 ${target}`;
+  if (title.id.startsWith("heat-checkin-")) return `체감 28도 이상 출근 ${target}`;
+  if (title.id.startsWith("windy-checkout-")) return `강풍 퇴근 ${target}`;
 
   return `${target} 달성`;
+}
+
+function getQuestTitleHiddenHint(title: QuestTitle) {
+  return title.hiddenHint ?? "흐릿한 로그 사이에 조건이 숨어 있습니다.";
 }
 
 function getQuestTitleCategoryLabel(category: QuestTitleCategory) {
@@ -7175,7 +7506,7 @@ function getCalendarRecordDurationText(
   if (
     !record.checkInAt &&
     !record.checkOutAt &&
-    ((record.taskCount ?? 0) > 0 || (record.doneCount ?? 0) > 0 || (record.commentCount ?? 0) > 0)
+    (record.doneCount ?? 0) > 0
   ) {
     return "0분";
   }
