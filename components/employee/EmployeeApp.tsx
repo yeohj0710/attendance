@@ -266,6 +266,9 @@ export function EmployeeApp() {
   const [isSharedView, setIsSharedView] = useState(false);
   const [sharedViewType, setSharedViewType] =
     useState<SharedDashboardResponse["shareType"] | null>(null);
+  const [isProfileSummaryOpen, setIsProfileSummaryOpen] = useState(false);
+  const [isProfileSummaryLoading, setIsProfileSummaryLoading] = useState(false);
+  const [profileSummaryError, setProfileSummaryError] = useState("");
   const [isMutating, setIsMutating] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [greetingMessages, setGreetingMessages] = useState<string[]>([]);
@@ -291,6 +294,9 @@ export function EmployeeApp() {
   const [workLogShareToastId, setWorkLogShareToastId] = useState(0);
   const [dashboardShareUrl, setDashboardShareUrl] = useState("");
   const [workLogShareUrl, setWorkLogShareUrl] = useState("");
+  const [pendingShareAction, setPendingShareAction] = useState<
+    "dashboard" | "title-profile" | "work-log" | null
+  >(null);
   const [isWorkLogLoading, setIsWorkLogLoading] = useState(false);
   const [isWorkLogSaving, setIsWorkLogSaving] = useState(false);
   const [isCommentSaving, setIsCommentSaving] = useState(false);
@@ -322,6 +328,9 @@ export function EmployeeApp() {
   const workLogShareMessageTimerRef = useRef<number | null>(null);
   const commentNotificationCheckedRef = useRef(false);
   const greetingLoadRequestIdRef = useRef(0);
+  const profileSummaryButtonRef = useRef<HTMLButtonElement | null>(null);
+  const profileSummaryPanelRef = useRef<HTMLDivElement | null>(null);
+  const profileSummaryLoadRequestIdRef = useRef(0);
 
   const load = useCallback(async (storedAuth: StoredAuth, knownEmployee?: Employee) => {
     setMessage("");
@@ -398,12 +407,6 @@ export function EmployeeApp() {
   }, [auth, employee, status?.kstDate]);
 
   useEffect(() => {
-    if (!auth || !employee || isSharedView || commentNotificationCheckedRef.current) return;
-    commentNotificationCheckedRef.current = true;
-    void loadCommentNotifications(auth, employee);
-  }, [auth, employee?.id, isSharedView]);
-
-  useEffect(() => {
     if (!auth || !employee || !status?.kstDate) return;
 
     const requestId = greetingLoadRequestIdRef.current + 1;
@@ -447,80 +450,12 @@ export function EmployeeApp() {
   }, [greetingIndex, greetingMessages, greetingRotationNonce]);
 
   useEffect(() => {
-    if (!auth || !teamMonth?.month) return;
-    prefetchTeamMonth(shiftMonth(teamMonth.month, -1));
-    prefetchTeamMonth(shiftMonth(teamMonth.month, 1));
-  }, [auth, teamMonth?.month]);
-
-  useEffect(() => {
-    if (!auth || !teamMonth?.records.length) return;
-
-    const recordsToPrefetch = teamMonth.records.filter(
-      (record) => record.workDate >= teamMonth.startDate && record.workDate <= teamMonth.endDate,
-    );
-    const timer = window.setTimeout(() => prefetchWorkLogs(recordsToPrefetch), 250);
-    return () => window.clearTimeout(timer);
-  }, [auth, teamMonth?.month, teamMonth?.records]);
-
-  useEffect(() => {
     return () => {
       if (workLogShareMessageTimerRef.current !== null) {
         window.clearTimeout(workLogShareMessageTimerRef.current);
       }
     };
   }, []);
-
-  useEffect(() => {
-    if (!auth || isSharedView) {
-      setDashboardShareUrl("");
-      return;
-    }
-
-    let cancelled = false;
-    void createShareUrl({ type: "dashboard" })
-      .then((url) => {
-        if (!cancelled) {
-          setDashboardShareUrl(url);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setDashboardShareUrl("");
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [auth, isSharedView]);
-
-  useEffect(() => {
-    setWorkLogShareUrl("");
-    if (!auth || isSharedView || !selectedWorkRecord) {
-      return;
-    }
-
-    let cancelled = false;
-    void createShareUrl({
-      type: "work-log",
-      employeeId: selectedWorkRecord.employeeId,
-      workDate: selectedWorkRecord.workDate,
-    })
-      .then((url) => {
-        if (!cancelled) {
-          setWorkLogShareUrl(url);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setWorkLogShareUrl("");
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [auth, isSharedView, selectedWorkRecord?.employeeId, selectedWorkRecord?.workDate]);
 
   useEffect(() => {
     if (
@@ -545,6 +480,35 @@ export function EmployeeApp() {
 
     return () => window.clearTimeout(timer);
   }, [sharedViewType, titleProfile, teamMonth?.month]);
+
+  useEffect(() => {
+    if (!isProfileSummaryOpen) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (
+        profileSummaryButtonRef.current?.contains(target) ||
+        profileSummaryPanelRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setIsProfileSummaryOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsProfileSummaryOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isProfileSummaryOpen]);
 
   async function refresh(loginEmployee?: Employee) {
     const storedAuth = getStoredAuth();
@@ -710,11 +674,18 @@ export function EmployeeApp() {
   async function refreshTitleProfile(requestAuth = auth) {
     if (!requestAuth || isSharedView) return;
 
-    const result = await apiFetch<{ titleProfile: CareerTitleProfile }>(
+    const result = await apiFetch<{
+      titleProfile: CareerTitleProfile;
+      companyTitleProfiles?: CompanyTitleProfile[];
+    }>(
       "/api/attendance/title-profile",
       { auth: requestAuth },
     );
     setTitleProfile(result.titleProfile);
+    if (result.companyTitleProfiles) {
+      setCompanyTitleProfiles(result.companyTitleProfiles);
+      return;
+    }
     if (employee) {
       const ownProfile: CompanyTitleProfile = {
         ...result.titleProfile,
@@ -725,6 +696,55 @@ export function EmployeeApp() {
       setCompanyTitleProfiles((currentProfiles) =>
         upsertCompanyTitleProfile(currentProfiles, ownProfile),
       );
+    }
+  }
+
+  async function openProfileSummary() {
+    setIsProfileSummaryOpen((currentOpen) => !currentOpen);
+    if (isProfileSummaryOpen || !auth || isSharedView) {
+      return;
+    }
+
+    const requestId = profileSummaryLoadRequestIdRef.current + 1;
+    profileSummaryLoadRequestIdRef.current = requestId;
+    setIsProfileSummaryLoading(true);
+    setProfileSummaryError("");
+
+    try {
+      await refreshTitleProfile(auth);
+    } catch (error) {
+      if (profileSummaryLoadRequestIdRef.current === requestId) {
+        setProfileSummaryError(
+          error instanceof Error ? error.message : "프로필을 불러오지 못했어요.",
+        );
+      }
+    } finally {
+      if (profileSummaryLoadRequestIdRef.current === requestId) {
+        setIsProfileSummaryLoading(false);
+      }
+    }
+  }
+
+  async function retryProfileSummary() {
+    if (!auth || isSharedView) return;
+
+    const requestId = profileSummaryLoadRequestIdRef.current + 1;
+    profileSummaryLoadRequestIdRef.current = requestId;
+    setIsProfileSummaryLoading(true);
+    setProfileSummaryError("");
+
+    try {
+      await refreshTitleProfile(auth);
+    } catch (error) {
+      if (profileSummaryLoadRequestIdRef.current === requestId) {
+        setProfileSummaryError(
+          error instanceof Error ? error.message : "프로필을 불러오지 못했어요.",
+        );
+      }
+    } finally {
+      if (profileSummaryLoadRequestIdRef.current === requestId) {
+        setIsProfileSummaryLoading(false);
+      }
     }
   }
 
@@ -1318,7 +1338,9 @@ export function EmployeeApp() {
 
   async function copySelectedWorkLogLink() {
     if (!selectedWorkRecord) return;
+    if (pendingShareAction === "work-log") return;
 
+    setPendingShareAction("work-log");
     try {
       const url =
         workLogShareUrl ||
@@ -1331,25 +1353,43 @@ export function EmployeeApp() {
       await copyPreparedShareUrl(url);
     } catch {
       showShareToast("공유 링크 복사에 실패했어요.");
+    } finally {
+      setPendingShareAction((currentAction) =>
+        currentAction === "work-log" ? null : currentAction,
+      );
     }
   }
 
   async function copyDashboardShareLink() {
+    if (pendingShareAction === "dashboard") return;
+
+    setPendingShareAction("dashboard");
     try {
       const url = dashboardShareUrl || (await createShareUrl({ type: "dashboard" }));
       setDashboardShareUrl(url);
       await copyPreparedShareUrl(url);
     } catch {
       showShareToast("공유 링크 복사에 실패했어요.");
+    } finally {
+      setPendingShareAction((currentAction) =>
+        currentAction === "dashboard" ? null : currentAction,
+      );
     }
   }
 
   async function copyTitleShareLink() {
+    if (pendingShareAction === "title-profile") return;
+
+    setPendingShareAction("title-profile");
     try {
       const url = await createShareUrl({ type: "title-profile" });
       await copyPreparedShareUrl(url);
     } catch {
       showShareToast("칭호 공유 링크 복사에 실패했어요.");
+    } finally {
+      setPendingShareAction((currentAction) =>
+        currentAction === "title-profile" ? null : currentAction,
+      );
     }
   }
 
@@ -1805,6 +1845,9 @@ export function EmployeeApp() {
     !isSharedView && titleProfile
       ? getRandomAchievedQuestTitleRequirement(titleProfile.stats, titleHintSeedRef.current)
       : null;
+  const teamTitleProfileByEmployeeId = teamMonth
+    ? getTeamMonthlyTitleProfileMap(teamMonth, status?.kstDate, todayWorkLog)
+    : null;
 
   function scrollToTitleSection() {
     const section = titleSectionRef.current;
@@ -1821,7 +1864,7 @@ export function EmployeeApp() {
     <main className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col justify-start px-3 pb-16 pt-6 sm:px-5 sm:pt-8">
       <section className="w-full max-w-xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
         <div className="flex items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0 flex-1">
             <img
               alt="웰니스박스"
               className="mb-3 h-7 w-auto"
@@ -1830,14 +1873,57 @@ export function EmployeeApp() {
               width={140}
             />
             <p className="text-xs font-semibold text-muted">{formatKstClock(clock)}</p>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-bold text-ink">{employee.name}</h1>
+            <div className="relative mt-1 flex min-w-0 flex-wrap items-center gap-2">
+              <h1 className="min-w-0">
+                <button
+                  aria-expanded={isProfileSummaryOpen}
+                  aria-haspopup="dialog"
+                  className="group inline-flex max-w-full min-w-0 items-center gap-2 rounded-md py-0.5 pr-1 text-left transition hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  onClick={openProfileSummary}
+                  ref={profileSummaryButtonRef}
+                  type="button"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-accent/20 bg-accentSoft text-sm font-black text-accent shadow-[0_10px_22px_-18px_rgba(49,130,246,0.75)]"
+                  >
+                    {getEmployeeAvatarText(employee.name)}
+                  </span>
+                  <span className="truncate text-2xl font-bold text-ink transition group-hover:text-accent">
+                    {employee.name}
+                  </span>
+                  <ChevronDownIcon
+                    className={`h-4 w-4 shrink-0 text-muted transition group-hover:text-accent ${
+                      isProfileSummaryOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+              </h1>
               {titleSummary ? (
                 <TitleTopHint
                   detail={titleRequirementHint}
                   onOpen={scrollToTitleSection}
                   summary={titleSummary}
                 />
+              ) : null}
+              {isProfileSummaryOpen ? (
+                <div
+                  className="absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))]"
+                  ref={profileSummaryPanelRef}
+                >
+                  <ProfileSummaryCard
+                    employee={employee}
+                    error={profileSummaryError}
+                    isLoading={isProfileSummaryLoading}
+                    onOpenTitles={() => {
+                      setIsProfileSummaryOpen(false);
+                      scrollToTitleSection();
+                    }}
+                    onRetry={retryProfileSummary}
+                    titleProfile={titleProfile}
+                    titleSummary={titleSummary}
+                  />
+                </div>
               ) : null}
             </div>
           </div>
@@ -1849,11 +1935,19 @@ export function EmployeeApp() {
             </span>
             {!isSharedView ? (
               <button
-                className="rounded border border-line bg-white px-2 py-1 text-xs font-bold text-muted transition hover:bg-field hover:text-ink"
+                className="inline-flex items-center gap-1.5 rounded border border-line bg-white px-2 py-1 text-xs font-bold text-muted transition hover:bg-field hover:text-ink disabled:cursor-wait disabled:opacity-70"
+                disabled={pendingShareAction === "dashboard"}
                 onClick={copyDashboardShareLink}
                 type="button"
               >
-                공유
+                {pendingShareAction === "dashboard" ? (
+                  <>
+                    <Spinner className="h-3 w-3" />
+                    복사 중
+                  </>
+                ) : (
+                  "공유"
+                )}
               </button>
             ) : (
               <span className="rounded bg-field px-2 py-1 text-xs font-bold text-muted">
@@ -1936,7 +2030,7 @@ export function EmployeeApp() {
 
         {status?.hasPreviousOpen ? (
           <p className="mt-4 rounded border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
-            이전 퇴근 기록이 비어 있어요. 다음날 접속 시 23:59 퇴근으로 자동 정리해둘게요.
+            이전 퇴근 기록이 비어 있어요. 다음날 접속 시 출근시간 + 8시간으로 자동 정리해둘게요.
           </p>
         ) : null}
 
@@ -1994,31 +2088,38 @@ export function EmployeeApp() {
           onSelectRecord={openWorkLog}
           refreshSeed={deskRefreshSeed}
           records={liveDeskRecords}
+          titleProfiles={teamTitleProfileByEmployeeId}
           todayDate={status?.kstDate}
           weather={officeWeather}
         />
         <div className="mt-3 space-y-2">
-          {visibleTeamRecords.map((record) => (
-            <details
-              className="group rounded border border-line bg-field/70 px-3 py-2 text-sm"
-              key={record.employeeId}
-              open
-            >
-              <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate font-bold text-ink">{record.employeeName}</span>
-                    <TeamStatusBadge record={record} />
+          {visibleTeamRecords.map((record) => {
+            const titleEntry = teamTitleProfileByEmployeeId?.get(record.employeeId);
+
+            return (
+              <details
+                className={`team-party-card team-party-card-${titleEntry?.representativeTitle.rarity ?? "rookie"} group rounded border border-line bg-field/70 px-3 py-2 text-sm`}
+                key={record.employeeId}
+                open
+              >
+                <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-2.5">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="truncate font-bold text-ink">{record.employeeName}</span>
+                        <TeamStatusBadge record={record} />
+                      </div>
+                      <p className="mt-1 text-xs text-muted">{formatKstTimeRange(record)}</p>
+                    </div>
                   </div>
-                  <p className="mt-1 text-xs text-muted">{formatKstTimeRange(record)}</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <ChevronDownIcon className="mt-1 h-4 w-4 text-muted transition group-open:rotate-180" />
-                </div>
-              </summary>
-              <TodayTeamTasks record={record} />
-            </details>
-          ))}
+                  <div className="flex shrink-0 items-center gap-2">
+                    <ChevronDownIcon className="mt-1 h-4 w-4 text-muted transition group-open:rotate-180" />
+                  </div>
+                </summary>
+                <TodayTeamTasks record={record} />
+              </details>
+            );
+          })}
           {visibleTeamRecords.length === 0 && isRefreshing ? (
             <div className="space-y-2">
               {[0, 1, 2].map((index) => (
@@ -2090,6 +2191,7 @@ export function EmployeeApp() {
             employeeName={employee.name}
             employeeNo={employee.employeeNo}
             companyTitleProfiles={companyTitleProfiles}
+            isCopyingShare={pendingShareAction === "title-profile"}
             onCopyShare={!isSharedView ? copyTitleShareLink : undefined}
             teamMonth={teamMonth}
             todayDate={status?.kstDate}
@@ -2176,6 +2278,7 @@ export function EmployeeApp() {
         editingCommentId={editingCommentId}
         editingCommentText={editingCommentText}
         isCommentSaving={isCommentSaving}
+        isCopyingLink={pendingShareAction === "work-log"}
         isLoading={isWorkLogLoading}
         isSaving={isWorkLogSaving}
         message={workLogMessage}
@@ -2487,6 +2590,7 @@ function TeamDeskScene({
   onSelectRecord,
   refreshSeed,
   records,
+  titleProfiles,
   todayDate,
   weather,
 }: {
@@ -2496,6 +2600,7 @@ function TeamDeskScene({
   onSelectRecord: (record: TeamAttendanceRecord) => void;
   refreshSeed: number;
   records: TeamAttendanceRecord[];
+  titleProfiles: Map<string, TeamTitleEntry> | null;
   todayDate?: string | null;
   weather: GreetingWeather | null;
 }) {
@@ -2536,6 +2641,7 @@ function TeamDeskScene({
             onSelectRecord={onSelectRecord}
             refreshSeed={refreshSeed}
             record={record}
+            titleProfile={titleProfiles?.get(record.employeeId)}
           />
         ))}
       </div>
@@ -2552,6 +2658,7 @@ function TeamDeskSeat({
   onSelectRecord,
   refreshSeed,
   record,
+  titleProfile,
 }: {
   currentEmployeeId: string;
   dateKey?: string | null;
@@ -2561,6 +2668,7 @@ function TeamDeskSeat({
   onSelectRecord: (record: TeamAttendanceRecord) => void;
   refreshSeed: number;
   record: TeamAttendanceRecord;
+  titleProfile?: TeamTitleEntry;
 }) {
   const palette = getDeskPalette(index, record.employeeId, dateKey ?? record.workDate);
   const state = getDeskSeatState(record, now, refreshSeed);
@@ -2574,6 +2682,10 @@ function TeamDeskSeat({
   const mumbleLines = getDeskMumbleLines(record, refreshSeed);
   const [mumbleIndex, setMumbleIndex] = useState(0);
   const safeMumbleIndex = mumbleIndex % mumbleLines.length;
+  const titleRarity = titleProfile?.representativeTitle.rarity ?? "rookie";
+  const titleDepth = titleProfile ? Math.min(Math.max(titleProfile.levelInfo.level, 1), 5) : 0;
+  const activityEffect = getDeskActivityEffect(record, workedMinutes, titleProfile);
+  const liveEffectStyle = getDeskLiveEffectStyle(activityEffect);
 
   useEffect(() => {
     if (mumbleLines.length <= 1) {
@@ -2591,14 +2703,22 @@ function TeamDeskSeat({
   return (
     <button
       aria-label={`${record.employeeName} 업무 기록 보기`}
-      className={`team-pixel-seat team-pixel-hair-${palette.hairStyle} team-pixel-outfit-${palette.outfit} team-pixel-posture-${state.posture} team-pixel-mood-${state.mood} team-pixel-screen-${state.screen}${state.rare ? ` team-pixel-rare-${state.rare}` : ""}${isMe ? " team-pixel-seat-me" : ""}`}
+      className={`team-pixel-seat team-pixel-tier-${titleRarity} team-pixel-depth-${titleDepth} team-pixel-effect-${activityEffect.level} team-pixel-effect-${activityEffect.tone} team-pixel-hair-${palette.hairStyle} team-pixel-outfit-${palette.outfit} team-pixel-posture-${state.posture} team-pixel-mood-${state.mood} team-pixel-screen-${state.screen}${state.rare ? ` team-pixel-rare-${state.rare}` : ""}${isMe ? " team-pixel-seat-me" : ""}`}
       onFocus={() => onPrefetchRecord(record)}
       onClick={() => onSelectRecord(record)}
       onPointerEnter={() => onPrefetchRecord(record)}
-      style={getDeskPaletteStyle(palette)}
+      style={
+        {
+          ...getDeskPaletteStyle(palette),
+          ...liveEffectStyle,
+        } as CSSProperties
+      }
       title={`${record.employeeName} · ${formatKstTimeRange(record)}`}
       type="button"
     >
+      {titleProfile ? <span className="team-pixel-title-aura" aria-hidden="true" /> : null}
+      <span className="team-pixel-live-aura" aria-hidden="true" />
+      <span className="team-pixel-live-particles" aria-hidden="true" />
       <span className="team-pixel-nameplate">
         <span className="team-pixel-name">{record.employeeName}</span>
         <span className={`team-pixel-time ${workHeatClassName}`}>{workingLabel}</span>
@@ -2691,6 +2811,12 @@ type DeskPosture = "lean" | "stretch" | "typing" | "upright";
 type DeskScreen = "chart" | "code" | "doc" | "mail" | "spark";
 type DeskItem = "book" | "coffee" | "memo" | "snack" | "trophy" | "water";
 type DeskRare = "gold" | "sparkle" | null;
+type DeskActivityTone = "aurora" | "calm" | "focus" | "solar" | "spark";
+type DeskActivityEffect = {
+  level: number;
+  rgb: string;
+  tone: DeskActivityTone;
+};
 
 function getDeskSeatState(record: TeamAttendanceRecord, now: Date, refreshSeed: number) {
   const seed = hashString(`${record.employeeId}:${record.workDate}:${refreshSeed}`);
@@ -2730,6 +2856,54 @@ function getDeskSeatState(record: TeamAttendanceRecord, now: Date, refreshSeed: 
     screen,
     showZzz: mood === "sleepy" && seed % 2 === 0,
   };
+}
+
+function getDeskActivityEffect(
+  record: TeamAttendanceRecord,
+  workedMinutes: number,
+  titleProfile?: TeamTitleEntry,
+): DeskActivityEffect {
+  const taskCount = record.taskCount ?? record.tasks?.length ?? 0;
+  const doneCount = record.doneCount ?? record.tasks?.filter((task) => task.done).length ?? 0;
+  const titleLevel = titleProfile?.levelInfo.level ?? 0;
+  const level =
+    workedMinutes >= 6 * 60 || doneCount >= 5 || titleLevel >= 7
+      ? 5
+      : workedMinutes >= 4 * 60 || doneCount >= 3 || titleLevel >= 5
+        ? 4
+        : workedMinutes >= 2 * 60 || doneCount >= 1 || taskCount >= 4 || titleLevel >= 3
+          ? 3
+          : workedMinutes >= 40 || taskCount > 0 || titleLevel > 0
+            ? 2
+            : 1;
+  const rarity = titleProfile?.representativeTitle.rarity;
+  const tone: DeskActivityTone =
+    rarity === "legend" || rarity === "platinum"
+      ? "aurora"
+      : rarity === "gold" || workedMinutes >= 6 * 60
+        ? "solar"
+        : doneCount >= 3 || workedMinutes >= 4 * 60
+          ? "spark"
+          : doneCount > 0 || workedMinutes >= 2 * 60
+            ? "focus"
+            : "calm";
+
+  const rgbByTone: Record<DeskActivityTone, string> = {
+    aurora: "6 182 212",
+    calm: "100 116 139",
+    focus: "37 99 235",
+    solar: "245 158 11",
+    spark: "124 58 237",
+  };
+
+  return { level, rgb: rgbByTone[tone], tone };
+}
+
+function getDeskLiveEffectStyle(effect: DeskActivityEffect) {
+  return {
+    "--team-live-rgb": effect.rgb,
+    "--team-live-strength": `${Math.min(0.18 + effect.level * 0.11, 0.72)}`,
+  } as CSSProperties;
 }
 
 function getDeskItems(seed: number, mood: DeskMood, workedMinutes: number) {
@@ -3400,22 +3574,154 @@ function TitleTopHint({
 }) {
   return (
     <button
-      className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-line bg-field/80 px-2.5 py-1 text-left text-[11px] font-bold text-slate-600 transition hover:border-accent/30 hover:bg-white hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      className="group inline-flex min-w-0 items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs font-bold text-slate-500 transition hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       onClick={onOpen}
+      title={detail ? `${summary.representativeTitle.name} · ${detail}` : summary.representativeTitle.name}
       type="button"
     >
-      <span className="min-w-0 truncate">
-        <span className="font-black text-ink">{summary.representativeTitle.name}</span>
-        {detail ? (
-          <span className="ml-1 hidden max-w-[12rem] truncate align-bottom text-slate-500 sm:inline-block">
-            · {detail}
-          </span>
-        ) : null}
+      <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent/65" />
+      <span className="min-w-0 max-w-[9.5rem] truncate font-black text-ink transition group-hover:text-accent">
+        {summary.representativeTitle.name}
       </span>
-      <span className="shrink-0 rounded-full border border-slate-300 bg-white px-1.5 py-0.5 font-black text-slate-600">
-        Lv.{summary.levelInfo.level} · {summary.achievedCount}/{summary.titleCount}
+      <span className="shrink-0 rounded-full border border-slate-200 bg-white/70 px-1.5 py-0.5 text-[10px] font-black text-slate-500">
+        Lv.{summary.levelInfo.level}
       </span>
     </button>
+  );
+}
+
+function ProfileSummaryCard({
+  employee,
+  error,
+  isLoading,
+  onOpenTitles,
+  onRetry,
+  titleProfile,
+  titleSummary,
+}: {
+  employee: Employee;
+  error: string;
+  isLoading: boolean;
+  onOpenTitles: () => void;
+  onRetry: () => void;
+  titleProfile: CareerTitleProfile | null;
+  titleSummary: CareerTitleSummary | null;
+}) {
+  const stats = titleProfile?.stats ?? null;
+  const representativeTitle = titleSummary?.representativeTitle ?? null;
+  const levelInfo = titleSummary?.levelInfo ?? null;
+  const completionRate = titleSummary?.titleCount
+    ? Math.round((titleSummary.achievedCount / titleSummary.titleCount) * 100)
+    : 0;
+
+  return (
+    <div
+      aria-label="내 프로필 요약"
+      className="overflow-hidden rounded-lg border border-line bg-white text-left shadow-[0_24px_60px_-34px_rgba(23,32,51,0.42)]"
+      role="dialog"
+    >
+      <div className="border-b border-line bg-field/55 px-4 py-3">
+        <div className="flex items-start gap-3">
+          <div className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-accent/20 bg-accentSoft text-base font-black text-accent">
+            {getEmployeeAvatarText(employee.name)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <p className="truncate text-base font-black text-ink">{employee.name}</p>
+              {isLoading ? <Spinner className="h-3.5 w-3.5 text-accent" /> : null}
+            </div>
+            <p className="mt-0.5 text-xs font-semibold text-muted">
+              {employee.employeeNo ? `${employee.employeeNo} · ` : ""}
+              {employee.role === "admin" ? "관리자" : "직원"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-4 py-3">
+        {isLoading && !stats ? (
+          <div className="space-y-3" role="status">
+            <div className="flex items-center gap-2 text-sm font-bold text-muted">
+              <Spinner className="h-4 w-4" />
+              프로필 불러오는 중
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {[0, 1, 2, 3].map((index) => (
+                <div className="rounded border border-line bg-field/70 px-3 py-2.5" key={index}>
+                  <LoadingLine />
+                  <span className="mt-2 block h-5 w-14 animate-pulse rounded bg-line" />
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="rounded border border-danger/25 bg-danger/10 px-3 py-2.5">
+            <p className="text-sm font-semibold text-danger">{error}</p>
+            <button
+              className="mt-2 text-xs font-bold text-danger underline-offset-4 hover:underline"
+              onClick={onRetry}
+              type="button"
+            >
+              다시 불러오기
+            </button>
+          </div>
+        ) : null}
+
+        {stats ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3 rounded border border-accent/20 bg-accentSoft px-3 py-2.5">
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold text-accent">대표 칭호</p>
+                <p className="mt-0.5 truncate text-sm font-black text-ink">
+                  {representativeTitle ? representativeTitle.name : "기록을 쌓는 중"}
+                </p>
+              </div>
+              {representativeTitle && levelInfo ? (
+                <div className="flex shrink-0 items-center gap-2">
+                  <TitleMedal small title={representativeTitle} />
+                  <span className="rounded-full border border-white/80 bg-white px-2 py-1 text-xs font-black text-accent">
+                    Lv.{levelInfo.level}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <ProfileStatTile label="총 출근일" value={`${stats.attendanceDays}일`} />
+              <ProfileStatTile label="총 완료 업무" value={`${stats.completedTasks}개`} />
+              <ProfileStatTile label="최고 연속 출근" value={`${stats.bestStreak}일`} />
+              <ProfileStatTile label="누적 근무" value={formatWorkedDuration(stats.totalWorkedMinutes)} />
+              <ProfileStatTile label="업무 완료율" value={formatTaskCompletionRate(stats)} />
+              <ProfileStatTile label="칭호 완성" value={`${completionRate}%`} />
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+              <p className="text-xs font-semibold text-muted">
+                {formatProfileActiveRange(stats)}
+              </p>
+              <button
+                className="secondary-button px-2.5 py-1.5 text-xs"
+                onClick={onOpenTitles}
+                type="button"
+              >
+                칭호 보기
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ProfileStatTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded border border-line bg-white px-3 py-2.5">
+      <p className="font-semibold text-muted">{label}</p>
+      <p className="mt-1 text-base font-black text-ink">{value}</p>
+    </div>
   );
 }
 
@@ -3424,6 +3730,7 @@ function MyTitlesPanel({
   employeeName,
   employeeNo,
   companyTitleProfiles,
+  isCopyingShare,
   onCopyShare,
   teamMonth,
   titleProfile,
@@ -3434,6 +3741,7 @@ function MyTitlesPanel({
   employeeName: string;
   employeeNo: string;
   companyTitleProfiles: CompanyTitleProfile[];
+  isCopyingShare?: boolean;
   onCopyShare?: () => void;
   teamMonth: TeamMonthAttendance | null;
   titleProfile: CareerTitleProfile | null;
@@ -3518,7 +3826,7 @@ function MyTitlesPanel({
           }
         }}
       >
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(15rem,0.85fr)]">
+        <div className="title-quest-layout grid gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
@@ -3545,14 +3853,22 @@ function MyTitlesPanel({
               <div className="flex shrink-0 items-center gap-2">
                 {onCopyShare ? (
                   <button
-                    className="secondary-button px-2.5 py-1.5 text-xs"
+                    className="secondary-button inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs disabled:cursor-wait disabled:opacity-70"
+                    disabled={isCopyingShare}
                     onClick={(event) => {
                       event.stopPropagation();
                       onCopyShare();
                     }}
                     type="button"
                   >
-                    칭호 공유
+                    {isCopyingShare ? (
+                      <>
+                        <Spinner className="h-3 w-3" />
+                        복사 중
+                      </>
+                    ) : (
+                      "칭호 공유"
+                    )}
                   </button>
                 ) : null}
                 <button
@@ -3685,6 +4001,7 @@ function MyTitlesPanel({
           filter={filter}
           categoryFilter={categoryFilter}
           levelInfo={levelInfo}
+          isCopyingShare={isCopyingShare}
           onClose={() => {
             setIsCollectionOpen(false);
             setSelectedTitleDetail(null);
@@ -3732,6 +4049,16 @@ function MyTitlesPanel({
           comparisonProfiles={titleComparisonProfiles}
           currentEmployeeId={employeeId}
           onClose={() => setSelectedTitleDetail(null)}
+          onOpenOwnerProfile={(profile) => {
+            setSelectedTitleDetail(null);
+            if (profile.employeeId === employeeId) {
+              setSelectedCompanyTitleProfile(null);
+              setIsCollectionOpen(true);
+            } else {
+              setIsCollectionOpen(false);
+              setSelectedCompanyTitleProfile(profile);
+            }
+          }}
           ownerProfile={selectedTitleDetail.ownerProfile}
           title={selectedTitleDetail.title}
         />
@@ -3780,6 +4107,18 @@ type CompanyTitleGalleryEntry = {
   levelInfo: ReturnType<typeof getTitleLevelInfo>;
   profile: CompanyTitleProfile;
   representativeTitle: QuestTitle;
+  titleCount: number;
+  totalXp: number;
+};
+
+type TeamTitleEntry = {
+  achievedCount: number;
+  levelInfo: ReturnType<typeof getTitleLevelInfo>;
+  representativeTitle: {
+    category: QuestTitleCategory;
+    name: string;
+    rarity: QuestTitleRarity;
+  };
   titleCount: number;
   totalXp: number;
 };
@@ -3909,6 +4248,7 @@ function TitleCollectionModal({
   categoryFilter,
   filter,
   levelInfo,
+  isCopyingShare,
   onClose,
   onCategoryFilterChange,
   onCopyShare,
@@ -3925,6 +4265,7 @@ function TitleCollectionModal({
   categoryFilter: QuestTitleCategoryFilter;
   filter: QuestTitleFilter;
   levelInfo: ReturnType<typeof getTitleLevelInfo>;
+  isCopyingShare?: boolean;
   onClose: () => void;
   onCategoryFilterChange: (filter: QuestTitleCategoryFilter) => void;
   onCopyShare?: () => void;
@@ -3993,11 +4334,19 @@ function TitleCollectionModal({
             <div className="flex shrink-0 items-center gap-2">
               {onCopyShare ? (
                 <button
-                  className="secondary-button px-3 py-2 text-xs"
+                  className="secondary-button inline-flex items-center gap-1.5 px-3 py-2 text-xs disabled:cursor-wait disabled:opacity-70"
+                  disabled={isCopyingShare}
                   onClick={onCopyShare}
                   type="button"
                 >
-                  공유
+                  {isCopyingShare ? (
+                    <>
+                      <Spinner className="h-3 w-3" />
+                      복사 중
+                    </>
+                  ) : (
+                    "공유"
+                  )}
                 </button>
               ) : null}
               <button className="secondary-button px-3 py-2 text-xs" onClick={onClose} type="button">
@@ -4095,12 +4444,14 @@ function TitleDetailModal({
   comparisonProfiles,
   currentEmployeeId,
   onClose,
+  onOpenOwnerProfile,
   ownerProfile,
   title,
 }: {
   comparisonProfiles: CompanyTitleProfile[];
   currentEmployeeId: string;
   onClose: () => void;
+  onOpenOwnerProfile: (profile: CompanyTitleProfile) => void;
   ownerProfile: CompanyTitleProfile;
   title: QuestTitle;
 }) {
@@ -4214,16 +4565,18 @@ function TitleDetailModal({
             {owners.length ? (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {owners.map((owner) => (
-                  <span
-                    className={`rounded-full border px-2.5 py-1 text-xs font-black ${
+                  <button
+                    className={`rounded-full border px-2.5 py-1 text-xs font-black transition hover:border-accent/35 hover:bg-accentSoft hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
                       owner.profile.employeeId === ownerProfile.employeeId
                         ? "border-accent/30 bg-accentSoft text-accent"
                         : "border-slate-300 bg-white text-slate-700"
                     }`}
                     key={owner.profile.employeeId}
+                    onClick={() => onOpenOwnerProfile(owner.profile)}
+                    type="button"
                   >
                     {formatTitleOwnerName(owner.profile, currentEmployeeId)}
-                  </span>
+                  </button>
                 ))}
               </div>
             ) : (
@@ -5955,6 +6308,68 @@ function getCompanyTitleGalleryEntries(profiles: CompanyTitleProfile[]): Company
     );
 }
 
+function getTeamMonthlyTitleProfileMap(
+  teamMonth: TeamMonthAttendance,
+  todayDate: string | undefined,
+  todayWorkLog: WorkLog | null,
+) {
+  const employeeIds = new Set(
+    teamMonth.records
+      .filter(
+        (record) =>
+          record.workDate >= teamMonth.startDate &&
+          record.workDate <= teamMonth.endDate,
+      )
+      .map((record) => record.employeeId),
+  );
+
+  return new Map(
+    [...employeeIds].map((employeeId) => {
+      const stats = getEmployeeTitleStats(employeeId, teamMonth, todayDate, todayWorkLog);
+      const titles = getEmployeeTitles(stats);
+      const achievedTitles = titles.filter((title) => title.achieved);
+      const representativeTitle = achievedTitles[0] ?? titles[0];
+      const totalXp = getMonthlyTitleXp(stats, achievedTitles.length);
+      const levelInfo = getTitleLevelInfo(totalXp);
+      const entry: TeamTitleEntry = {
+        achievedCount: achievedTitles.length,
+        levelInfo,
+        representativeTitle: {
+          category: "team",
+          name: representativeTitle?.name ?? "오늘의 동료",
+          rarity: getMonthlyTitleRarity(levelInfo.level, achievedTitles.length),
+        },
+        titleCount: titles.length,
+        totalXp,
+      };
+
+      return [employeeId, entry] as const;
+    }),
+  );
+}
+
+function getMonthlyTitleXp(stats: EmployeeTitleStats, achievedCount: number) {
+  return (
+    stats.attendanceDays * 90 +
+    stats.checkoutDays * 30 +
+    stats.completedTasks * 35 +
+    stats.commentCount * 25 +
+    stats.tenHourDays * 120 +
+    stats.twelveHourDays * 180 +
+    stats.heavyDoneDays * 100 +
+    stats.perfectTaskDays * 110 +
+    achievedCount * 80
+  );
+}
+
+function getMonthlyTitleRarity(level: number, achievedCount: number): QuestTitleRarity {
+  if (level >= 10 || achievedCount >= 8) return "legend";
+  if (level >= 7 || achievedCount >= 6) return "platinum";
+  if (level >= 5 || achievedCount >= 4) return "gold";
+  if (level >= 3 || achievedCount >= 2) return "silver";
+  return "bronze";
+}
+
 function getQuestTitleOwners(titleId: string, profiles: CompanyTitleProfile[]): QuestTitleOwner[] {
   return profiles
     .map((profile) => {
@@ -6855,6 +7270,7 @@ function WorkLogModal({
   editingCommentId,
   editingCommentText,
   isCommentSaving,
+  isCopyingLink,
   isLoading,
   isSaving,
   message,
@@ -6886,6 +7302,7 @@ function WorkLogModal({
   editingCommentId: string | null;
   editingCommentText: string;
   isCommentSaving: boolean;
+  isCopyingLink: boolean;
   isLoading: boolean;
   isSaving: boolean;
   message: string;
@@ -6948,11 +7365,19 @@ function WorkLogModal({
           <div className="flex shrink-0 items-center gap-2">
             <div>
               <button
-                className="rounded border border-line px-2 py-1 text-sm font-bold text-muted hover:bg-field hover:text-ink"
+                className="inline-flex items-center gap-1.5 rounded border border-line px-2 py-1 text-sm font-bold text-muted hover:bg-field hover:text-ink disabled:cursor-wait disabled:opacity-70"
+                disabled={isCopyingLink}
                 onClick={onCopyLink}
                 type="button"
               >
-                공유
+                {isCopyingLink ? (
+                  <>
+                    <Spinner className="h-3 w-3" />
+                    복사 중
+                  </>
+                ) : (
+                  "공유"
+                )}
               </button>
             </div>
             <button
@@ -7738,6 +8163,47 @@ function formatWorkedDuration(minutes: number) {
   }
 
   return `${hours}시간 ${restMinutes}분`;
+}
+
+function getEmployeeAvatarText(name: string) {
+  const normalizedName = name.normalize("NFC").trim();
+  const compactName = normalizedName.replace(/\s+/g, "");
+  if (!compactName) {
+    return "나";
+  }
+
+  if (/^[A-Za-z\s]+$/.test(normalizedName)) {
+    const words = normalizedName.split(/\s+/).filter(Boolean);
+    const initials = (words.length >= 2 ? words.map((word) => word[0]) : Array.from(compactName))
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
+    return initials || "ME";
+  }
+
+  return Array.from(compactName).slice(0, 2).join("");
+}
+
+function formatTaskCompletionRate(stats: Pick<CareerTitleStats, "completedTasks" | "totalTasks">) {
+  if (stats.totalTasks <= 0) {
+    return "0%";
+  }
+
+  return `${Math.round((stats.completedTasks / stats.totalTasks) * 100)}%`;
+}
+
+function formatProfileActiveRange(
+  stats: Pick<CareerTitleStats, "firstRecordDate" | "latestRecordDate">,
+) {
+  if (!stats.firstRecordDate) {
+    return "아직 기록을 모으는 중";
+  }
+
+  if (!stats.latestRecordDate || stats.latestRecordDate === stats.firstRecordDate) {
+    return `${stats.firstRecordDate} 첫 기록`;
+  }
+
+  return `${stats.firstRecordDate}부터 ${stats.latestRecordDate}까지`;
 }
 
 function formatWorkingSinceLabel(minutes: number) {
