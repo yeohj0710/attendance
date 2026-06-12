@@ -1887,7 +1887,7 @@ export function EmployeeApp() {
                     aria-hidden="true"
                     className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-accent/20 bg-accentSoft text-sm font-black text-accent shadow-[0_10px_22px_-18px_rgba(49,130,246,0.75)]"
                   >
-                    {getEmployeeAvatarText(employee.name)}
+                    <DefaultProfileIcon className="h-4 w-4" />
                   </span>
                   <span className="truncate text-2xl font-bold text-ink transition group-hover:text-accent">
                     {employee.name}
@@ -3623,7 +3623,7 @@ function ProfileSummaryCard({
       <div className="border-b border-line bg-field/55 px-4 py-3">
         <div className="flex items-start gap-3">
           <div className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-accent/20 bg-accentSoft text-base font-black text-accent">
-            {getEmployeeAvatarText(employee.name)}
+            <DefaultProfileIcon className="h-6 w-6" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
@@ -7974,6 +7974,24 @@ function ChevronRightIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
+function DefaultProfileIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      viewBox="0 0 24 24"
+    >
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21a8 8 0 0 1 16 0" />
+    </svg>
+  );
+}
+
 function GripIcon() {
   return (
     <svg
@@ -8163,25 +8181,6 @@ function formatWorkedDuration(minutes: number) {
   }
 
   return `${hours}시간 ${restMinutes}분`;
-}
-
-function getEmployeeAvatarText(name: string) {
-  const normalizedName = name.normalize("NFC").trim();
-  const compactName = normalizedName.replace(/\s+/g, "");
-  if (!compactName) {
-    return "나";
-  }
-
-  if (/^[A-Za-z\s]+$/.test(normalizedName)) {
-    const words = normalizedName.split(/\s+/).filter(Boolean);
-    const initials = (words.length >= 2 ? words.map((word) => word[0]) : Array.from(compactName))
-      .join("")
-      .slice(0, 2)
-      .toUpperCase();
-    return initials || "ME";
-  }
-
-  return Array.from(compactName).slice(0, 2).join("");
 }
 
 function formatTaskCompletionRate(stats: Pick<CareerTitleStats, "completedTasks" | "totalTasks">) {
