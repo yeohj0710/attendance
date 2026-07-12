@@ -53,7 +53,6 @@ type AttendanceForm = {
   workDate: string;
   checkInAt: string;
   checkOutAt: string;
-  checkOutLocked: boolean;
   workType: WorkType;
   note: string;
   reason: string;
@@ -235,6 +234,18 @@ export function AdminApp() {
     }
   }, [employeeId, visibleEmployees]);
 
+  useEffect(() => {
+    if (!form.id) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !isMutating) {
+        setForm(emptyForm());
+      }
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [form.id, isMutating]);
+
   async function unlockAdmin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setUnlockMessage("");
@@ -308,6 +319,7 @@ export function AdminApp() {
         );
       });
       setForm(emptyForm());
+      setMessage(form.id ? "기록을 수정했어요." : "기록을 추가했어요.");
       void refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "저장하지 못했습니다.");
@@ -732,7 +744,11 @@ export function AdminApp() {
                           <td className="py-2 pr-3 text-right">
                             <button
                               className="text-sm font-semibold text-accent hover:underline"
-                              onClick={() => setForm(formFromRecord(record))}
+                              aria-haspopup="dialog"
+                              onClick={() => {
+                                setMessage("");
+                                setForm(formFromRecord(record));
+                              }}
                               type="button"
                             >
                               수정
@@ -753,14 +769,34 @@ export function AdminApp() {
           </div>
         </section>
 
-        <section className="rounded-lg border border-line bg-white/95 p-4 shadow-panel">
+        {form.id ? (
+          <button
+            aria-label="기록 수정 닫기"
+            className="fixed inset-0 z-40 cursor-default bg-slate-950/35 backdrop-blur-[1px]"
+            disabled={isMutating}
+            onClick={() => setForm(emptyForm())}
+            type="button"
+          />
+        ) : null}
+        <section
+          aria-labelledby="attendance-form-title"
+          aria-modal={form.id ? true : undefined}
+          className={
+            form.id
+              ? "fixed inset-x-4 top-1/2 z-50 max-h-[calc(100dvh-2rem)] -translate-y-1/2 overflow-y-auto rounded-2xl border border-line bg-white p-5 shadow-2xl sm:left-1/2 sm:right-auto sm:w-[min(92vw,32rem)] sm:-translate-x-1/2"
+              : "rounded-lg border border-line bg-white/95 p-4 shadow-panel"
+          }
+          role={form.id ? "dialog" : undefined}
+        >
           <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-base font-bold text-ink">
+            <h2 className="text-base font-bold text-ink" id="attendance-form-title">
               {form.id ? "기록 수정" : "기록 추가"}
             </h2>
             {form.id ? (
               <button
-                className="text-xs text-muted hover:text-ink"
+                aria-label="기록 수정 취소"
+                className="rounded-lg px-3 py-2 text-sm font-semibold text-muted hover:bg-field hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                disabled={isMutating}
                 onClick={() => setForm(emptyForm())}
                 type="button"
               >
@@ -774,6 +810,7 @@ export function AdminApp() {
               <span className="label">직원</span>
               <select
                 className="field mt-1"
+                required
                 onChange={(event) => setForm({ ...form, employeeId: event.target.value })}
                 value={form.employeeId}
               >
@@ -792,6 +829,7 @@ export function AdminApp() {
                 className="field mt-1"
                 onChange={(event) => setForm({ ...form, workDate: event.target.value })}
                 type="date"
+                required
                 value={form.workDate}
               />
             </label>
@@ -810,22 +848,17 @@ export function AdminApp() {
               <span className="label">퇴근시각</span>
               <input
                 className="field mt-1"
-                disabled={form.checkOutLocked}
                 onChange={(event) => setForm({ ...form, checkOutAt: event.target.value })}
                 type="datetime-local"
                 value={form.checkOutAt}
               />
-              {form.checkOutLocked ? (
-                <p className="mt-1 text-xs text-muted">
-                  직원이 퇴근 버튼으로 남긴 시각은 수정할 수 없습니다.
-                </p>
-              ) : null}
             </label>
 
             <label className="block">
               <span className="label">근무 유형</span>
               <select
                 className="field mt-1"
+                required
                 onChange={(event) =>
                   setForm({ ...form, workType: event.target.value as WorkType })
                 }
@@ -857,7 +890,11 @@ export function AdminApp() {
               />
             </label>
 
-            <button className="primary-button w-full" disabled={isMutating} type="submit">
+            <button
+              className="primary-button w-full"
+              disabled={isMutating || !form.employeeId || !form.workDate}
+              type="submit"
+            >
               {isMutating && !approvingDeviceId ? (
                 <>
                   <Spinner className="mr-2" />
@@ -905,7 +942,6 @@ function emptyForm(): AttendanceForm {
     workDate: getKstDate(0),
     checkInAt: "",
     checkOutAt: "",
-    checkOutLocked: false,
     workType: "office",
     note: "",
     reason: "",
@@ -919,7 +955,6 @@ function formFromRecord(record: AttendanceRecord): AttendanceForm {
     workDate: record.workDate,
     checkInAt: toKstDateTimeInput(record.checkInAt),
     checkOutAt: toKstDateTimeInput(record.checkOutAt),
-    checkOutLocked: isEmployeeCheckOutLocked(record),
     workType: record.workType,
     note: record.note ?? "",
     reason: "",
@@ -946,10 +981,6 @@ function isRecordInAdminQuery(
     (!endDate || record.workDate <= endDate) &&
     (!employeeId || record.employeeId === employeeId)
   );
-}
-
-function isEmployeeCheckOutLocked(record: AttendanceRecord) {
-  return Boolean(record.checkOutAt && record.source === "employee" && record.checkOutIp !== "auto");
 }
 
 function getKstDate(offsetDays: number) {
