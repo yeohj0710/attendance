@@ -14,6 +14,7 @@ import {
 } from "@/components/api";
 import { LoginPanel } from "@/components/LoginPanel";
 import { Spinner } from "@/components/Spinner";
+import { WorkInsights } from "@/components/employee/WorkInsights";
 import {
   createLocalGreetings,
   type GreetingContext,
@@ -2263,6 +2264,8 @@ export function EmployeeApp() {
         </a>
       </div> : null}
     </main>
+    {/* 로그인한 본인 화면에서만 팀 통계를 이어 붙인다. 공유 링크에는 붙이지 않는다. */}
+    {!isSharedView && auth ? <WorkInsights /> : null}
     {commentNotificationState ? (
       <CommentNotificationModal
         notifications={commentNotificationState.notifications}
