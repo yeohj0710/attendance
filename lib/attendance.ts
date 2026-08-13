@@ -192,18 +192,36 @@ const publicHolidayNamesByDate: Record<string, string> = {
   "2026-10-05": "대체공휴일",
 };
 
-export async function getAttendanceStatus(auth: AuthContext) {
-  await autoCloseForgottenCheckOuts(auth);
+/**
+ * 상태 판단과 자동 마감이 함께 보는 최근 기록 창. 오늘 기록, 미퇴근 기록,
+ * 화면에 뿌릴 최근 목록이 모두 이 안에 들어온다.
+ */
+const RECENT_WINDOW = 45;
 
-  return getAttendanceStatusForEmployee(auth.employee.id);
+/** 한 직원의 최근 기록을 최신순으로 읽는다. (employee_id, work_date 내림차순) 색인을 쓴다. */
+async function readRecentAttendanceDocs(employeeId: string, limit: number) {
+  return getDb()
+    .collection("attendance_records")
+    .where("employee_id", "==", employeeId)
+    .orderBy("work_date", "desc")
+    .limit(limit)
+    .get();
 }
 
-export async function getAttendanceStatusForEmployee(employeeId: string) {
+/** 퇴근 처리에서 쓴다. 아직 안 닫힌 기록 한 건을 최근 창 안에서 찾는다. */
+async function getOpenRecord(employeeId: string) {
+  const snapshot = await readRecentAttendanceDocs(employeeId, RECENT_WINDOW);
+  return (
+    snapshot.docs
+      .map((doc) => mapAttendance(doc.id, doc.data() as AttendanceData))
+      .find((record) => record.checkInAt && !record.checkOutAt) ?? null
+  );
+}
+
+function buildAttendanceStatus(records: AttendanceRecord[], recentLimit: number) {
   const today = getWorkDateString();
-  const [todayRecord, openRecord] = await Promise.all([
-    getRecordByEmployeeDate(employeeId, today),
-    getOpenRecord(employeeId),
-  ]);
+  const todayRecord = records.find((record) => record.workDate === today) ?? null;
+  const openRecord = records.find((record) => record.checkInAt && !record.checkOutAt) ?? null;
   const hasPreviousOpen =
     openRecord !== null && openRecord.workDate !== today && !openRecord.checkOutAt;
 
@@ -214,7 +232,36 @@ export async function getAttendanceStatusForEmployee(employeeId: string) {
     canCheckIn: !todayRecord?.checkInAt && !todayRecord?.checkOutAt && !hasPreviousOpen,
     canCheckOut: canCheckOutFromRecords(todayRecord, openRecord),
     hasPreviousOpen,
+    recentRecords: records.slice(0, recentLimit),
   };
+}
+
+/**
+ * 예전에는 한 화면을 그리려고 같은 직원의 기록을 네 번 읽었다. 자동 마감이 한 번,
+ * 오늘 기록이 한 번, 미퇴근 찾기가 한 번, 최근 목록이 한 번. 넷 다 최근 기록을
+ * 보는 일이라 한 번만 읽어서 나눠 쓴다.
+ */
+export async function getAttendanceStatus(auth: AuthContext, recentLimit = 10) {
+  const snapshot = await readRecentAttendanceDocs(auth.employee.id, RECENT_WINDOW);
+  const patches = await autoCloseForgottenCheckOuts(auth, snapshot.docs);
+  const records = snapshot.docs.map((doc) =>
+    mapAttendance(doc.id, {
+      ...(doc.data() as AttendanceData),
+      ...patches.get(doc.id),
+    } as AttendanceData),
+  );
+
+  return buildAttendanceStatus(records, recentLimit);
+}
+
+/** 공유 링크로 남의 기록을 볼 때 쓴다. 남의 기록이라 자동 마감은 하지 않는다. */
+export async function getAttendanceStatusForEmployee(employeeId: string, recentLimit = 10) {
+  const snapshot = await readRecentAttendanceDocs(employeeId, RECENT_WINDOW);
+  const records = snapshot.docs.map((doc) =>
+    mapAttendance(doc.id, doc.data() as AttendanceData),
+  );
+
+  return buildAttendanceStatus(records, recentLimit);
 }
 
 export async function getRecentAttendance(employeeId: string, limit: number) {
@@ -1223,50 +1270,19 @@ async function getRecordByEmployeeDate(employeeId: string, workDate: string) {
 }
 
 /**
- * 미퇴근 기록을 거슬러 찾는 날수. 페이지를 열 때마다 훑는 구간이라 넉넉하되
- * 끝은 있어야 한다. 이 기간보다 오래된 미퇴근은 자동 마감도 손대지 않는다.
+ * 이미 읽어둔 기록에서 미퇴근 건을 찾아 마감한다. 읽기를 새로 하지 않고,
+ * 고친 내용을 호출한 쪽이 그대로 쓸 수 있게 문서별 수정분을 돌려준다.
  */
-const OPEN_RECORD_LOOKBACK_DAYS = 45;
-
-/**
- * employee_id + work_date 복합 색인이 아직 없으면 기간 쿼리가 막힌다.
- * 색인을 만들기 전까지는 예전처럼 전부 읽어서라도 동작하게 둔다.
- */
-async function queryEmployeeRecordsSince(employeeId: string, sinceWorkDate: string) {
-  const query = getDb().collection("attendance_records").where("employee_id", "==", employeeId);
-  try {
-    return await query.where("work_date", ">=", sinceWorkDate).get();
-  } catch (error) {
-    console.warn(
-      "[attendance] 출퇴근 기간 쿼리 실패, 전체 읽기로 대체합니다. 복합 색인을 만드세요.",
-      error,
-    );
-    return query.get();
-  }
-}
-
-async function getOpenRecord(employeeId: string) {
-  // 예전에는 최대 500건을 읽어서 그중 미퇴근 한 건을 찾았다. 페이지를 열 때마다
-  // 나가는 읽기라 기간으로 묶었다.
-  const records = await getRecentAttendance(employeeId, OPEN_RECORD_LOOKBACK_DAYS);
-  return (
-    records.find((record) => record.checkInAt && !record.checkOutAt) ?? null
-  );
-}
-
-async function autoCloseForgottenCheckOuts(auth: AuthContext) {
+async function autoCloseForgottenCheckOuts(
+  auth: AuthContext,
+  docs: FirebaseFirestore.QueryDocumentSnapshot[],
+) {
   const db = getDb();
   const today = getWorkDateString();
-  // 이것도 페이지를 열 때마다 돈다. 예전에는 그 직원 기록을 처음부터 전부
-  // 읽었다. 마감할 만한 미퇴근은 최근 것뿐이라 기간으로 묶었다.
-  const snapshot = await queryEmployeeRecordsSince(
-    auth.employee.id,
-    addDaysToKstDate(today, -OPEN_RECORD_LOOKBACK_DAYS),
-  );
   const batch = db.batch();
-  let changed = 0;
+  const patches = new Map<string, Partial<AttendanceData>>();
 
-  for (const doc of snapshot.docs) {
+  for (const doc of docs) {
     const data = doc.data() as AttendanceData;
     if (!data.check_in_at || data.check_out_at || data.work_date >= today) {
       continue;
@@ -1277,21 +1293,25 @@ async function autoCloseForgottenCheckOuts(auth: AuthContext) {
       continue;
     }
 
-    batch.update(doc.ref, {
+    const patch = {
       check_out_at: toTimestamp(checkOutAt),
       check_out_ip: "auto",
       check_out_session_id: null,
       updated_by: auth.employee.id,
       updated_at: nowTimestamp(),
-    });
-    changed += 1;
+    } satisfies Partial<AttendanceData>;
+
+    batch.update(doc.ref, patch);
+    patches.set(doc.id, patch);
   }
 
-  if (changed > 0) {
+  if (patches.size > 0) {
     await batch.commit();
     // 지난 날짜 기록을 마감했으니 달력 캐시를 비운다.
     invalidateTeamMonthCache();
   }
+
+  return patches;
 }
 
 async function autoCloseForgottenCheckOutsForAll() {

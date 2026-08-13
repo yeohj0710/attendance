@@ -1,8 +1,8 @@
 import { requireAuth } from "@/lib/auth";
 import {
+  getCompanyTitleProfiles,
   getAttendanceStatusForEmployee,
-  getEmployeeTitleProfile,
-  getRecentAttendance,
+  getEmployeeTitleProfile,
   getTeamMonthAttendance,
   getTeamTodayAttendance,
 } from "@/lib/attendance";
@@ -69,13 +69,20 @@ export async function GET(request: Request) {
     const payload = verifyShareToken(token);
     const owner = await getEmployee(payload.ownerEmployeeId);
 
-    const [status, records, teamRecords, teamMonth, titleProfile] = await Promise.all([
-      getAttendanceStatusForEmployee(payload.ownerEmployeeId),
-      getRecentAttendance(payload.ownerEmployeeId, 10),
+    const [status, teamRecords, teamMonth, titleProfileResult] = await Promise.all([
+      getAttendanceStatusForEmployee(payload.ownerEmployeeId, 10),
       getTeamTodayAttendance(),
       getTeamMonthAttendance(),
-      getEmployeeTitleProfile(payload.ownerEmployeeId),
+      payload.type === "title-profile"
+        ? getCompanyTitleProfiles()
+        : getEmployeeTitleProfile(payload.ownerEmployeeId),
     ]);
+    const records = status.recentRecords;
+    const companyTitleProfiles = Array.isArray(titleProfileResult) ? titleProfileResult : [];
+    const titleProfile = Array.isArray(titleProfileResult)
+      ? titleProfileResult.find((profile) => profile.employeeId === payload.ownerEmployeeId) ??
+        (await getEmployeeTitleProfile(payload.ownerEmployeeId))
+      : titleProfileResult;
     const todayWorkLog = await getWorkLog(payload.ownerEmployeeId, status.kstDate);
 
     const requestedEmployeeId = url.searchParams.get("employeeId")?.trim();
@@ -128,7 +135,7 @@ export async function GET(request: Request) {
       teamRecords,
       teamMonth,
       titleProfile,
-      companyTitleProfiles: [],
+      companyTitleProfiles,
       todayWorkLog,
       targetWorkLog,
       targetWorkRecord,
