@@ -1,7 +1,12 @@
-import { unstable_cache } from "next/cache";
+import { revalidateTag, unstable_cache } from "next/cache";
 import { getDb, nowTimestamp, timestampToIso, toTimestamp } from "@/lib/db";
 import { badRequest, conflict } from "@/lib/http";
-import { getWorkDateString, isValidDateString, parseKstDateTimeInput } from "@/lib/time";
+import {
+  addDaysToKstDate,
+  getWorkDateString,
+  isValidDateString,
+  parseKstDateTimeInput,
+} from "@/lib/time";
 import {
   ensureCarryoverWorkLog,
   getAllWorkLogSummaries,
@@ -729,10 +734,69 @@ export async function getTeamTodayAttendance() {
     });
 }
 
+export const TEAM_MONTH_CACHE_TAG = "team-month-attendance";
+
+/** 캐시를 못 비워도 화면은 떠야 한다. 달력이 잠시 옛것으로 보일 뿐이다. */
+function invalidateTeamMonthCache() {
+  try {
+    revalidateTag(TEAM_MONTH_CACHE_TAG, "max");
+  } catch (error) {
+    console.warn("[attendance] 달력 캐시 비우기에 실패했습니다.", error);
+  }
+}
+
+/**
+ * 달력 한 칸씩 채우려면 그 기간의 출퇴근 기록과 업무일지를 다 읽어야 한다.
+ * 지난 날짜는 더 안 바뀌니 어제까지는 캐시해두고 오늘분만 그때그때 읽는다.
+ * 그래서 출퇴근을 찍어도 캐시를 손댈 일이 없다. 관리자가 지난 기록을 고치거나
+ * 미퇴근 자동 마감이 돌 때만 TEAM_MONTH_CACHE_TAG로 캐시를 비운다.
+ */
+const loadCachedTeamMonthRecords = unstable_cache(
+  async (fromDate: string, toDate: string) => readTeamMonthRecords(fromDate, toDate),
+  ["team-month-records-v1"],
+  { revalidate: 36 * 60 * 60, tags: [TEAM_MONTH_CACHE_TAG] },
+);
+
 export async function getTeamMonthAttendance(monthValue?: string | null) {
-  const db = getDb();
   const { startDate, endDate, month } = getKstMonthRange(monthValue);
   const { calendarStartDate, calendarEndDate } = getCalendarRange(startDate, endDate);
+
+  // 오늘(업무일 기준) 전까지가 캐시 대상이다. 지난 달을 볼 때는 달력 전체가
+  // 여기 들어와서 Firestore를 아예 안 읽는다.
+  const historyEndDate = addDaysToKstDate(getWorkDateString(), -1);
+  const cachedUntil = historyEndDate < calendarEndDate ? historyEndDate : calendarEndDate;
+
+  const [cachedRecords, liveRecords] = await Promise.all([
+    cachedUntil >= calendarStartDate
+      ? loadCachedTeamMonthRecords(calendarStartDate, cachedUntil)
+      : [],
+    cachedUntil < calendarEndDate
+      ? readTeamMonthRecords(
+          cachedUntil >= calendarStartDate ? addDaysToKstDate(cachedUntil, 1) : calendarStartDate,
+          calendarEndDate,
+        )
+      : [],
+  ]);
+
+  return {
+    month,
+    startDate,
+    endDate,
+    calendarStartDate,
+    calendarEndDate,
+    records: sortTeamMonthRecords([...cachedRecords, ...liveRecords]),
+  };
+}
+
+function sortTeamMonthRecords<T extends { workDate: string; employeeName: string }>(records: T[]) {
+  return [...records].sort(
+    (a, b) =>
+      a.workDate.localeCompare(b.workDate) || a.employeeName.localeCompare(b.employeeName),
+  );
+}
+
+async function readTeamMonthRecords(calendarStartDate: string, calendarEndDate: string) {
+  const db = getDb();
   const [employeesSnapshot, attendanceSnapshot] = await Promise.all([
     db.collection("employees").where("is_active", "==", true).get(),
     db
@@ -797,21 +861,7 @@ export async function getTeamMonthAttendance(monthValue?: string | null) {
       };
     });
 
-  const sortedRecords = [...records, ...workLogOnlyRecords]
-    .sort(
-      (a, b) =>
-        a.workDate.localeCompare(b.workDate) ||
-        a.employeeName.localeCompare(b.employeeName),
-    );
-
-  return {
-    month,
-    startDate,
-    endDate,
-    calendarStartDate,
-    calendarEndDate,
-    records: sortedRecords,
-  };
+  return sortTeamMonthRecords([...records, ...workLogOnlyRecords]);
 }
 
 export async function checkIn(auth: AuthContext, ip: string | null) {
@@ -1087,6 +1137,9 @@ export async function updateAdminAttendance(
     reason: input.reason ?? null,
   });
 
+  // 지난 날짜 기록이 바뀌었으니 달력 캐시를 비운다.
+  invalidateTeamMonthCache();
+
   return mapAttendance(targetId, data);
 }
 
@@ -1169,8 +1222,33 @@ async function getRecordByEmployeeDate(employeeId: string, workDate: string) {
   return doc.exists ? mapAttendance(doc.id, doc.data() as AttendanceData) : null;
 }
 
+/**
+ * 미퇴근 기록을 거슬러 찾는 날수. 페이지를 열 때마다 훑는 구간이라 넉넉하되
+ * 끝은 있어야 한다. 이 기간보다 오래된 미퇴근은 자동 마감도 손대지 않는다.
+ */
+const OPEN_RECORD_LOOKBACK_DAYS = 45;
+
+/**
+ * employee_id + work_date 복합 색인이 아직 없으면 기간 쿼리가 막힌다.
+ * 색인을 만들기 전까지는 예전처럼 전부 읽어서라도 동작하게 둔다.
+ */
+async function queryEmployeeRecordsSince(employeeId: string, sinceWorkDate: string) {
+  const query = getDb().collection("attendance_records").where("employee_id", "==", employeeId);
+  try {
+    return await query.where("work_date", ">=", sinceWorkDate).get();
+  } catch (error) {
+    console.warn(
+      "[attendance] 출퇴근 기간 쿼리 실패, 전체 읽기로 대체합니다. 복합 색인을 만드세요.",
+      error,
+    );
+    return query.get();
+  }
+}
+
 async function getOpenRecord(employeeId: string) {
-  const records = await getRecentAttendance(employeeId, 500);
+  // 예전에는 최대 500건을 읽어서 그중 미퇴근 한 건을 찾았다. 페이지를 열 때마다
+  // 나가는 읽기라 기간으로 묶었다.
+  const records = await getRecentAttendance(employeeId, OPEN_RECORD_LOOKBACK_DAYS);
   return (
     records.find((record) => record.checkInAt && !record.checkOutAt) ?? null
   );
@@ -1179,10 +1257,12 @@ async function getOpenRecord(employeeId: string) {
 async function autoCloseForgottenCheckOuts(auth: AuthContext) {
   const db = getDb();
   const today = getWorkDateString();
-  const snapshot = await db
-    .collection("attendance_records")
-    .where("employee_id", "==", auth.employee.id)
-    .get();
+  // 이것도 페이지를 열 때마다 돈다. 예전에는 그 직원 기록을 처음부터 전부
+  // 읽었다. 마감할 만한 미퇴근은 최근 것뿐이라 기간으로 묶었다.
+  const snapshot = await queryEmployeeRecordsSince(
+    auth.employee.id,
+    addDaysToKstDate(today, -OPEN_RECORD_LOOKBACK_DAYS),
+  );
   const batch = db.batch();
   let changed = 0;
 
@@ -1209,6 +1289,8 @@ async function autoCloseForgottenCheckOuts(auth: AuthContext) {
 
   if (changed > 0) {
     await batch.commit();
+    // 지난 날짜 기록을 마감했으니 달력 캐시를 비운다.
+    invalidateTeamMonthCache();
   }
 }
 
@@ -1242,6 +1324,8 @@ async function autoCloseForgottenCheckOutsForAll() {
 
   if (changed > 0) {
     await batch.commit();
+    // 지난 날짜 기록을 마감했으니 달력 캐시를 비운다.
+    invalidateTeamMonthCache();
   }
 }
 
