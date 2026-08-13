@@ -1,8 +1,10 @@
+import { unstable_cache } from "next/cache";
 import { getDb, nowTimestamp, timestampToIso, toTimestamp } from "@/lib/db";
 import { badRequest, conflict } from "@/lib/http";
 import { getWorkDateString, isValidDateString, parseKstDateTimeInput } from "@/lib/time";
 import {
   ensureCarryoverWorkLog,
+  getAllWorkLogSummaries,
   getWorkLogCommentAuthorStats,
   getWorkLogSummariesForEmployee,
   getWorkLogSummariesForRange,
@@ -140,6 +142,12 @@ type EmployeeData = {
   is_active?: boolean;
 };
 
+type TitleCommentAuthorStats = {
+  commentGivenCount: number;
+  commentedPeerCount: number;
+  commentedPeerDays: number;
+};
+
 type SessionData = {
   device_id?: string;
 };
@@ -205,16 +213,26 @@ export async function getAttendanceStatusForEmployee(employeeId: string) {
 }
 
 export async function getRecentAttendance(employeeId: string, limit: number) {
-  const db = getDb();
-  const snapshot = await db
-    .collection("attendance_records")
-    .where("employee_id", "==", employeeId)
-    .get();
+  const query = getDb().collection("attendance_records").where("employee_id", "==", employeeId);
 
-  return snapshot.docs
-    .map((doc) => mapAttendance(doc.id, doc.data() as AttendanceData))
-    .sort((a, b) => b.workDate.localeCompare(a.workDate))
-    .slice(0, limit);
+  // 예전에는 그 직원의 기록을 전부 읽어온 뒤 자바스크립트에서 잘랐다. 10건을
+  // 보여주려고 수백 건을 읽는 셈이라 쿼리 단계에서 자르도록 바꿨다.
+  try {
+    const snapshot = await query.orderBy("work_date", "desc").limit(limit).get();
+    return snapshot.docs.map((doc) => mapAttendance(doc.id, doc.data() as AttendanceData));
+  } catch (error) {
+    // (employee_id, work_date) 복합 색인이 아직 없으면 이 쿼리가 막힌다.
+    // 색인을 만들기 전까지는 화면이라도 뜨게 예전 방식으로 물러선다.
+    console.warn(
+      "[attendance] work_date 정렬 쿼리 실패, 전체 읽기로 대체합니다. 복합 색인을 만드세요.",
+      error,
+    );
+    const snapshot = await query.get();
+    return snapshot.docs
+      .map((doc) => mapAttendance(doc.id, doc.data() as AttendanceData))
+      .sort((a, b) => b.workDate.localeCompare(a.workDate))
+      .slice(0, limit);
+  }
 }
 
 export async function getEmployeeTitleProfile(employeeId: string): Promise<EmployeeTitleProfile> {
@@ -234,6 +252,15 @@ export async function getEmployeeTitleProfile(employeeId: string): Promise<Emplo
   const attendanceRecords = attendanceSnapshot.docs
     .map((doc) => mapAttendance(doc.id, doc.data() as AttendanceData))
     .sort((a, b) => a.workDate.localeCompare(b.workDate));
+
+  return buildEmployeeTitleProfile(attendanceRecords, workLogSummaries, commentAuthorStats);
+}
+
+function buildEmployeeTitleProfile(
+  attendanceRecords: AttendanceRecord[],
+  workLogSummaries: WorkLogSummary[],
+  commentAuthorStats: TitleCommentAuthorStats,
+): EmployeeTitleProfile {
   const recordDates = new Set<string>();
   const attendanceDates: string[] = [];
   let totalWorkedMinutes = 0;
@@ -419,20 +446,22 @@ export async function getEmployeeTitleProfile(employeeId: string): Promise<Emplo
   const tasklessAttendanceDays = [...new Set(attendanceDates)].filter(
     (workDate) => (taskCountByDate.get(workDate) ?? 0) === 0,
   ).length;
+  const currentStreak = getCurrentAttendanceStreak(attendanceDates, getWorkDateString());
+  const bestStreak = Math.max(getBestAttendanceStreak(attendanceDates), currentStreak);
 
   return {
     generatedAt: new Date().toISOString(),
     stats: {
       activeMonths,
       attendanceDays: new Set(attendanceDates).size,
-      bestStreak: getBestAttendanceStreak(attendanceDates),
+      bestStreak,
       checkoutDays,
       commentCount,
       commentGivenCount: commentAuthorStats.commentGivenCount,
       commentedPeerCount: commentAuthorStats.commentedPeerCount,
       commentedPeerDays: commentAuthorStats.commentedPeerDays,
       completedTasks,
-      currentStreak: getCurrentAttendanceStreak(attendanceDates, getWorkDateString()),
+      currentStreak,
       christmasAttendanceDays,
       dawnCheckOutDays,
       doubleDateAttendanceDays,
@@ -511,9 +540,32 @@ function getStableTaskKey(text: string) {
   return text.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+export const COMPANY_TITLE_PROFILES_CACHE_TAG = "company-title-profiles";
+
+/**
+ * 칭호는 출퇴근 기록과 업무일지를 처음부터 끝까지 훑어야 나온다. 대시보드를 열
+ * 때마다 두 컬렉션을 통째로 읽으면 Firestore 무료 한도(하루 5만 건)를 마흔 번
+ * 남짓에 다 쓴다. 업무일을 캐시 키로 넣어서, 날짜가 바뀐 뒤 첫 요청만 실제로
+ * 읽고 그 뒤로는 저장한 결과를 돌려준다.
+ */
+const loadCompanyTitleProfiles = unstable_cache(
+  async (_workDate: string) => readCompanyTitleProfiles(),
+  ["company-title-profiles-v1"],
+  { revalidate: 36 * 60 * 60, tags: [COMPANY_TITLE_PROFILES_CACHE_TAG] },
+);
+
 export async function getCompanyTitleProfiles(): Promise<CompanyTitleProfile[]> {
-  const snapshot = await getDb().collection("employees").where("is_active", "==", true).get();
-  const employees = snapshot.docs
+  return loadCompanyTitleProfiles(getWorkDateString());
+}
+
+async function readCompanyTitleProfiles(): Promise<CompanyTitleProfile[]> {
+  const db = getDb();
+  const [employeeSnapshot, attendanceSnapshot, workLogSummaries] = await Promise.all([
+    db.collection("employees").where("is_active", "==", true).get(),
+    db.collection("attendance_records").get(),
+    getAllWorkLogSummaries(),
+  ]);
+  const employees = employeeSnapshot.docs
     .map((doc) => {
       const employee = doc.data() as EmployeeData;
       return {
@@ -527,13 +579,106 @@ export async function getCompanyTitleProfiles(): Promise<CompanyTitleProfile[]> 
         !formerTeamMemberNames.has(employee.employeeName.normalize("NFC").replace(/\s+/g, "")),
     )
     .sort((a, b) => a.employeeName.localeCompare(b.employeeName));
-
-  return Promise.all(
-    employees.map(async (employee) => ({
-      ...employee,
-      ...(await getEmployeeTitleProfile(employee.employeeId)),
-    })),
+  const activeEmployeeIds = new Set(employees.map((employee) => employee.employeeId));
+  const attendanceRecordsByEmployee = new Map<string, AttendanceRecord[]>();
+  const workLogSummariesByEmployee = new Map<string, WorkLogSummary[]>();
+  const commentAuthorStatsByEmployee = getTitleCommentAuthorStatsByEmployee(
+    workLogSummaries,
+    activeEmployeeIds,
   );
+
+  for (const doc of attendanceSnapshot.docs) {
+    const record = mapAttendance(doc.id, doc.data() as AttendanceData);
+    if (!activeEmployeeIds.has(record.employeeId)) {
+      continue;
+    }
+    const records = attendanceRecordsByEmployee.get(record.employeeId) ?? [];
+    records.push(record);
+    attendanceRecordsByEmployee.set(record.employeeId, records);
+  }
+
+  for (const summary of workLogSummaries) {
+    if (!activeEmployeeIds.has(summary.employeeId)) {
+      continue;
+    }
+    const summaries = workLogSummariesByEmployee.get(summary.employeeId) ?? [];
+    summaries.push(summary);
+    workLogSummariesByEmployee.set(summary.employeeId, summaries);
+  }
+
+  return employees.map((employee) => ({
+    ...employee,
+    ...buildEmployeeTitleProfile(
+      (attendanceRecordsByEmployee.get(employee.employeeId) ?? []).sort((a, b) =>
+        a.workDate.localeCompare(b.workDate),
+      ),
+      (workLogSummariesByEmployee.get(employee.employeeId) ?? []).sort((a, b) =>
+        a.workDate.localeCompare(b.workDate),
+      ),
+      commentAuthorStatsByEmployee.get(employee.employeeId) ?? emptyTitleCommentAuthorStats(),
+    ),
+  }));
+}
+
+function getTitleCommentAuthorStatsByEmployee(
+  workLogSummaries: WorkLogSummary[],
+  targetEmployeeIds: Set<string>,
+) {
+  const rawStats = new Map<
+    string,
+    {
+      commentGivenCount: number;
+      commentedPeerIds: Set<string>;
+      commentedPeerDates: Set<string>;
+    }
+  >();
+
+  for (const summary of workLogSummaries) {
+    const ownerEmployeeId = summary.employeeId;
+    if (!ownerEmployeeId) {
+      continue;
+    }
+
+    for (const comment of summary.comments) {
+      const authorEmployeeId = comment.authorEmployeeId.trim();
+      if (
+        !authorEmployeeId ||
+        authorEmployeeId === ownerEmployeeId ||
+        !targetEmployeeIds.has(authorEmployeeId)
+      ) {
+        continue;
+      }
+
+      const stats = rawStats.get(authorEmployeeId) ?? {
+        commentGivenCount: 0,
+        commentedPeerIds: new Set<string>(),
+        commentedPeerDates: new Set<string>(),
+      };
+      stats.commentGivenCount += 1;
+      stats.commentedPeerIds.add(ownerEmployeeId);
+      stats.commentedPeerDates.add(summary.workDate);
+      rawStats.set(authorEmployeeId, stats);
+    }
+  }
+
+  return new Map(
+    [...rawStats.entries()].map(([employeeId, stats]) => [
+      employeeId,
+      {
+        commentGivenCount: stats.commentGivenCount,
+        commentedPeerCount: stats.commentedPeerIds.size,
+        commentedPeerDays: stats.commentedPeerDates.size,
+      } satisfies TitleCommentAuthorStats,
+    ]),
+  );
+}
+
+function emptyTitleCommentAuthorStats(): TitleCommentAuthorStats {
+  return {
+    commentGivenCount: 0,
+    commentedPeerCount: 0,
+    commentedPeerDays: 0,
+  };
 }
 
 export async function getTeamTodayAttendance() {
@@ -897,15 +1042,7 @@ export async function updateAdminAttendance(
 
   const before = beforeDoc.data() as AttendanceData;
   const checkInAt = parseKstDateTimeInput(input.checkInAt);
-  let checkOutAt = parseKstDateTimeInput(input.checkOutAt);
-
-  if (isEmployeeCheckOutLocked(before)) {
-    const originalCheckOutAt = timestampToIso(before.check_out_at);
-    if (!isSameMinute(checkOutAt, originalCheckOutAt)) {
-      conflict("직원이 퇴근 버튼으로 남긴 퇴근시각은 수정할 수 없습니다.");
-    }
-    checkOutAt = originalCheckOutAt ? new Date(originalCheckOutAt) : null;
-  }
+  const checkOutAt = parseKstDateTimeInput(input.checkOutAt);
 
   validateChronology(checkInAt, checkOutAt);
 
@@ -1055,8 +1192,13 @@ async function autoCloseForgottenCheckOuts(auth: AuthContext) {
       continue;
     }
 
+    const checkOutAt = getAutoCheckOutAt(data);
+    if (!checkOutAt) {
+      continue;
+    }
+
     batch.update(doc.ref, {
-      check_out_at: toTimestamp(getEndOfWorkDate(data.work_date)),
+      check_out_at: toTimestamp(checkOutAt),
       check_out_ip: "auto",
       check_out_session_id: null,
       updated_by: auth.employee.id,
@@ -1083,8 +1225,13 @@ async function autoCloseForgottenCheckOutsForAll() {
       continue;
     }
 
+    const checkOutAt = getAutoCheckOutAt(data);
+    if (!checkOutAt) {
+      continue;
+    }
+
     batch.update(doc.ref, {
-      check_out_at: toTimestamp(getEndOfWorkDate(data.work_date)),
+      check_out_at: toTimestamp(checkOutAt),
       check_out_ip: "auto",
       check_out_session_id: null,
       updated_by: null,
@@ -1306,25 +1453,18 @@ function dateStringToUtcDate(value: string) {
   return new Date(Date.UTC(year, month - 1, day));
 }
 
-function getEndOfWorkDate(workDate: string) {
-  return new Date(`${workDate}T23:59:00+09:00`);
-}
-
-function isEmployeeCheckOutLocked(data: AttendanceData) {
-  return Boolean(data.check_out_at && data.check_out_session_id);
-}
-
-function isSameMinute(value: Date | null, isoValue: string | null) {
-  if (!value || !isoValue) {
-    return value === null && isoValue === null;
+function getAutoCheckOutAt(data: Pick<AttendanceData, "check_in_at">) {
+  const checkInIso = timestampToIso(data.check_in_at);
+  if (!checkInIso) {
+    return null;
   }
 
-  const original = new Date(isoValue);
-  if (Number.isNaN(value.getTime()) || Number.isNaN(original.getTime())) {
-    return false;
+  const checkInAt = new Date(checkInIso);
+  if (Number.isNaN(checkInAt.getTime())) {
+    return null;
   }
 
-  return Math.floor(value.getTime() / 60000) === Math.floor(original.getTime() / 60000);
+  return new Date(checkInAt.getTime() + 8 * 60 * 60 * 1000);
 }
 
 function serializeAttendance(data: AttendanceData) {
