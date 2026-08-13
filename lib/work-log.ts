@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { getDb, nowTimestamp, timestampToIso } from "@/lib/db";
 import { badRequest, forbidden } from "@/lib/http";
-import { isValidDateString } from "@/lib/time";
+import { addDaysToKstDate, getWorkDateString, isValidDateString } from "@/lib/time";
 import type { AuthContext } from "@/lib/auth";
 
 export type WorkTaskSection = "today" | "later";
@@ -214,23 +214,7 @@ export async function getWorkLogSummariesForRange(startDate: string, endDate: st
     .where("work_date", "<=", endDate)
     .get();
 
-  return snapshot.docs.map((doc) => {
-    const data = doc.data() as WorkLogData;
-    const tasks = normalizeTasks(data.tasks ?? [], new Date().toISOString());
-    const comments = normalizeComments(data.comments ?? []);
-    return {
-      employeeId: data.employee_id,
-      workDate: data.work_date,
-      taskCount: tasks.length,
-      doneCount: tasks.filter((task) => task.done).length,
-      commentCount: comments.length,
-      tasks: tasks.map(({ done, text }) => ({ done, text })),
-      comments: comments.map(({ authorEmployeeId, createdAt }) => ({
-        authorEmployeeId,
-        createdAt,
-      })),
-    } satisfies WorkLogSummary;
-  });
+  return snapshot.docs.map((doc) => mapWorkLogSummary(doc.data() as WorkLogData));
 }
 
 export async function getWorkLogSummariesForEmployee(employeeId: string) {
@@ -243,23 +227,29 @@ export async function getWorkLogSummariesForEmployee(employeeId: string) {
     .where("employee_id", "==", employeeId)
     .get();
 
-  return snapshot.docs.map((doc) => {
-    const data = doc.data() as WorkLogData;
-    const tasks = normalizeTasks(data.tasks ?? [], new Date().toISOString());
-    const comments = normalizeComments(data.comments ?? []);
-    return {
-      employeeId: data.employee_id,
-      workDate: data.work_date,
-      taskCount: tasks.length,
-      doneCount: tasks.filter((task) => task.done).length,
-      commentCount: comments.length,
-      tasks: tasks.map(({ done, text }) => ({ done, text })),
-      comments: comments.map(({ authorEmployeeId, createdAt }) => ({
-        authorEmployeeId,
-        createdAt,
-      })),
-    } satisfies WorkLogSummary;
-  });
+  return snapshot.docs.map((doc) => mapWorkLogSummary(doc.data() as WorkLogData));
+}
+
+export async function getAllWorkLogSummaries() {
+  const snapshot = await getDb().collection("work_logs").get();
+  return snapshot.docs.map((doc) => mapWorkLogSummary(doc.data() as WorkLogData));
+}
+
+function mapWorkLogSummary(data: WorkLogData) {
+  const tasks = normalizeTasks(data.tasks ?? [], new Date().toISOString());
+  const comments = normalizeComments(data.comments ?? []);
+  return {
+    employeeId: data.employee_id,
+    workDate: data.work_date,
+    taskCount: tasks.length,
+    doneCount: tasks.filter((task) => task.done).length,
+    commentCount: comments.length,
+    tasks: tasks.map(({ done, text }) => ({ done, text })),
+    comments: comments.map(({ authorEmployeeId, createdAt }) => ({
+      authorEmployeeId,
+      createdAt,
+    })),
+  } satisfies WorkLogSummary;
 }
 
 export async function getWorkLogCommentAuthorStats(employeeId: string) {
@@ -298,6 +288,9 @@ export async function getWorkLogCommentAuthorStats(employeeId: string) {
   };
 }
 
+/** 댓글 알림을 찾을 때 거슬러 올라가는 날수. */
+const COMMENT_LOOKBACK_DAYS = 30;
+
 export async function getWorkCommentNotifications(employeeId: string, since: string) {
   if (!employeeId.trim()) {
     badRequest("직원을 선택하세요.");
@@ -308,10 +301,27 @@ export async function getWorkCommentNotifications(employeeId: string, since: str
     badRequest("댓글 확인 기준 시간이 올바르지 않습니다.");
   }
 
-  const snapshot = await getDb()
-    .collection("work_logs")
-    .where("employee_id", "==", employeeId)
-    .get();
+  // 페이지를 열 때마다 부르는 함수다. 예전에는 그 직원의 업무일지를 처음부터
+  // 전부 읽어서, 다닌 날이 늘수록 무거워졌다. 댓글은 최근 일지에 달리니
+  // 30일치만 본다.
+  const query = getDb().collection("work_logs").where("employee_id", "==", employeeId);
+  const sinceWorkDate = addDaysToKstDate(
+    getWorkDateString(new Date(sinceTime)),
+    -COMMENT_LOOKBACK_DAYS,
+  );
+
+  let snapshot;
+  try {
+    snapshot = await query.where("work_date", ">=", sinceWorkDate).get();
+  } catch (error) {
+    // (employee_id, work_date) 복합 색인이 없으면 이 쿼리가 막힌다.
+    // 색인을 만들기 전까지는 알림이라도 뜨게 예전 방식으로 물러선다.
+    console.warn(
+      "[work-log] 댓글 알림 기간 쿼리 실패, 전체 읽기로 대체합니다. 복합 색인을 만드세요.",
+      error,
+    );
+    snapshot = await query.get();
+  }
 
   return snapshot.docs
     .flatMap((doc) => {
