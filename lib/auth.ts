@@ -1,3 +1,5 @@
+import { revalidateTag } from "next/cache";
+import { ACTIVE_EMPLOYEES_CACHE_TAG } from "@/lib/attendance";
 import { getDb, nowTimestamp, timestampToIso, toTimestamp } from "@/lib/db";
 import { getClientIp } from "@/lib/ip";
 import {
@@ -114,6 +116,13 @@ export async function loginWithPin({
       created_at: nowTimestamp(),
       updated_at: nowTimestamp(),
     });
+
+    // 재직자 목록을 캐시해두므로, 새로 들어온 사람이 바로 보이게 비운다.
+    try {
+      revalidateTag(ACTIVE_EMPLOYEES_CACHE_TAG, "max");
+    } catch (error) {
+      console.warn("[auth] 재직자 캐시 비우기에 실패했습니다.", error);
+    }
   }
 
   if (!employee.pin_hash || !employee.pin_salt) {

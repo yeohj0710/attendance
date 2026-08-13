@@ -733,11 +733,38 @@ function emptyTitleCommentAuthorStats(): TitleCommentAuthorStats {
   };
 }
 
+export const ACTIVE_EMPLOYEES_CACHE_TAG = "active-employees";
+
+/**
+ * 재직자 목록은 한 화면을 그릴 때 오늘 현황과 달력이 각각 읽어서 두 번 나갔다.
+ * 사람이 들고 나는 일은 드무니 업무일 단위로 캐시한다.
+ */
+const loadActiveEmployees = unstable_cache(
+  async (_workDate: string) => {
+    const snapshot = await getDb()
+      .collection("employees")
+      .where("is_active", "==", true)
+      .get();
+
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      employeeNo: (doc.data() as EmployeeData).employee_no ?? "",
+      employeeName: (doc.data() as EmployeeData).name ?? "",
+    }));
+  },
+  ["active-employees-v1"],
+  { revalidate: 36 * 60 * 60, tags: [ACTIVE_EMPLOYEES_CACHE_TAG] },
+);
+
+function getActiveEmployees() {
+  return loadActiveEmployees(getWorkDateString());
+}
+
 export async function getTeamTodayAttendance() {
   const db = getDb();
   const today = getWorkDateString();
-  const [employeesSnapshot, attendanceSnapshot, workLogs] = await Promise.all([
-    db.collection("employees").where("is_active", "==", true).get(),
+  const [employees, attendanceSnapshot, workLogs] = await Promise.all([
+    getActiveEmployees(),
     db.collection("attendance_records").where("work_date", "==", today).get(),
     getWorkLogsForDate(today),
   ]);
@@ -750,24 +777,23 @@ export async function getTeamTodayAttendance() {
   );
   const workLogByEmployee = new Map(workLogs.map((workLog) => [workLog.employeeId, workLog]));
 
-  return employeesSnapshot.docs
-    .map((doc) => {
-      const employee = doc.data() as EmployeeData;
-      const record = attendanceByEmployee.get(doc.id);
+  return employees
+    .map((employee) => {
+      const record = attendanceByEmployee.get(employee.id);
 
       return {
-        employeeId: doc.id,
-        employeeNo: employee.employee_no ?? "",
-        employeeName: employee.name ?? "",
+        employeeId: employee.id,
+        employeeNo: employee.employeeNo,
+        employeeName: employee.employeeName,
         workDate: today,
         checkInAt: record?.checkInAt ?? null,
         checkOutAt: record?.checkOutAt ?? null,
         workType: record?.workType ?? "office",
         note: record?.note ?? null,
-        taskCount: workLogByEmployee.get(doc.id)?.taskCount ?? 0,
-        doneCount: workLogByEmployee.get(doc.id)?.doneCount ?? 0,
-        commentCount: workLogByEmployee.get(doc.id)?.commentCount ?? 0,
-        tasks: workLogByEmployee.get(doc.id)?.tasks ?? [],
+        taskCount: workLogByEmployee.get(employee.id)?.taskCount ?? 0,
+        doneCount: workLogByEmployee.get(employee.id)?.doneCount ?? 0,
+        commentCount: workLogByEmployee.get(employee.id)?.commentCount ?? 0,
+        tasks: workLogByEmployee.get(employee.id)?.tasks ?? [],
       };
     })
     .filter(
@@ -844,8 +870,8 @@ function sortTeamMonthRecords<T extends { workDate: string; employeeName: string
 
 async function readTeamMonthRecords(calendarStartDate: string, calendarEndDate: string) {
   const db = getDb();
-  const [employeesSnapshot, attendanceSnapshot] = await Promise.all([
-    db.collection("employees").where("is_active", "==", true).get(),
+  const [activeEmployees, attendanceSnapshot] = await Promise.all([
+    getActiveEmployees(),
     db
       .collection("attendance_records")
       .where("work_date", ">=", calendarStartDate)
@@ -855,7 +881,10 @@ async function readTeamMonthRecords(calendarStartDate: string, calendarEndDate: 
   const workLogSummaries = await getWorkLogSummariesForRange(calendarStartDate, calendarEndDate);
 
   const employees = new Map(
-    employeesSnapshot.docs.map((doc) => [doc.id, doc.data() as EmployeeData]),
+    activeEmployees.map((employee) => [
+      employee.id,
+      { employee_no: employee.employeeNo, name: employee.employeeName } as EmployeeData,
+    ]),
   );
   const workSummaryByKey = new Map(
     workLogSummaries.map((summary) => [
