@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { getDb, nowTimestamp, timestampToIso } from "@/lib/db";
 import { badRequest, forbidden } from "@/lib/http";
-import { addDaysToKstDate, getWorkDateString, isValidDateString } from "@/lib/time";
+import { isValidDateString } from "@/lib/time";
 import type { AuthContext } from "@/lib/auth";
 
 export type WorkTaskSection = "today" | "later";
@@ -288,9 +288,6 @@ export async function getWorkLogCommentAuthorStats(employeeId: string) {
   };
 }
 
-/** 댓글 알림을 찾을 때 거슬러 올라가는 날수. */
-const COMMENT_LOOKBACK_DAYS = 30;
-
 export async function getWorkCommentNotifications(employeeId: string, since: string) {
   if (!employeeId.trim()) {
     badRequest("직원을 선택하세요.");
@@ -301,45 +298,92 @@ export async function getWorkCommentNotifications(employeeId: string, since: str
     badRequest("댓글 확인 기준 시간이 올바르지 않습니다.");
   }
 
-  // 페이지를 열 때마다 부르는 함수다. 예전에는 그 직원의 업무일지를 처음부터
-  // 전부 읽어서, 다닌 날이 늘수록 무거워졌다. 댓글은 최근 일지에 달리니
-  // 30일치만 본다.
-  const query = getDb().collection("work_logs").where("employee_id", "==", employeeId);
-  const sinceWorkDate = addDaysToKstDate(
-    getWorkDateString(new Date(sinceTime)),
-    -COMMENT_LOOKBACK_DAYS,
-  );
+  // 페이지를 열 때마다 부르는 함수다. 예전에는 그 직원의 업무일지를 30일치
+  // 읽어서 남이 단 댓글을 골라냈다. 알림이 있나 보려고 스물몇 건을 읽는 셈이라,
+  // 댓글을 달 때 받은함에 미리 넣어두고 여기서는 그 문서 한 건만 읽는다.
+  const doc = await getDb().collection(COMMENT_INBOX_COLLECTION).doc(employeeId).get();
+  const entries = normalizeInboxEntries(doc.data()?.entries);
 
-  let snapshot;
-  try {
-    snapshot = await query.where("work_date", ">=", sinceWorkDate).get();
-  } catch (error) {
-    // (employee_id, work_date) 복합 색인이 없으면 이 쿼리가 막힌다.
-    // 색인을 만들기 전까지는 알림이라도 뜨게 예전 방식으로 물러선다.
-    console.warn(
-      "[work-log] 댓글 알림 기간 쿼리 실패, 전체 읽기로 대체합니다. 복합 색인을 만드세요.",
-      error,
-    );
-    snapshot = await query.get();
+  return entries
+    .filter((entry) => Date.parse(entry.createdAt) > sinceTime)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, COMMENT_INBOX_LIMIT) satisfies WorkCommentNotification[];
+}
+
+const COMMENT_INBOX_COLLECTION = "work_comment_inboxes";
+/** 받은함에 남겨두는 알림 개수. 화면이 최근 20건만 보여준다. */
+const COMMENT_INBOX_LIMIT = 20;
+
+function normalizeInboxEntries(value: unknown): WorkCommentNotification[] {
+  if (!Array.isArray(value)) {
+    return [];
   }
 
-  return snapshot.docs
-    .flatMap((doc) => {
-      const data = doc.data() as WorkLogData;
-      return normalizeComments(data.comments ?? [])
-        .filter(
-          (comment) =>
-            Boolean(comment.authorEmployeeId.trim()) &&
-            comment.authorEmployeeId !== employeeId &&
-            Date.parse(comment.createdAt) > sinceTime,
-        )
-        .map((comment) => ({
-          ...comment,
-          workDate: data.work_date,
-        }));
-    })
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .slice(0, 20) satisfies WorkCommentNotification[];
+  return value.flatMap((raw) => {
+    const entry = raw as Partial<WorkCommentNotification>;
+    if (!entry?.id || !entry.createdAt || !entry.workDate) {
+      return [];
+    }
+
+    return [
+      {
+        id: String(entry.id),
+        authorEmployeeId: String(entry.authorEmployeeId ?? ""),
+        authorName: String(entry.authorName ?? ""),
+        text: String(entry.text ?? ""),
+        createdAt: String(entry.createdAt),
+        workDate: String(entry.workDate),
+      },
+    ];
+  });
+}
+
+/**
+ * 받은함을 고친다. 댓글을 달거나 지울 때만 돈다. 읽기 1건 + 쓰기 1건이고,
+ * 여기서 실패해도 댓글 자체는 이미 저장돼 있으니 알림만 빠진다.
+ */
+async function updateCommentInbox(
+  recipientEmployeeId: string,
+  change: (entries: WorkCommentNotification[]) => WorkCommentNotification[],
+) {
+  if (!recipientEmployeeId.trim()) {
+    return;
+  }
+
+  const ref = getDb().collection(COMMENT_INBOX_COLLECTION).doc(recipientEmployeeId);
+  try {
+    await getDb().runTransaction(async (tx) => {
+      const doc = await tx.get(ref);
+      const next = change(normalizeInboxEntries(doc.data()?.entries))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, COMMENT_INBOX_LIMIT);
+
+      tx.set(ref, { entries: next, updated_at: nowTimestamp() }, { merge: true });
+    });
+  } catch (error) {
+    console.warn("[work-log] 댓글 받은함을 고치지 못했습니다.", error);
+  }
+}
+
+export async function addCommentToInbox(
+  recipientEmployeeId: string,
+  entry: WorkCommentNotification,
+) {
+  // 자기 일지에 자기가 단 댓글은 알릴 일이 아니다.
+  if (recipientEmployeeId === entry.authorEmployeeId) {
+    return;
+  }
+
+  await updateCommentInbox(recipientEmployeeId, (entries) => [
+    ...entries.filter((item) => item.id !== entry.id),
+    entry,
+  ]);
+}
+
+async function removeCommentFromInbox(recipientEmployeeId: string, commentId: string) {
+  await updateCommentInbox(recipientEmployeeId, (entries) =>
+    entries.filter((item) => item.id !== commentId),
+  );
 }
 
 export async function addWorkLogComment(
@@ -378,16 +422,14 @@ export async function addWorkLogComment(
   const docRef = db.collection("work_logs").doc(getWorkLogDocId(input.employeeId, input.workDate));
   const currentDoc = await docRef.get();
   const currentData = currentDoc.data() as WorkLogData | undefined;
-  const comments = [
-    ...normalizeComments(currentData?.comments ?? []),
-    {
-      id: randomUUID(),
-      authorEmployeeId: auth.employee.id,
-      authorName: author.name,
-      text,
-      createdAt: now,
-    },
-  ];
+  const newComment = {
+    id: randomUUID(),
+    authorEmployeeId: auth.employee.id,
+    authorName: author.name,
+    text,
+    createdAt: now,
+  };
+  const comments = [...normalizeComments(currentData?.comments ?? []), newComment];
 
   const data: WorkLogData = {
     employee_id: input.employeeId,
@@ -400,6 +442,9 @@ export async function addWorkLogComment(
   };
 
   await docRef.set(data, { merge: true });
+  // 일지 주인의 받은함에 넣어둔다. 알림을 볼 때 이 문서 한 건만 읽으면 된다.
+  await addCommentToInbox(input.employeeId, { ...newComment, workDate: input.workDate });
+
   return mapWorkLog(data, employee.name ?? "");
 }
 
@@ -513,6 +558,16 @@ async function mutateWorkLogComment(
   };
 
   await docRef.set(data, { merge: true });
+
+  // 받은함도 같이 맞춘다. 지운 댓글이 알림에 남아 있으면 안 되고, 고친 댓글은
+  // 고친 내용으로 보여야 한다.
+  const stillThere = nextComments.find((comment) => comment.id === input.commentId);
+  if (stillThere) {
+    await addCommentToInbox(input.employeeId, { ...stillThere, workDate: input.workDate });
+  } else {
+    await removeCommentFromInbox(input.employeeId, input.commentId);
+  }
+
   return mapWorkLog(data, employee.name ?? "");
 }
 
