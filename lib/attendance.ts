@@ -752,7 +752,7 @@ const loadActiveEmployees = unstable_cache(
       employeeName: (doc.data() as EmployeeData).name ?? "",
     }));
   },
-  ["active-employees-v1"],
+  ["active-employees-v2"],
   { revalidate: 36 * 60 * 60, tags: [ACTIVE_EMPLOYEES_CACHE_TAG] },
 );
 

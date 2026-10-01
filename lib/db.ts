@@ -1,5 +1,6 @@
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore, Timestamp } from "firebase-admin/firestore";
+import { installReadBudget } from "@/lib/read-budget";
 
 export function getDb() {
   if (!getApps().length) {
@@ -20,7 +21,9 @@ export function getDb() {
     });
   }
 
-  return getFirestore();
+  const db = getFirestore();
+  installReadBudget(db);
+  return db;
 }
 
 export function toTimestamp(value: Date | string | null | undefined) {

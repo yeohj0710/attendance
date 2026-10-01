@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { getDb, nowTimestamp, timestampToIso } from "@/lib/db";
 import { badRequest, forbidden } from "@/lib/http";
-import { isValidDateString } from "@/lib/time";
+import { addDaysToKstDate, isValidDateString } from "@/lib/time";
 import type { AuthContext } from "@/lib/auth";
 
 export type WorkTaskSection = "today" | "later";
@@ -798,19 +798,35 @@ function mergeDeletedTasks(
   return Array.from(deletedTasksByText.values()).slice(0, 200);
 }
 
+// 미완료 업무는 매일 다음 날로 넘어가니 최근 일지만 봐도 남은 일이 다 나온다.
+// 예전엔 직원의 일지 전부를 읽어서, 일지가 쌓일수록 한 번에 수백 건씩 읽었다.
+const CARRYOVER_LOOKBACK_DAYS = [14, 60, 180];
+
+async function getRecentLogsBefore(employeeId: string, workDate: string) {
+  for (const days of CARRYOVER_LOOKBACK_DAYS) {
+    const from = addDaysToKstDate(workDate, -days);
+    // 색인(employee_id 오름 + work_date 오름)에 맞춰 범위만 건다.
+    const snapshot = await getDb()
+      .collection("work_logs")
+      .where("employee_id", "==", employeeId)
+      .where("work_date", ">=", from > CARRYOVER_START_DATE ? from : CARRYOVER_START_DATE)
+      .where("work_date", "<", workDate)
+      .get();
+    if (!snapshot.empty || from <= CARRYOVER_START_DATE) {
+      return snapshot.docs.map((doc) => doc.data() as WorkLogData);
+    }
+  }
+  return [];
+}
+
 async function getCarryoverTasks(employeeId: string, workDate: string) {
-  const snapshot = await getDb()
-    .collection("work_logs")
-    .where("employee_id", "==", employeeId)
-    .get();
   const now = new Date().toISOString();
   const seenTexts = new Set<string>();
   const carryoverTasks: WorkTask[] = [];
 
-  const previousLogs = snapshot.docs
-    .map((doc) => doc.data() as WorkLogData)
-    .filter((data) => data.work_date >= CARRYOVER_START_DATE && data.work_date < workDate)
-    .sort((a, b) => b.work_date.localeCompare(a.work_date));
+  const previousLogs = (await getRecentLogsBefore(employeeId, workDate)).sort((a, b) =>
+    b.work_date.localeCompare(a.work_date),
+  );
 
   for (const log of previousLogs) {
     const tasks = normalizeTasks(log.tasks ?? [], now);
