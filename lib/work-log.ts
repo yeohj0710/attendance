@@ -146,6 +146,7 @@ export async function saveWorkLog(
     workDate: string;
     summary?: string;
     tasks?: WorkTaskInput[];
+    deletedTasks?: Array<{ id?: string; text?: string }>;
   },
 ) {
   validateWorkLogKey(input.employeeId, input.workDate);
@@ -162,13 +163,17 @@ export async function saveWorkLog(
   }
 
   const now = new Date().toISOString();
-  const tasks = normalizeTasks(input.tasks ?? [], now);
   const docRef = db.collection("work_logs").doc(getWorkLogDocId(input.employeeId, input.workDate));
   const currentDoc = await docRef.get();
   const currentData = currentDoc.data() as WorkLogData | undefined;
   const currentTasks = currentDoc.exists
     ? normalizeTasks(currentData?.tasks ?? [], now)
     : await getCarryoverTasks(input.employeeId, input.workDate);
+  const sentTasks = normalizeTasks(input.tasks ?? [], now);
+  // 문서가 아직 없으면 이월 업무 id가 요청마다 새로 나와서 맞춰 볼 수 없다. 그땐 보낸 목록 그대로.
+  const tasks = currentDoc.exists
+    ? keepTasksUnknownToClient(sentTasks, currentTasks, input.deletedTasks ?? [])
+    : sentTasks;
   const deletedTasks = mergeDeletedTasks(
     currentData?.deleted_tasks ?? [],
     currentTasks,
@@ -796,6 +801,39 @@ function mergeDeletedTasks(
   }
 
   return Array.from(deletedTasksByText.values()).slice(0, 200);
+}
+
+// 화면은 목록 전체를 보낸다. 오래 열어둔 탭이나 다른 기기가 옛 목록을 보내면
+// 그 사이 추가한 업무가 통째로 지워졌다(2026-10-01). 그래서 서버에 있는데 보낸 목록에
+// 없는 업무는, 화면이 지웠다고 명시한 경우(deletedTasks)에만 지운다.
+// 이름을 바꾼 업무는 id로, 같은 글자의 업무는 글자로 맞춘다.
+function keepTasksUnknownToClient(
+  nextTasks: WorkTask[],
+  currentTasks: WorkTask[],
+  deletedTasks: Array<{ id?: string; text?: string }>,
+) {
+  const sentIds = new Set(nextTasks.map((task) => task.id));
+  const sentTexts = new Set(nextTasks.map((task) => getTaskCarryoverKey(task.text)));
+  const deletedIds = new Set(deletedTasks.map((task) => task.id).filter(Boolean));
+  const deletedTexts = new Set(
+    deletedTasks.map((task) => getTaskCarryoverKey(task.text ?? "")).filter(Boolean),
+  );
+
+  const kept = currentTasks.filter((task) => {
+    const text = getTaskCarryoverKey(task.text);
+    return (
+      !sentIds.has(task.id) &&
+      !sentTexts.has(text) &&
+      !deletedIds.has(task.id) &&
+      !deletedTexts.has(text)
+    );
+  });
+  if (!kept.length) {
+    return nextTasks;
+  }
+
+  let nextOrder = nextTasks.reduce((max, task) => Math.max(max, task.order ?? -1), -1) + 1;
+  return [...nextTasks, ...kept.map((task) => ({ ...task, order: task.done ? task.order : nextOrder++ }))].slice(0, 80);
 }
 
 // 미완료 업무는 매일 다음 날로 넘어가니 최근 일지만 봐도 남은 일이 다 나온다.

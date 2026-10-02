@@ -1107,7 +1107,11 @@ export function EmployeeApp() {
     void fetchTeamMonth(month, auth).catch(() => undefined);
   }
 
-  async function saveWorkLogRequest(nextLog: WorkLog, requestAuth: StoredAuth) {
+  async function saveWorkLogRequest(
+    nextLog: WorkLog,
+    requestAuth: StoredAuth,
+    deletedTasks: DeletedTaskRef[] = [],
+  ) {
     const result = await apiFetch<{ workLog: WorkLog }>("/api/work-log", {
       method: "PUT",
       auth: requestAuth,
@@ -1116,6 +1120,7 @@ export function EmployeeApp() {
         workDate: nextLog.workDate,
         summary: nextLog.summary,
         tasks: nextLog.tasks,
+        deletedTasks,
       }),
     });
     return normalizeWorkLogCounts(result.workLog);
@@ -1274,7 +1279,7 @@ export function EmployeeApp() {
     workLogCacheRef.current.set(getWorkLogCacheKey(nextLog.employeeId, nextLog.workDate), nextLog);
   }
 
-  async function persistTodayWorkLog(nextLog: WorkLog) {
+  async function persistTodayWorkLog(nextLog: WorkLog, deletedTasks: DeletedTaskRef[] = []) {
     if (!auth) return;
 
     const optimisticLog = normalizeWorkLogCounts(nextLog);
@@ -1297,7 +1302,7 @@ export function EmployeeApp() {
       .catch(() => undefined)
       .then(async () => {
         try {
-          const savedLog = await saveWorkLogRequest(optimisticLog, requestAuth);
+          const savedLog = await saveWorkLogRequest(optimisticLog, requestAuth, deletedTasks);
           rememberWorkLog(savedLog);
           if (todayWorkLogSaveSeqRef.current === seq) {
             setTodayWorkLog(savedLog);
@@ -1432,7 +1437,7 @@ export function EmployeeApp() {
     return result.url;
   }
 
-  async function persistWorkLog(nextLog: WorkLog) {
+  async function persistWorkLog(nextLog: WorkLog, deletedTasks: DeletedTaskRef[] = []) {
     if (!auth) return;
 
     const optimisticLog = normalizeWorkLogCounts(nextLog);
@@ -1455,7 +1460,7 @@ export function EmployeeApp() {
       .catch(() => undefined)
       .then(async () => {
         try {
-          const savedLog = await saveWorkLogRequest(optimisticLog, requestAuth);
+          const savedLog = await saveWorkLogRequest(optimisticLog, requestAuth, deletedTasks);
           rememberWorkLog(savedLog);
           if (workLogSaveSeqRef.current === seq) {
             setWorkLog(savedLog);
@@ -1720,10 +1725,13 @@ export function EmployeeApp() {
 
     setPendingWorkTaskId(taskId);
     try {
-      await persistWorkLog({
-        ...workLog,
-        tasks: workLog.tasks.filter((task) => task.id !== taskId),
-      });
+      await persistWorkLog(
+        {
+          ...workLog,
+          tasks: workLog.tasks.filter((task) => task.id !== taskId),
+        },
+        toDeletedTaskRefs(workLog.tasks, taskId),
+      );
     } finally {
       setPendingWorkTaskId(null);
     }
@@ -1734,10 +1742,13 @@ export function EmployeeApp() {
 
     setPendingTodayTaskId(taskId);
     try {
-      await persistTodayWorkLog({
-        ...todayWorkLog,
-        tasks: todayWorkLog.tasks.filter((task) => task.id !== taskId),
-      });
+      await persistTodayWorkLog(
+        {
+          ...todayWorkLog,
+          tasks: todayWorkLog.tasks.filter((task) => task.id !== taskId),
+        },
+        toDeletedTaskRefs(todayWorkLog.tasks, taskId),
+      );
     } finally {
       setPendingTodayTaskId(null);
     }
@@ -8666,6 +8677,15 @@ function shiftMonth(month: string, delta: number) {
   const [year, monthNumber] = month.split("-").map(Number);
   const date = new Date(Date.UTC(year, monthNumber - 1 + delta, 1));
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+type DeletedTaskRef = { id: string; text: string };
+
+// 서버는 보낸 목록에 없는 업무를 지우지 않는다. 지운 업무는 이렇게 따로 알려야 한다.
+function toDeletedTaskRefs(tasks: WorkTask[], taskId: string): DeletedTaskRef[] {
+  return tasks
+    .filter((task) => task.id === taskId)
+    .map((task) => ({ id: task.id, text: task.text }));
 }
 
 function withTaskOrder(tasks: WorkTask[]) {

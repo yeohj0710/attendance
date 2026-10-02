@@ -31,6 +31,7 @@ export async function PUT(request: Request) {
       workDate?: string;
       summary?: string;
       tasks?: unknown[];
+      deletedTasks?: unknown[];
     };
 
     if (!body.employeeId || !body.workDate) {
@@ -43,6 +44,14 @@ export async function PUT(request: Request) {
       summary: body.summary,
       tasks: Array.isArray(body.tasks)
         ? (body.tasks as Array<Partial<WorkTask> & { text?: string }>)
+        : [],
+      deletedTasks: Array.isArray(body.deletedTasks)
+        ? (body.deletedTasks as Array<{ id?: unknown; text?: unknown }>)
+            .slice(0, 80)
+            .map((task) => ({
+              id: typeof task?.id === "string" ? task.id : undefined,
+              text: typeof task?.text === "string" ? task.text : undefined,
+            }))
         : [],
     });
 
