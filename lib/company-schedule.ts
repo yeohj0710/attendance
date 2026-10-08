@@ -23,9 +23,15 @@ export type CompanyEvent = {
   time: string;
   place: string;
   people: string[];
+  /** 담당자 id 와 이름 (고칠 때 쓴다) */
+  who: Array<{ id: string; name: string }>;
   order: number | null;
   url: string;
+  /** 위 칸 말고 노션에 더 있는 속성 (보기만) */
+  extra: Array<{ name: string; value: string }>;
 };
+
+const KNOWN_PROPS = ["이름", "날짜", "장소", "담당자", "정렬시간"];
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -41,7 +47,12 @@ function kstTime(value: string) {
   return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
 }
 
-function toEvent(page: NotionPage): CompanyEvent | null {
+function whoOf(page: NotionPage) {
+  const prop = page.properties["담당자"] as unknown as { type?: string; people?: Array<{ id: string; name?: string }> } | undefined;
+  return prop?.type === "people" ? (prop.people ?? []).map((p) => ({ id: p.id, name: p.name ?? "" })) : [];
+}
+
+export function toEvent(page: NotionPage): CompanyEvent | null {
   const date = propDate(page, "날짜");
   if (!date) return null;
   const start = kstDate(date.start);
@@ -55,8 +66,12 @@ function toEvent(page: NotionPage): CompanyEvent | null {
     time: kstTime(date.start),
     place: propText(page, "장소"),
     people: propPeople(page, "담당자"),
+    who: whoOf(page),
     order: typeof order === "number" ? order : null,
     url: page.url,
+    extra: Object.keys(page.properties)
+      .filter((name) => !KNOWN_PROPS.includes(name))
+      .map((name) => ({ name, value: propText(page, name) })),
   };
 }
 
@@ -84,7 +99,12 @@ async function readCompanyEvents(from: string, to: string) {
    쓰고 나면 태그를 비워 다음 읽기가 바로 노션에서 온다 (쓴 사람 화면은 응답으로 바로 맞춘다) */
 const SCHEDULE_TAG = "company-schedule";
 export const listCompanyEvents = unstable_cache(readCompanyEvents, ["company-schedule-v1"], { revalidate: 45, tags: [SCHEDULE_TAG] });
-const fresh = () => revalidateTag(SCHEDULE_TAG, { expire: 0 });
+export const fresh = () => {
+  /* 캐시 비우기가 실패해도 노션 쓰기는 이미 끝났으니 오류로 돌려주지 않는다 (45초 뒤에는 저절로 새로 읽는다) */
+  try {
+    revalidateTag(SCHEDULE_TAG, { expire: 0 });
+  } catch {}
+};
 
 function addDaysIso(date: string, days: number) {
   const d = new Date(`${date}T00:00:00Z`);
@@ -92,7 +112,7 @@ function addDaysIso(date: string, days: number) {
   return d.toISOString().slice(0, 10);
 }
 
-async function notion(path: string, method: string, body?: unknown) {
+export async function notion(path: string, method: string, body?: unknown) {
   const token = process.env.NOTION_TOKEN;
   if (!token) throw new NotionAccessError(500, "NOTION_TOKEN 이 없습니다.");
   const response = await fetch(`https://api.notion.com/v1/${path}`, {
@@ -107,14 +127,15 @@ async function notion(path: string, method: string, body?: unknown) {
 }
 
 /** 이 DB 의 페이지인지 확인한다. 다른 노션 페이지를 고치지 못하게 */
-async function ownPage(id: string) {
+export async function ownPage(id: string) {
   if (!ID_RE.test(id)) badRequest("일정 id 가 이상합니다.");
-  const page = (await notion(`pages/${id}`, "GET")) as { parent?: { database_id?: string } };
+  const page = (await notion(`pages/${id}`, "GET")) as unknown as NotionPage & { parent?: { database_id?: string } };
   const parent = (page.parent?.database_id ?? "").replace(/-/g, "");
   if (parent !== COMPANY_SCHEDULE_DB) badRequest("회사 일정이 아닙니다.");
+  return page;
 }
 
-export type EventInput = { title?: unknown; date?: unknown; end?: unknown; time?: unknown; place?: unknown; order?: unknown };
+export type EventInput = { title?: unknown; date?: unknown; end?: unknown; time?: unknown; place?: unknown; order?: unknown; people?: unknown };
 
 function cleanText(value: unknown, max: number) {
   if (value == null) return "";
@@ -152,6 +173,11 @@ function toProperties(input: EventInput, isNew: boolean) {
     const order = input.order === null || input.order === "" ? null : Number(input.order);
     if (order !== null && !Number.isFinite(order)) badRequest("순서가 이상합니다.");
     props["정렬시간"] = { number: order };
+  }
+  if (input.people !== undefined) {
+    const ids = Array.isArray(input.people) ? input.people : [];
+    if (ids.length > 20 || ids.some((x) => typeof x !== "string" || !ID_RE.test(x))) badRequest("담당자가 이상합니다.");
+    props["담당자"] = { people: (ids as string[]).map((id) => ({ id })) };
   }
   return props;
 }

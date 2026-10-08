@@ -3,36 +3,17 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, getStoredAuth, isAuthError } from "@/components/api";
+import { PagePeek } from "@/components/schedule/PagePeek";
+import type { PeekEvent } from "@/components/schedule/PagePeek";
 
 /**
  * 회사 일정 달력. 노션 메인 「일정」 DB 를 노션 캘린더 보기 모양으로 보여 주고 고친다(app/api/schedule).
  * 노션에서는 주 단위 달력 두 개를 겹쳐 놓았는데, 여기서는 이번 주와 다음 주를 달력 하나에 그린다.
- * 새로 만들기, 카드 눌러 고치기, 끌어서 날짜 옮기기, 휴지통과 되돌리기, 필터(담당자), 정렬, 검색, 오늘과 앞뒤 이동.
+ * 새로 만들기, 카드를 누르면 노션처럼 가운데 큰 창(속성, 댓글, 본문 고치기, PagePeek), 끌어서 날짜 옮기기, 휴지통과 되돌리기,
+ * 필터(담당자), 정렬, 검색, 오늘과 앞뒤 이동.
  */
 
-type CompanyEvent = {
-  id: string;
-  title: string;
-  start: string;
-  end: string | null;
-  time: string;
-  place: string;
-  people: string[];
-  order: number | null;
-  url: string;
-};
-
-type Draft = {
-  id: string | null;
-  title: string;
-  date: string;
-  end: string;
-  time: string;
-  place: string;
-  order: string;
-  people: string[];
-  url: string;
-};
+type CompanyEvent = PeekEvent;
 
 type Toast = { text: string; undo?: () => void } | null;
 
@@ -83,14 +64,13 @@ export function CompanySchedule() {
   const [hidePeople, setHidePeople] = useState<string[]>([]);
   const [sort, setSort] = useState("order");
   const [menu, setMenu] = useState<null | { kind: "filter" | "sort"; x: number; y: number }>(null);
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [peek, setPeek] = useState<{ initial: CompanyEvent | null; newDate: string | null; key: number } | null>(null);
   const [toast, setToast] = useState<Toast>(null);
   const [overDay, setOverDay] = useState<string | null>(null);
   const dragRef = useRef<CompanyEvent | null>(null);
   const lastLoad = useRef(0);
+  const peekOpen = useRef(false);
   const toastTimer = useRef<number | undefined>(undefined);
-  const dialogRef = useRef<HTMLDialogElement>(null);
 
   const from = weekStart;
   const to = addDays(weekStart, WEEKS * 7 - 1);
@@ -141,7 +121,7 @@ export function CompanySchedule() {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
     const again = () => {
-      if (document.visibilityState === "visible" && !dialogRef.current?.open && !dragRef.current && Date.now() - lastLoad.current > 60_000) void load();
+      if (document.visibilityState === "visible" && !peekOpen.current && !dragRef.current && Date.now() - lastLoad.current > 60_000) void load();
     };
     const timer = window.setInterval(() => { if (Date.now() - lastLoad.current >= REFRESH_MS) again(); }, 30_000);
     window.addEventListener("focus", again);
@@ -157,12 +137,7 @@ export function CompanySchedule() {
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
   }, []);
 
-  useEffect(() => {
-    const d = dialogRef.current;
-    if (!d) return;
-    if (draft && !d.open) d.showModal();
-    if (!draft && d.open) d.close();
-  }, [draft]);
+  useEffect(() => { peekOpen.current = !!peek; }, [peek]);
 
   const people = useMemo(() => {
     const set = new Set<string>();
@@ -195,39 +170,17 @@ export function CompanySchedule() {
   }, [events, visible, from, to, sort]);
 
   function openNew(date: string) {
-    setDraft({ id: null, title: "", date, end: "", time: "", place: "", order: "", people: [], url: "" });
+    setPeek({ initial: null, newDate: date, key: Date.now() });
   }
   function openEdit(e: CompanyEvent) {
-    setDraft({ id: e.id, title: e.title, date: e.start, end: e.end ?? "", time: e.time, place: e.place, order: e.order == null ? "" : String(e.order), people: e.people, url: e.url });
+    setPeek({ initial: e, newDate: null, key: Date.now() });
   }
-
-  async function save(ev: React.FormEvent) {
-    ev.preventDefault();
-    if (!draft || saving) return;
-    const body = { title: draft.title.trim(), date: draft.date, end: draft.end || null, time: draft.time || null, place: draft.place, order: draft.order === "" ? null : Number(draft.order) };
-    if (!body.title) return;
-    setSaving(true);
-    try {
-      if (draft.id) {
-        const res = await call<{ event: CompanyEvent }>("/api/schedule", { method: "PATCH", body: JSON.stringify({ id: draft.id, ...body }) });
-        setEvents((list) => list.map((x) => (x.id === draft.id ? res.event : x)));
-        showToast("노션에 저장했어요");
-      } else {
-        const res = await call<{ event: CompanyEvent }>("/api/schedule", { method: "POST", body: JSON.stringify(body) });
-        setEvents((list) => [...list, res.event]);
-        if (body.date < from || body.date > to) setWeekStart(sundayOf(body.date));
-        showToast(`${label(body.date)}(${DOW[dowOf(body.date)]})에 만들었어요`);
-      }
-      setDraft(null);
-    } catch (err) {
-      if (!(err instanceof Error && err.message === "login")) showToast(err instanceof Error ? err.message : "저장하지 못했어요");
-    } finally {
-      setSaving(false);
-    }
-  }
+  const upsert = useCallback((e: CompanyEvent) => {
+    setEvents((list) => (list.some((x) => x.id === e.id) ? list.map((x) => (x.id === e.id ? e : x)) : [...list, e]));
+  }, []);
 
   async function remove(e: { id: string; title: string }) {
-    setDraft(null);
+    setPeek(null);
     const before = events;
     setEvents((list) => list.filter((x) => x.id !== e.id));
     try {
@@ -246,6 +199,7 @@ export function CompanySchedule() {
       if (!(err instanceof Error && err.message === "login")) showToast(err instanceof Error ? err.message : "지우지 못했어요");
     }
   }
+  const peekCall = useCallback(<T,>(path: string, init?: RequestInit) => call<T>(path, init), [call]);
 
   async function move(e: CompanyEvent, date: string) {
     if (date === e.start) return;
@@ -406,34 +360,18 @@ export function CompanySchedule() {
         </div>
       ) : null}
 
-      <dialog className="cs-dialog" ref={dialogRef} onClose={() => setDraft(null)} onCancel={() => setDraft(null)}>
-        {draft ? (
-          <form onSubmit={save}>
-            <input
-              className="cs-dtitle"
-              autoFocus
-              maxLength={200}
-              onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-              placeholder="제목 없음"
-              required
-              value={draft.title}
-            />
-            <label className="cs-prop"><span>날짜</span><input type="date" required value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} /></label>
-            <label className="cs-prop"><span>끝나는 날</span><input type="date" min={draft.date} value={draft.end} onChange={(e) => setDraft({ ...draft, end: e.target.value })} /></label>
-            <label className="cs-prop"><span>시각</span><input type="time" value={draft.time} onChange={(e) => setDraft({ ...draft, time: e.target.value })} /></label>
-            <label className="cs-prop"><span>장소</span><input maxLength={200} placeholder="비어 있음" value={draft.place} onChange={(e) => setDraft({ ...draft, place: e.target.value })} /></label>
-            <label className="cs-prop"><span>정렬시간</span><input type="number" placeholder="비어 있음" value={draft.order} onChange={(e) => setDraft({ ...draft, order: e.target.value })} /></label>
-            {draft.people.length ? <div className="cs-prop"><span>담당자</span><em>{draft.people.join(", ")}</em></div> : null}
-            <div className="cs-dbtns">
-              {draft.id ? <button type="button" className="cs-del" onClick={() => remove({ id: draft.id!, title: draft.title })}>휴지통</button> : null}
-              {draft.url ? <a href={draft.url} target="_blank" rel="noopener">노션에서 열기</a> : null}
-              <span />
-              <button type="button" onClick={() => setDraft(null)}>취소</button>
-              <button type="submit" className="cs-ok" disabled={saving}>{saving ? "저장 중" : draft.id ? "저장" : "만들기"}</button>
-            </div>
-          </form>
-        ) : null}
-      </dialog>
+      {peek ? (
+        <PagePeek
+          key={peek.key}
+          initial={peek.initial}
+          newDate={peek.newDate}
+          call={peekCall}
+          onChange={upsert}
+          onDelete={(e) => void remove(e)}
+          onClose={() => setPeek(null)}
+          toast={(t) => showToast(t)}
+        />
+      ) : null}
 
       {toast ? (
         <div className="cs-toast" role="status">
