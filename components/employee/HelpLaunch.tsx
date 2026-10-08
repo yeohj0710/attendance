@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
  * 할 일 줄의 "도움" 단추. 누르면 Claude 나 Codex 데스크톱 앱이 켜지고, 새 대화에 그 할 일이 채워진다.
  * - Claude: claude://claude.ai/new?q=... (Claude 공식 딥링크)
  * - Codex: codex://new?prompt=... (Codex 앱 공식 딥링크. 업로드처럼 브라우저 작업은 Codex 쪽)
- * 노션 안(다른 사이트의 iframe)에서는 앱 링크가 막힐 수 있어서, 누를 때 프롬프트를 클립보드에도 복사해 둔다.
+ * 노션 안(iframe)에서는 앱 링크가 막혀서 새 탭의 중간 페이지를 거친다. 누를 때 프롬프트를 클립보드에도 복사해 둔다.
  */
 const NOTE_LIMIT = 1200;
 
@@ -40,8 +40,11 @@ export function HelpLaunch({ text, note }: { text: string; note?: string }) {
   }, [open]);
 
   const prompt = buildHelpPrompt(text, note);
-  const claudeUrl = `claude://claude.ai/new?q=${encodeURIComponent(prompt)}`;
-  const codexUrl = `codex://new?prompt=${encodeURIComponent(prompt)}`;
+  // 노션 안(iframe)에서 앱 주소로 바로 가면 노션이 막고 화면이 "차단됨"으로 바뀐다.
+  // 그래서 새 탭의 중간 페이지(public/open-app.html)가 앱 주소로 이동한다.
+  const viaHelper = (url: string) => `/open-app.html?u=${encodeURIComponent(url)}`;
+  const claudeUrl = viaHelper(`claude://claude.ai/new?q=${encodeURIComponent(prompt)}`);
+  const codexUrl = viaHelper(`codex://new?prompt=${encodeURIComponent(prompt)}`);
 
   /* 링크는 그대로 열고(앱 실행), 같은 순간 프롬프트를 클립보드에도 넣어 둔다 */
   function copyPrompt() {
@@ -71,10 +74,10 @@ export function HelpLaunch({ text, note }: { text: string; note?: string }) {
       </button>
       {open ? (
         <span className="help-launch-menu">
-          <a href={claudeUrl} onClick={copyPrompt}>
+          <a href={claudeUrl} onClick={copyPrompt} rel="noopener" target="_blank">
             Claude로 하기
           </a>
-          <a href={codexUrl} onClick={copyPrompt}>
+          <a href={codexUrl} onClick={copyPrompt} rel="noopener" target="_blank">
             Codex로 하기 <small>(업로드, 브라우저 작업)</small>
           </a>
           <span className="help-launch-note">

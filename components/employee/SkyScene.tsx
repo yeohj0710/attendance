@@ -106,8 +106,8 @@ export function SkyScene({ weatherLabel }: { weatherLabel?: string | null }) {
             setEvent({ def, key: eventKey, top, seconds });
             if (def.rarity === "rare" || def.rarity === "legendary") {
               const isNew = recordDex(`sky:${def.id}`, sceneRef.current.dayKey);
-              setToast(`${def.rarity === "legendary" ? "🌟" : "✨"} ${RARITY_LABEL[def.rarity]} ${def.name}${isNew ? " 도감 등록!" : ""}`);
-              window.setTimeout(() => setToast(null), 5000);
+              // 알림 말풍선은 띄우지 않는다(일하는 화면을 가리지 않게). 도감에만 남긴다.
+              void isNew;
             } else {
               recordDex(`sky:${def.id}`, sceneRef.current.dayKey);
             }
@@ -192,7 +192,6 @@ export function SkyScene({ weatherLabel }: { weatherLabel?: string | null }) {
       ) : null}
       {scene.holiday === "christmas" ? <div className="sky-lights" /> : null}
 
-      {toast ? <div className="sky-toast">{toast}</div> : null}
     </div>
   );
 }
