@@ -45,6 +45,8 @@ type AccountConfig = {
   planDb?: string;
   /** 업로드 요일 (0 일요일). 비어 있으면 우리가 올리지 않는 계정 */
   cadence: Cadence[];
+  /** 이 날짜 전 업로드 예정 편은 현황판과 캘린더에서 뺀다 (제이약사님 영어 계정처럼 이미 넘긴 편) */
+  skipBefore?: string;
   /** 평일 공휴일에도 올리는지 */
   holidays: boolean;
   /** 노션 일정에서 이 계정 촬영을 찾을 낱말 */
@@ -97,13 +99,11 @@ const ACCOUNTS: AccountConfig[] = [
     owner: "권현우 PD님",
     notion: ["전종열 약사님"],
     planDb: "cc83b1f9b9ae83328848017bd402e0e1",
-    cadence: [
-      { to: "2026-10-15", days: WEEKDAYS },
-      { from: "2026-10-26", days: WEEKDAYS },
-    ],
+    cadence: [{ from: "2026-11-02", days: WEEKDAYS }],
+    skipBefore: "2026-10-16",
     holidays: false,
     shootWords: ["전종열", "제이약사"],
-    note: "영어 계정은 10/15까지만 올리고, 한국 계정은 10/26부터 평일에 올려요. 10/16 촬영분 20편이 한국 계정 첫 4주를 채워요.",
+    note: "한국 계정은 10/16에 첫 촬영을 하고, 업로드는 11월쯤부터 천천히 시작해요. 영어 계정 남은 편은 이미 넘겨서 여기서 챙기지 않아요(10/8 대표님).",
   },
   {
     key: "taeeun",
@@ -289,7 +289,7 @@ function calendarStatus(item: PipelineItem) {
   return "nosh";
 }
 
-/* 현황판 계정 키 → daily.js 계정 키. 제이약사님은 영어 계정(10/15까지)과 한국 계정(10/26부터)이 나뉜다 */
+/* 현황판 계정 키 → daily.js 계정 키. 제이약사님은 영어 계정(10/15까지, skipBefore 로 빠짐)과 한국 계정이 나뉜다 */
 function calendarAccount(key: string, date: string) {
   if (key === "jay") return date <= "2026-10-15" ? "jay" : "jaykr";
   return key;
@@ -500,11 +500,12 @@ async function loadPipeline(): Promise<PipelineData> {
   const uploads: PipelineData["uploads"] = [];
   const uploadTo = addDays(today, 120);
   const built = ACCOUNTS.map((account) => {
-    const mine: PipelineItem[] = progress.filter((p) => account.notion.includes(p.influencer));
+    const skipped = (date: string | null | undefined) => Boolean(account.skipBefore && date && date < account.skipBefore);
+    const mine: PipelineItem[] = progress.filter((p) => account.notion.includes(p.influencer) && !skipped(p.date));
     if (account.cadence.length) {
       for (const row of progressRows) {
         if (!account.notion.includes(row.influencer) || !row.date) continue;
-        if (row.date < UPLOADS_FROM || row.date > uploadTo) continue;
+        if (row.date < UPLOADS_FROM || row.date > uploadTo || skipped(row.date)) continue;
         if (row.status === "반려" || row.status === "업로드 보류") continue;
         const status = row.status === "업로드 완료" ? "ok" : row.item ? calendarStatus(row.item) : "nosh";
         uploads.push([
