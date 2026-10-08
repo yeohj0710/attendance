@@ -111,10 +111,10 @@ const ACCOUNTS: AccountConfig[] = [
     owner: "권현우 PD님",
     notion: ["닥터 닭갈비"],
     planDb: "eae3b1f9b9ae83eba83681ee62d75a91",
-    cadence: [{ from: "2026-10-12", days: WEEKDAYS }],
+    cadence: [{ from: "2026-10-15", days: WEEKDAYS }],
     holidays: false,
     shootWords: ["김태은"],
-    note: "닥터 닭갈비 계정이에요. 10/12에 첫 영상을 올리고 평일마다 올려요(10/8 김호준 PD님 확인). 춘천에서 한 달에 한 번 20편을 찍어요.",
+    note: "닥터 닭갈비 계정이에요. 10/15쯤 첫 영상을 올리고 평일마다 올려요(10/8 대표님). 춘천에서 한 달에 한 번 20편을 찍어요.",
   },
   {
     key: "around",
