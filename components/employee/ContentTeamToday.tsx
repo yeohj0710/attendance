@@ -1,19 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { TaskText } from "@/components/employee/TaskText";
 
 /**
- * 콘텐츠팀 할 일을 출퇴근기록부의 "오늘 할 일 / 한 일" 목록에 같은 모양으로 섞어 보여 준다.
+ * 콘텐츠팀 캘린더(별도 사이트)의 오늘 할 일을 출퇴근기록부 업무일지에 진짜 업무로 넣는다.
  *
- * 할 일을 계산하고 체크를 저장하는 곳은 콘텐츠팀 캘린더(별도 사이트) 하나뿐이다.
- * 여기서는 보이지 않는 창으로 캘린더를 ?embed=data 로 열어 오늘, 다음 출근일 할 일을 받아 그리고,
- * 체크하면 그 창에 돌려보내 캘린더 저장소에 남긴다. 그래서 캘린더에서 고친 것도 그대로 따라온다.
- * 출퇴근기록부의 할 일, 일지, Firestore 는 건드리지 않는다.
- * 계약(메시지 모양)은 C:\dev\pharmacist-mcn-structure\dist\daily.js 의 sendTasks 와 맞춘다.
+ * 보이지 않는 창으로 캘린더를 ?embed=data 로 열면 캘린더가 오늘 할 일 목록을 보내 준다.
+ * 일지에 없는 게 있거나 설명이 바뀌었으면 /api/work-log/calendar 를 한 번 불러 맞춘다.
+ * 넣고 나면 보통 업무와 똑같이 드래그, 고치기, 지우기, 이월이 된다.
+ * 체크는 양쪽에 남는다: 여기서 체크하면 sendCalendarToggle 로 캘린더에도 보내고,
+ * 캘린더에서 끝낸 일은 다음 동기화 때 여기도 끝냄으로 바뀐다.
+ * 메시지 모양은 C:\dev\pharmacist-mcn-structure\dist\daily.js 의 sendTasks 와 맞춘다.
  */
 const CALENDAR_URL =
   process.env.NEXT_PUBLIC_CONTENT_CALENDAR_URL ?? "https://pharmacist-mcn-structure.vercel.app";
 const CALENDAR_ORIGIN = new URL(CALENDAR_URL).origin;
+const FRAME_ATTR = "data-content-calendar";
 
 /* 출퇴근기록부 이름 → 캘린더의 사람 키 */
 const CONTENT_TEAM: Record<string, string> = {
@@ -29,33 +32,42 @@ export function contentTeamKey(name: string | null | undefined) {
   return hit ? CONTENT_TEAM[hit] : null;
 }
 
+export function contentCalendarUrl(who: string) {
+  return `${CALENDAR_URL}/daily.html#${who}`;
+}
+
 type CalendarItem = {
   key: string;
   kind: string;
-  k: string;
   title: string;
-  tag: string;
-  min: string;
-  sub: string;
-  steps: string[];
-  ref: string;
-  moved: string;
-  links: { t: string; href: string }[];
+  note: string;
   done: boolean;
 };
-type CalendarDay = { d: string; label: string; work: boolean; items: CalendarItem[] };
-type CalendarData = { who: string; today: CalendarDay; next: CalendarDay; url: string };
+type CalendarDay = { d: string; label: string; items: CalendarItem[] };
+type CalendarData = { who: string; today: CalendarDay; url: string };
 
-const KIND_TONE: Record<string, string> = {
-  todo: "text-danger",
-  gap: "text-danger",
-  due: "text-warn",
-  shoot: "text-accent",
-  up: "text-accent",
-  mirror: "text-accent",
-};
+export type CalendarImportItem = { key: string; text: string; label: string; note: string; done: boolean };
 
-function useContentCalendar(who: string | null) {
+type SyncTask = { calKey?: string; calLabel?: string; note?: string; done: boolean; text: string };
+type SyncLog = { workDate: string; tasks: SyncTask[]; calImported?: string[] };
+
+/* 여기서 막 체크한 키. 캘린더가 아직 옛 상태를 보내도 되돌리지 않게 잠깐 기억한다. */
+const recentToggles = new Map<string, number>();
+const TOGGLE_GRACE_MS = 60_000;
+
+function isRecentlyToggled(key: string) {
+  const at = recentToggles.get(key);
+  return at !== undefined && Date.now() - at < TOGGLE_GRACE_MS;
+}
+
+/** 출퇴근기록부에서 캘린더 업무를 체크하면 캘린더 저장소에도 남긴다. */
+export function sendCalendarToggle(key: string, done: boolean) {
+  recentToggles.set(key, Date.now());
+  const frame = document.querySelector<HTMLIFrameElement>(`iframe[${FRAME_ATTR}]`);
+  frame?.contentWindow?.postMessage({ source: "attendance", type: "toggle", key, done }, CALENDAR_ORIGIN);
+}
+
+function useCalendarData(who: string | null) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [data, setData] = useState<CalendarData | null>(null);
 
@@ -67,39 +79,21 @@ function useContentCalendar(who: string | null) {
       if (event.origin !== CALENDAR_ORIGIN) return;
       const msg = event.data as (CalendarData & { source?: string; type?: string }) | null;
       if (!msg || msg.source !== "content-calendar" || msg.type !== "tasks" || msg.who !== who) return;
-      setData({ who: msg.who, today: msg.today, next: msg.next, url: msg.url });
+      setData({ who: msg.who, today: msg.today, url: msg.url });
+    }
+
+    /* 창을 다시 볼 때 캘린더에서 바뀐 것 받아 오기 */
+    function handleFocus() {
+      frameRef.current?.contentWindow?.postMessage({ source: "attendance", type: "refresh" }, CALENDAR_ORIGIN);
     }
 
     window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+      window.removeEventListener("focus", handleFocus);
+    };
   }, [who]);
-
-  const send = useCallback((message: Record<string, unknown>) => {
-    frameRef.current?.contentWindow?.postMessage({ source: "attendance", ...message }, CALENDAR_ORIGIN);
-  }, []);
-
-  const toggle = useCallback(
-    (key: string, done: boolean) => {
-      setData((prev) => {
-        if (!prev) return prev;
-        const flip = (day: CalendarDay) => ({
-          ...day,
-          items: day.items.map((item) => (item.key === key ? { ...item, done } : item)),
-        });
-        return { ...prev, today: flip(prev.today), next: flip(prev.next) };
-      });
-      send({ type: "toggle", key, done });
-    },
-    [send],
-  );
-
-  /* 창을 다시 볼 때 캘린더에서 바뀐 것 받아 오기 */
-  useEffect(() => {
-    if (!who) return;
-    const onFocus = () => send({ type: "refresh" });
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [send, who]);
 
   const frame = who ? (
     <iframe
@@ -110,155 +104,94 @@ function useContentCalendar(who: string | null) {
       src={`${CALENDAR_URL}/daily.html?embed=data&who=${who}`}
       tabIndex={-1}
       title="콘텐츠팀 캘린더 데이터"
+      {...{ [FRAME_ATTR]: who }}
     />
   ) : null;
 
-  return { data, frame, toggle };
+  return { data, frame };
 }
 
-function CalendarRow({
-  item,
-  onToggle,
-  readOnly,
+/**
+ * 콘텐츠팀 본인 화면에 숨어서 캘린더와 일지를 맞춘다. 화면에는 아무것도 그리지 않는다.
+ * 바뀐 게 없으면 서버를 부르지 않는다.
+ */
+export function ContentCalendarSync({
+  who,
+  workLog,
+  onImport,
 }: {
-  item: CalendarItem;
-  onToggle: (key: string, done: boolean) => void;
-  readOnly: boolean;
+  who: string | null;
+  workLog: SyncLog | null;
+  onImport: (items: CalendarImportItem[], keyPrefix: string) => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
-  const hasMore = Boolean(item.sub || item.steps.length || item.ref || item.links.length || item.moved);
-  const tone = item.done ? "text-muted" : KIND_TONE[item.k] ?? "text-muted";
+  const { data, frame } = useCalendarData(who);
+  const lastSentRef = useRef("");
+  const busyRef = useRef(false);
+  const onImportRef = useRef(onImport);
+  onImportRef.current = onImport;
 
-  return (
-    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2 rounded border border-line bg-white px-3 py-2 text-sm">
-      <div className="flex items-center gap-2 pt-0.5">
-        <span aria-hidden="true" className="w-5" />
-        <input
-          aria-label={`${item.title} 했음`}
-          checked={item.done}
-          className="h-4 w-4 accent-accent"
-          disabled={readOnly}
-          onChange={(event) => onToggle(item.key, event.target.checked)}
-          type="checkbox"
-        />
-      </div>
-      <div className="min-w-0">
-        <button
-          className={`block w-full text-left ${hasMore ? "cursor-pointer" : "cursor-default"}`}
-          onClick={() => hasMore && setOpen((v) => !v)}
-          title={hasMore ? "눌러서 하는 방법 보기" : undefined}
-          type="button"
-        >
-          <span className={`block text-[11px] font-semibold ${tone}`}>
-            {item.kind}
-            {item.tag ? ` ${item.tag}` : ""}
-          </span>
-          <span
-            className={`block whitespace-pre-wrap break-words leading-relaxed ${
-              item.done ? "text-muted line-through" : item.k === "gap" ? "font-semibold text-danger" : "text-ink"
-            }`}
-          >
-            {item.title}
-          </span>
-        </button>
-        {open ? (
-          <div className="mt-1.5 space-y-1.5 text-xs leading-relaxed text-muted">
-            {item.sub ? <p>{item.sub}</p> : null}
-            {item.steps.length ? (
-              <ol className="list-decimal space-y-0.5 pl-4">
-                {item.steps.map((step) => (
-                  <li key={step}>{step}</li>
-                ))}
-              </ol>
-            ) : null}
-            {item.ref ? <p className="break-all">{item.ref}</p> : null}
-            {item.links.map((link) => (
-              <a
-                className="mr-2 font-semibold text-accent hover:underline"
-                href={link.href}
-                key={link.href}
-                rel="noopener noreferrer"
-                target="_blank"
-              >
-                {link.t || "링크"}
-              </a>
-            ))}
-            {item.moved ? <p>{item.moved}에서 옮긴 일</p> : null}
-          </div>
-        ) : null}
-      </div>
-      <span className="whitespace-nowrap pt-0.5 text-xs text-muted">{item.min}</span>
-    </div>
-  );
+  useEffect(() => {
+    if (!who || !data || !workLog || busyRef.current) return;
+    // 캘린더의 오늘(MM-DD)과 일지 날짜가 같을 때만 맞춘다. 자정 무렵 어긋남 방지.
+    if (workLog.workDate.slice(5) !== data.today.d) return;
+
+    const items = data.today.items.map((item) => ({
+      key: item.key,
+      text: item.title,
+      label: item.kind,
+      note: item.note,
+      done: item.done,
+    }));
+    const byKey = new Map(workLog.tasks.filter((task) => task.calKey).map((task) => [task.calKey, task]));
+    const imported = new Set(workLog.calImported ?? []);
+    const keyPrefix = items.length ? `${who}:${data.today.d}:` : "";
+    const liveKeys = new Set(items.map((item) => item.key));
+
+    // 여기서 끝냈는데 캘린더가 모르면 캘린더에 알려 준다 (서버 호출 아님).
+    for (const task of workLog.tasks) {
+      if (task.calKey && task.done && liveKeys.has(task.calKey) && !isRecentlyToggled(task.calKey)) {
+        const item = items.find((x) => x.key === task.calKey);
+        if (item && !item.done) sendCalendarToggle(task.calKey, true);
+      }
+    }
+
+    const needsImport =
+      items.some((item) => {
+        const task = byKey.get(item.key);
+        if (!task) return !imported.has(item.key);
+        return (
+          (item.done && !task.done && !isRecentlyToggled(item.key)) ||
+          (task.note ?? "") !== item.note ||
+          (task.calLabel ?? "") !== item.label
+        );
+      }) ||
+      (keyPrefix !== "" &&
+        workLog.tasks.some((task) => task.calKey?.startsWith(keyPrefix) && !task.done && !liveKeys.has(task.calKey)));
+    if (!needsImport) return;
+
+    const sent = items.map((item) => ({ ...item, done: item.done && !isRecentlyToggled(item.key) }));
+    const signature = JSON.stringify([workLog.workDate, sent, keyPrefix]);
+    if (signature === lastSentRef.current) return;
+    lastSentRef.current = signature;
+    busyRef.current = true;
+    void onImportRef.current(sent, keyPrefix).finally(() => {
+      busyRef.current = false;
+    });
+  }, [data, who, workLog]);
+
+  return frame ? <div className="relative">{frame}</div> : null;
 }
 
-function CalendarList({
-  data,
-  onToggle,
-  readOnly,
-}: {
-  data: CalendarData | null;
-  onToggle: (key: string, done: boolean) => void;
-  readOnly: boolean;
-}) {
-  const [showNext, setShowNext] = useState(false);
-
-  if (!data) {
-    return <p className="px-1 text-xs text-muted">콘텐츠팀 할 일을 불러오는 중</p>;
-  }
-
-  const next = data.next;
-  return (
-    <div className="space-y-2">
-      {data.today.items.map((item) => (
-        <CalendarRow item={item} key={item.key} onToggle={onToggle} readOnly={readOnly} />
-      ))}
-      {showNext ? (
-        <>
-          <p className="pt-1 text-xs font-bold text-muted">다음 출근일 {next.label}</p>
-          {next.items.length ? (
-            next.items.map((item) => (
-              <CalendarRow item={item} key={item.key} onToggle={onToggle} readOnly={readOnly} />
-            ))
-          ) : (
-            <p className="text-xs text-muted">잡힌 일 없음</p>
-          )}
-        </>
-      ) : null}
-      <div className="flex items-center gap-3 px-1 text-xs font-semibold">
-        <button className="text-accent hover:underline" onClick={() => setShowNext((v) => !v)} type="button">
-          {showNext ? "다음 출근일 접기" : `다음 출근일(${next.label}) ${next.items.length}개 보기`}
-        </button>
-        <a className="ml-auto text-muted hover:text-accent" href={data.url} rel="noopener noreferrer" target="_blank">
-          콘텐츠팀 캘린더에서 고치기
-        </a>
-      </div>
-    </div>
-  );
-}
-
-/** 콘텐츠팀 본인: 오늘 할 일 목록 맨 위에 섞어 넣는다 */
-export function ContentCalendarTasks({ who }: { who: string | null }) {
-  const { data, frame, toggle } = useContentCalendar(who);
-  if (!who) return null;
-  return (
-    <div className="relative">
-      {frame}
-      <CalendarList data={data} onToggle={toggle} readOnly={false} />
-    </div>
-  );
-}
-
-/** 관리자: 네 분 중 골라서 그분 목록을 보기만 한다 */
+/** 관리자: 네 분 중 골라서 그분 캘린더 할 일을 보기만 한다 (일지에는 안 넣는다) */
 export function ContentTeamPreview() {
   const [picked, setPicked] = useState("kim");
-  const { data, frame, toggle } = useContentCalendar(picked);
+  const { data, frame } = useCalendarData(picked);
 
   return (
-    <div className="relative mt-5 rounded border border-line bg-field/60">
+    <div className="maple-quest mt-5">
       {frame}
-      <div className="flex flex-wrap items-center gap-2 px-3 py-3">
-        <span className="text-sm font-bold text-ink">콘텐츠팀 화면 미리보기</span>
+      <div className="maple-quest-head flex-wrap">
+        <span className="maple-quest-title">콘텐츠팀 화면 미리보기</span>
         <select
           aria-label="미리 볼 사람"
           className="rounded border border-line bg-white px-1.5 py-0.5 text-xs text-ink"
@@ -267,13 +200,32 @@ export function ContentTeamPreview() {
         >
           {Object.entries(CONTENT_TEAM).map(([label, key]) => (
             <option key={key} value={key}>
-              {label}
+              {key === "lee" ? `${label}님` : `${label} PD님`}
             </option>
           ))}
         </select>
+        <a
+          className="maple-quest-link"
+          href={contentCalendarUrl(picked)}
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          콘텐츠팀 캘린더
+        </a>
       </div>
-      <div className="border-t border-line px-3 pb-3 pt-3">
-        <CalendarList data={data} onToggle={toggle} readOnly />
+      <div className="space-y-2 p-[14px]">
+        {!data ? <p className="text-xs text-muted">불러오는 중</p> : null}
+        {data?.today.items.map((item) => (
+          <div
+            className="quest-row relative grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded border border-line bg-white px-3 py-2 text-sm"
+            key={item.key}
+          >
+            <input checked={item.done} className="h-4 w-4 accent-accent" disabled readOnly type="checkbox" />
+            <div className="min-w-0">
+              <TaskText done={item.done} label={item.kind} note={item.note} text={item.title} />
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -15,7 +15,16 @@ import {
 import { LoginPanel } from "@/components/LoginPanel";
 import { Spinner } from "@/components/Spinner";
 import { WorkInsights } from "@/components/employee/WorkInsights";
-import { ContentCalendarTasks, ContentTeamPreview, contentTeamKey } from "@/components/employee/ContentTeamToday";
+import {
+  ContentCalendarSync,
+  ContentTeamPreview,
+  contentCalendarUrl,
+  contentTeamKey,
+  sendCalendarToggle,
+} from "@/components/employee/ContentTeamToday";
+import type { CalendarImportItem } from "@/components/employee/ContentTeamToday";
+import { TaskText } from "@/components/employee/TaskText";
+import { MapleScene, QuestIcon, QuestProgress } from "@/components/employee/MapleQuest";
 import {
   createLocalGreetings,
   type GreetingContext,
@@ -90,6 +99,9 @@ type WorkTask = {
   completedOrder?: number | null;
   createdAt: string;
   updatedAt: string;
+  calKey?: string;
+  calLabel?: string;
+  note?: string;
 };
 
 type WorkComment = {
@@ -136,6 +148,7 @@ type WorkLog = {
   commentCount: number;
   createdAt: string | null;
   updatedAt: string | null;
+  calImported?: string[];
 };
 
 type CareerTitleProfile = {
@@ -1611,8 +1624,41 @@ export function EmployeeApp() {
     }
   }
 
+  async function importContentCalendarTasks(items: CalendarImportItem[], keyPrefix: string) {
+    if (!auth || !employee || !todayWorkLog) return;
+    const requestAuth = auth;
+    const seq = todayWorkLogSaveSeqRef.current;
+    try {
+      const result = await apiFetch<{ workLog: WorkLog }>("/api/work-log/calendar", {
+        method: "POST",
+        auth: requestAuth,
+        body: JSON.stringify({
+          employeeId: employee.id,
+          workDate: todayWorkLog.workDate,
+          items,
+          keyPrefix,
+        }),
+      });
+      const savedLog = normalizeWorkLogCounts(result.workLog);
+      rememberWorkLog(savedLog);
+      if (todayWorkLogSaveSeqRef.current === seq) {
+        setTodayWorkLog(savedLog);
+        updateTeamMonthWorkSummary(savedLog);
+        updateTeamTodayWorkLog(savedLog);
+      } else {
+        void refreshWorkLogFromServer(savedLog, requestAuth, "today");
+      }
+    } catch {
+      // 다음에 캘린더가 목록을 다시 보낼 때 또 맞춘다.
+    }
+  }
+
   async function toggleTodayTask(taskId: string) {
     if (!todayWorkLog) return;
+    const toggled = todayWorkLog.tasks.find((task) => task.id === taskId);
+    if (toggled?.calKey) {
+      sendCalendarToggle(toggled.calKey, !toggled.done);
+    }
 
     setPendingTodayTaskId(taskId);
     try {
@@ -1877,6 +1923,7 @@ export function EmployeeApp() {
   return (
     <>
     <main className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col justify-start px-3 pb-16 pt-6 sm:px-5 sm:pt-8">
+      <MapleScene />
       <section className="w-full max-w-xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -2064,14 +2111,28 @@ export function EmployeeApp() {
           </div>
         </dl>
 
-        <div className="mt-5 rounded border border-line bg-field/60">
-          <div className="px-3 py-3">
-            <span className="block text-sm font-bold text-ink">오늘 할 일 / 한 일</span>
+        <div className="maple-quest mt-5">
+          <div className="maple-quest-head">
+            <QuestIcon />
+            <span className="maple-quest-title">
+              오늘 할 일 / 한 일<small>QUEST</small>
+            </span>
+            {contentWho ? (
+              <a
+                className="maple-quest-link"
+                href={contentCalendarUrl(contentWho)}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                콘텐츠팀 캘린더
+              </a>
+            ) : null}
           </div>
           <QuickWorkLogPanel
             canEdit={!isReadOnly}
             contentWho={contentWho}
             isLoading={isTodayWorkLoading}
+            onImportCalendar={importContentCalendarTasks}
             isSaving={isTodayWorkSaving}
             message={todayWorkMessage}
             newTaskText={todayTaskText}
@@ -2124,7 +2185,7 @@ export function EmployeeApp() {
                   <div className="flex min-w-0 items-start gap-2.5">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="truncate font-bold text-ink">{record.employeeName}</span>
+                        <span className="truncate font-bold text-ink">{withHonorific(record.employeeName)}</span>
                         <TeamStatusBadge record={record} />
                       </div>
                       <p className="mt-1 text-xs text-muted">{formatKstTimeRange(record)}</p>
@@ -2722,7 +2783,7 @@ function TeamDeskSeat({
 
   return (
     <button
-      aria-label={`${record.employeeName} 업무 기록 보기`}
+      aria-label={`${withHonorific(record.employeeName)} 업무 기록 보기`}
       className={`team-pixel-seat team-pixel-tier-${titleRarity} team-pixel-depth-${titleDepth} team-pixel-effect-${activityEffect.level} team-pixel-effect-${activityEffect.tone} team-pixel-hair-${palette.hairStyle} team-pixel-outfit-${palette.outfit} team-pixel-posture-${state.posture} team-pixel-mood-${state.mood} team-pixel-screen-${state.screen}${state.rare ? ` team-pixel-rare-${state.rare}` : ""}${isMe ? " team-pixel-seat-me" : ""}`}
       onFocus={() => onPrefetchRecord(record)}
       onClick={() => onSelectRecord(record)}
@@ -2733,7 +2794,7 @@ function TeamDeskSeat({
           ...liveEffectStyle,
         } as CSSProperties
       }
-      title={`${record.employeeName} · ${formatKstTimeRange(record)}`}
+      title={`${withHonorific(record.employeeName)}, ${formatKstTimeRange(record)}`}
       type="button"
     >
       {titleProfile ? <span className="team-pixel-title-aura" aria-hidden="true" /> : null}
@@ -3276,7 +3337,7 @@ function TodayTeamTasks({ record }: { record: TeamAttendanceRecord }) {
 
   return (
     <div
-      className={`mt-3 space-y-3 ${
+      className={`maple-team mt-3 space-y-3 ${
         shouldScroll
           ? "team-task-scroll max-h-[26rem] overflow-y-auto overscroll-contain rounded px-1.5 py-1"
           : ""
@@ -3293,6 +3354,12 @@ function TodayTeamTasks({ record }: { record: TeamAttendanceRecord }) {
   );
 }
 
+/** 다른 분 이름은 "김호준님"처럼 부른다. 이미 님이 붙어 있으면 그대로. */
+function withHonorific(name: string) {
+  const trimmed = name.trim();
+  return !trimmed || trimmed.endsWith("님") ? trimmed : `${trimmed}님`;
+}
+
 function TaskPreviewList({ tasks }: { tasks: WorkTask[] }) {
   if (!tasks.length) {
     return null;
@@ -3302,22 +3369,15 @@ function TaskPreviewList({ tasks }: { tasks: WorkTask[] }) {
     <ul className="space-y-1.5">
       {tasks.map((task) => (
         <li
-          className="flex items-center gap-2 rounded bg-white/75 px-2.5 py-2 text-sm leading-relaxed text-ink ring-1 ring-line/70"
+          className={`quest-row${task.done ? " is-done" : ""} relative flex items-center gap-2 rounded border border-line bg-white px-2.5 py-2 text-sm leading-relaxed text-ink`}
           key={task.id}
         >
-          <span
-            aria-hidden="true"
-            className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold ${
-              task.done
-                ? "border-accent bg-accent text-white"
-                : "border-slate-300 bg-white text-transparent"
-            }`}
-          >
-            ✓
-          </span>
-          <span className={task.done ? "text-muted line-through" : ""}>
-            <LinkifiedText text={task.text} />
-          </span>
+          <span aria-hidden="true" className={`quest-check${task.done ? " is-on" : ""}`} />
+          <div className="min-w-0 flex-1">
+            <TaskText done={task.done} label={task.calLabel} note={task.note} text={task.text}>
+              <LinkifiedText text={task.text} />
+            </TaskText>
+          </div>
         </li>
       ))}
     </ul>
@@ -7192,6 +7252,7 @@ function QuickWorkLogPanel({
   canEdit,
   contentWho = null,
   isLoading,
+  onImportCalendar,
   isSaving,
   message,
   newTaskText,
@@ -7207,6 +7268,7 @@ function QuickWorkLogPanel({
   canEdit: boolean;
   contentWho?: string | null;
   isLoading: boolean;
+  onImportCalendar?: (items: CalendarImportItem[], keyPrefix: string) => Promise<void>;
   isSaving: boolean;
   message: string;
   newTaskText: string;
@@ -7222,7 +7284,10 @@ function QuickWorkLogPanel({
   const tasks = workLog?.tasks ?? [];
 
   return (
-    <div className="border-t border-line px-3 pb-3">
+    <div className="quick-panel border-t border-line px-3 pb-3">
+      {contentWho && onImportCalendar ? (
+        <ContentCalendarSync onImport={onImportCalendar} who={contentWho} workLog={workLog} />
+      ) : null}
       {isLoading ? (
         <div className="flex items-center justify-center gap-2 pb-5 pt-8 text-sm font-semibold text-muted">
           <Spinner />
@@ -7232,7 +7297,9 @@ function QuickWorkLogPanel({
 
       {!isLoading && workLog ? (
         <div className="space-y-3 pt-3">
-          <ContentCalendarTasks who={contentWho} />
+          {tasks.length ? (
+            <QuestProgress done={tasks.filter((task) => task.done).length} total={tasks.length} />
+          ) : null}
           <TaskSection
             canEdit={canEdit}
             isSaving={isSaving}
@@ -7244,7 +7311,7 @@ function QuickWorkLogPanel({
             tasks={tasks}
           />
 
-          {tasks.length === 0 && !contentWho ? (
+          {tasks.length === 0 ? (
             <p className="rounded border border-line bg-white/70 px-3 py-4 text-center text-sm text-muted">
               아직 적힌 업무가 없어요. 하나만 적어도 퇴근할 때 훨씬 편해져요.
             </p>
@@ -7378,7 +7445,7 @@ function WorkLogModal({
               ) : null}
             </p>
             <h3 className="truncate text-lg font-bold text-ink">
-              {record.employeeName} 업무 기록
+              {withHonorific(record.employeeName)} 업무 기록
             </h3>
             <p className="mt-1 text-xs text-muted">
               {formatKstTimeRange(record)}
@@ -7759,7 +7826,7 @@ function TaskSection({
 
           return (
             <div
-              className={`relative grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded border px-3 py-2 text-sm transition ${
+              className={`quest-row${task.done ? " is-done" : ""} relative grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded border px-3 py-2 text-sm transition ${
                 isProcessing
                   ? "border-accent/30 bg-accentSoft/60"
                   : isDragging
@@ -7848,13 +7915,9 @@ function TaskSection({
                     </div>
                   </div>
                 ) : (
-                  <span
-                    className={`block whitespace-pre-wrap break-words leading-relaxed ${
-                      task.done ? "text-muted line-through" : "text-ink"
-                    }`}
-                  >
+                  <TaskText done={task.done} label={task.calLabel} note={task.note} text={task.text}>
                     <LinkifiedText text={task.text} />
-                  </span>
+                  </TaskText>
                 )}
               </div>
               {canEdit ? (

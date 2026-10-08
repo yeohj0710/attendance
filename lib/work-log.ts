@@ -15,6 +15,12 @@ export type WorkTask = {
   completedOrder?: number | null;
   createdAt: string;
   updatedAt: string;
+  /** 콘텐츠팀 캘린더에서 들어온 업무면 캘린더 쪽 키. 체크하면 캘린더에도 남긴다. */
+  calKey?: string;
+  /** 캘린더 업무 종류 (인수인계, 마감, 업로드 등) */
+  calLabel?: string;
+  /** 마우스를 올리면 뜨는 설명 */
+  note?: string;
 };
 
 export type WorkComment = {
@@ -37,6 +43,8 @@ export type WorkLog = {
   commentCount: number;
   createdAt: string | null;
   updatedAt: string | null;
+  /** 이 날 일지에 이미 넣은 캘린더 업무 키. 지운 업무를 다시 넣지 않으려고 둔다. */
+  calImported: string[];
 };
 
 export type WorkLogSummary = {
@@ -71,7 +79,11 @@ type WorkLogData = {
     completed_order?: number | null;
     created_at?: string;
     updated_at?: string;
+    cal_key?: string;
+    cal_label?: string;
+    note?: string;
   }>;
+  cal_imported?: string[];
   deleted_tasks?: Array<{
     text?: string;
     deleted_at?: string;
@@ -99,6 +111,8 @@ type WorkCommentData = {
 
 type WorkTaskInput = Partial<WorkTask> & {
   text?: string;
+  cal_key?: string;
+  cal_label?: string;
   completed_order?: number | null;
   created_at?: string;
   updated_at?: string;
@@ -110,6 +124,172 @@ type DeletedWorkTask = {
 };
 
 const CARRYOVER_START_DATE = "2026-05-01";
+const TASK_NOTE_MAX_LENGTH = 2000;
+const CAL_IMPORTED_LIMIT = 300;
+
+/** Firestore 에는 undefined 를 못 넣어서, 캘린더 칸은 있을 때만 붙인다. */
+function serializeTask(task: WorkTask): NonNullable<WorkLogData["tasks"]>[number] {
+  return {
+    id: task.id,
+    text: task.text,
+    done: task.done,
+    section: task.section,
+    order: task.order,
+    completed_order: task.completedOrder ?? null,
+    created_at: task.createdAt,
+    updated_at: task.updatedAt,
+    ...(task.calKey ? { cal_key: task.calKey } : {}),
+    ...(task.calLabel ? { cal_label: task.calLabel } : {}),
+    ...(task.note ? { note: task.note } : {}),
+  };
+}
+
+/** 화면이 캘린더 칸을 빼고 보내도, 같은 id 의 서버 값을 살린다. */
+function keepCalendarFields(sentTasks: WorkTask[], currentTasks: WorkTask[]) {
+  const byId = new Map(currentTasks.map((task) => [task.id, task]));
+  return sentTasks.map((task) => {
+    const current = byId.get(task.id);
+    if (!current || task.calKey || !current.calKey) return task;
+    return {
+      ...task,
+      calKey: current.calKey,
+      ...(current.calLabel ? { calLabel: current.calLabel } : {}),
+      ...(task.note || current.note ? { note: task.note || current.note } : {}),
+    };
+  });
+}
+
+export type CalendarTaskInput = {
+  key?: unknown;
+  text?: unknown;
+  label?: unknown;
+  note?: unknown;
+  done?: unknown;
+};
+
+/**
+ * 콘텐츠팀 캘린더의 오늘 할 일을 그날 업무일지에 진짜 업무로 넣는다.
+ * 한 번 넣은 키는 cal_imported 에 남겨서, 직원이 지운 업무가 다시 생기지 않게 한다.
+ * 이미 들어온 업무는 설명과 종류만 맞추고, 캘린더에서 끝냈으면 끝냄으로 바꾼다(되돌리기는 안 따라감).
+ * 화면이 바뀐 게 있을 때만 부르므로 보통 하루 한두 번이고, 한 번에 문서 읽기 2건 + 쓰기 1건이다.
+ */
+export async function importCalendarTasks(
+  auth: AuthContext,
+  input: {
+    employeeId: string;
+    workDate: string;
+    items: CalendarTaskInput[];
+    /** 이 날짜 캘린더 키의 앞부분 (예: kim:10-08:). 여기 해당하는데 목록에 없는 안 끝난 업무는 뺀다. */
+    keyPrefix?: string;
+  },
+) {
+  validateWorkLogKey(input.employeeId, input.workDate);
+  if (auth.employee.id !== input.employeeId) {
+    forbidden("본인의 업무 기록만 수정할 수 있습니다.");
+  }
+
+  const items = input.items
+    .map((item) => ({
+      key: String(item?.key ?? "").slice(0, 80),
+      text: String(item?.text ?? "").trim().slice(0, 300),
+      label: String(item?.label ?? "").slice(0, 20),
+      note: String(item?.note ?? "").slice(0, TASK_NOTE_MAX_LENGTH),
+      done: item?.done === true,
+    }))
+    .filter((item) => item.key && item.text)
+    .slice(0, 40);
+
+  const db = getDb();
+  const docRef = db.collection("work_logs").doc(getWorkLogDocId(input.employeeId, input.workDate));
+  const [employeeDoc, currentDoc] = await Promise.all([
+    db.collection("employees").doc(input.employeeId).get(),
+    docRef.get(),
+  ]);
+  const employee = employeeDoc.data() as EmployeeData | undefined;
+  if (!employeeDoc.exists || !employee?.is_active) {
+    badRequest("직원 정보를 찾을 수 없습니다.");
+  }
+
+  const now = new Date().toISOString();
+  const currentData = currentDoc.data() as WorkLogData | undefined;
+  const tasks = currentDoc.exists
+    ? normalizeTasks(currentData?.tasks ?? [], now)
+    : await getCarryoverTasks(input.employeeId, input.workDate);
+  const imported = new Set(
+    Array.isArray(currentData?.cal_imported) ? currentData.cal_imported.map(String) : [],
+  );
+  let completedOrder =
+    tasks.reduce((max, task) => Math.max(max, getFiniteNumber(task.completedOrder) ?? -1), -1) + 1;
+  const added: WorkTask[] = [];
+
+  for (const item of items) {
+    const existing =
+      tasks.find((task) => task.calKey === item.key) ??
+      // 어제 못 끝내 넘어온 같은 업무(아침 점검 같은 매일 업무)는 새로 만들지 않고 오늘 키로 잇는다.
+      (!imported.has(item.key)
+        ? tasks.find((task) => !task.done && task.calKey && task.text === item.text)
+        : undefined);
+    if (existing) {
+      existing.calKey = item.key;
+      if (item.label) existing.calLabel = item.label;
+      if (item.note) existing.note = item.note;
+      if (item.done && !existing.done) {
+        existing.done = true;
+        existing.completedOrder = completedOrder++;
+        existing.updatedAt = now;
+      }
+    } else if (!imported.has(item.key)) {
+      added.push({
+        id: randomUUID(),
+        text: item.text,
+        done: item.done,
+        section: "today",
+        order: 0,
+        completedOrder: item.done ? completedOrder++ : null,
+        createdAt: now,
+        updatedAt: now,
+        calKey: item.key,
+        ...(item.label ? { calLabel: item.label } : {}),
+        ...(item.note ? { note: item.note } : {}),
+      });
+    }
+    imported.add(item.key);
+  }
+
+  // 캘린더에서 이름이 바뀌었거나 다른 날로 옮긴 오늘 업무는, 아직 안 끝났으면 뺀다.
+  const keyPrefix = String(input.keyPrefix ?? "").slice(0, 40);
+  const liveKeys = new Set(items.map((item) => item.key));
+  if (keyPrefix) {
+    for (let i = tasks.length - 1; i >= 0; i--) {
+      const task = tasks[i];
+      if (task.calKey?.startsWith(keyPrefix) && !liveKeys.has(task.calKey) && !task.done) {
+        tasks.splice(i, 1);
+        imported.delete(task.calKey); // 캘린더에서 다시 오늘로 돌아오면 다시 넣을 수 있게
+      }
+    }
+  }
+
+  // 새로 들어온 캘린더 업무는 캘린더 순서대로 목록 맨 위에 둔다.
+  const minOrder = tasks.reduce((min, task) => Math.min(min, getFiniteNumber(task.order) ?? 0), 0);
+  added.forEach((task, index) => {
+    task.order = minOrder - added.length + index;
+  });
+  const nextTasks = [...added, ...tasks].slice(0, 80);
+
+  const data: WorkLogData = {
+    employee_id: input.employeeId,
+    work_date: input.workDate,
+    summary: currentData?.summary ?? "",
+    tasks: nextTasks.map(serializeTask),
+    cal_imported: Array.from(imported).slice(-CAL_IMPORTED_LIMIT),
+    comments: serializeComments(normalizeComments(currentData?.comments ?? [])),
+    created_at: currentDoc.exists ? currentData?.created_at : nowTimestamp(),
+    updated_at: nowTimestamp(),
+  };
+
+  await docRef.set(data, { merge: true });
+  return mapWorkLog(data, employee.name ?? "");
+}
 
 export async function getWorkLog(employeeId: string, workDate: string) {
   validateWorkLogKey(employeeId, workDate);
@@ -169,7 +349,7 @@ export async function saveWorkLog(
   const currentTasks = currentDoc.exists
     ? normalizeTasks(currentData?.tasks ?? [], now)
     : await getCarryoverTasks(input.employeeId, input.workDate);
-  const sentTasks = normalizeTasks(input.tasks ?? [], now);
+  const sentTasks = keepCalendarFields(normalizeTasks(input.tasks ?? [], now), currentTasks);
   // 문서가 아직 없으면 이월 업무 id가 요청마다 새로 나와서 맞춰 볼 수 없다. 그땐 보낸 목록 그대로.
   const tasks = currentDoc.exists
     ? keepTasksUnknownToClient(sentTasks, currentTasks, input.deletedTasks ?? [])
@@ -185,16 +365,7 @@ export async function saveWorkLog(
     employee_id: input.employeeId,
     work_date: input.workDate,
     summary: normalizeSummary(input.summary),
-    tasks: tasks.map((task) => ({
-      id: task.id,
-      text: task.text,
-      done: task.done,
-      section: task.section,
-      order: task.order,
-      completed_order: task.completedOrder ?? null,
-      created_at: task.createdAt,
-      updated_at: task.updatedAt,
-    })),
+    tasks: tasks.map(serializeTask),
     deleted_tasks: deletedTasks.map((task) => ({
       text: task.text,
       deleted_at: task.deletedAt,
@@ -619,16 +790,7 @@ export async function ensureCarryoverWorkLog(employeeId: string, workDate: strin
     employee_id: employeeId,
     work_date: workDate,
     summary: "",
-    tasks: carryoverTasks.map((task) => ({
-      id: task.id,
-      text: task.text,
-      done: task.done,
-      section: task.section,
-      order: task.order,
-      completed_order: task.completedOrder ?? null,
-      created_at: task.createdAt,
-      updated_at: task.updatedAt,
-    })),
+    tasks: carryoverTasks.map(serializeTask),
     created_at: nowTimestamp(),
     updated_at: nowTimestamp(),
   };
@@ -741,6 +903,12 @@ function normalizeTasks(tasks: WorkTaskInput[], now: string): WorkTask[] {
         createdAt,
         updatedAt,
       };
+      const calKey = String(task.calKey ?? task.cal_key ?? "").slice(0, 80);
+      const calLabel = String(task.calLabel ?? task.cal_label ?? "").slice(0, 20);
+      const note = String(task.note ?? "").slice(0, TASK_NOTE_MAX_LENGTH);
+      if (calKey) normalizedTask.calKey = calKey;
+      if (calLabel) normalizedTask.calLabel = calLabel;
+      if (note) normalizedTask.note = note;
 
       return normalizedTask;
     })
@@ -918,6 +1086,7 @@ function emptyWorkLog(employeeId: string, employeeName: string, workDate: string
     commentCount: 0,
     createdAt: null,
     updatedAt: null,
+    calImported: [],
   };
 }
 
@@ -944,6 +1113,7 @@ function mapWorkLog(data: WorkLogData, employeeName: string): WorkLog {
     commentCount: comments.length,
     createdAt: timestampToIso(data.created_at),
     updatedAt: timestampToIso(data.updated_at),
+    calImported: Array.isArray(data.cal_imported) ? data.cal_imported.map(String) : [],
   };
 }
 

@@ -6,6 +6,7 @@ import {
   type GreetingContext,
   type GreetingEvent,
 } from "@/lib/greeting";
+import { createAiGreetings } from "@/lib/greeting-ai";
 import { getOfficeWeather } from "@/lib/weather";
 
 export const runtime = "nodejs";
@@ -27,13 +28,15 @@ export async function POST(request: Request) {
       nowIso: new Date().toISOString(),
       weather,
     };
-    const message = createLocalGreeting(context, event);
-    const messages = createLocalGreetings(context, event, 6);
+    // 켜져 있으면 LLM 이 그날 상황에 맞춰 새로 쓴다. 꺼져 있거나 실패하면 정해진 문장 목록에서 고른다.
+    const aiMessages = await createAiGreetings(context, event, 6);
+    const messages = aiMessages ?? createLocalGreetings(context, event, 6);
+    const message = aiMessages?.[0] ?? createLocalGreeting(context, event);
 
     return Response.json({
       message,
       messages,
-      source: "local",
+      source: aiMessages ? "ai" : "local",
       weather,
     });
   });

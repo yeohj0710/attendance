@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./maple-quest.css";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://wellnessbox-attendance.vercel.app";
 const googleSiteVerification = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION;

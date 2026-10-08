@@ -1,0 +1,205 @@
+/*
+ * 오늘 할 일 칸과 팀 업무 목록을 요즘 메이플 UI(밝은 판) 느낌으로 꾸미는 스타일.
+ * 글꼴, 글자 크기, 글자 색은 출퇴근기록부 그대로 두고 창, 줄, 라벨, 진행 막대, 체크칸, 설명창, 배경만 바꾼다.
+ * 안쪽 여백은 위아래, 좌우를 같게 맞춘다.
+ */
+
+/* ───────── 페이지 배경: 하늘, 구름, 언덕 (직접 그림) ───────── */
+.maple-scene {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  background: linear-gradient(180deg, #6fc0ff 0%, #a8dcff 45%, #e9f7ff 100%);
+}
+.maple-cloud {
+  position: absolute;
+  width: 170px;
+  height: 44px;
+  border-radius: 30px;
+  background: rgba(255, 255, 255, 0.95);
+  animation: maple-drift 90s linear infinite;
+}
+.maple-cloud::before,
+.maple-cloud::after {
+  content: "";
+  position: absolute;
+  background: inherit;
+  border-radius: 50%;
+}
+.maple-cloud::before { width: 70px; height: 70px; left: 28px; top: -34px; }
+.maple-cloud::after { width: 50px; height: 50px; left: 86px; top: -22px; }
+.maple-cloud-1 { top: 80px; }
+.maple-cloud-2 { top: 230px; transform: scale(0.7); animation-duration: 120s; animation-delay: -50s; }
+.maple-cloud-3 { top: 380px; transform: scale(0.55); animation-duration: 140s; animation-delay: -95s; }
+@keyframes maple-drift {
+  from { left: -220px; }
+  to { left: 110vw; }
+}
+.maple-hills { position: absolute; left: 0; right: 0; bottom: 0; height: 240px; }
+.maple-hills svg { display: block; width: 100%; height: 100%; }
+@media (prefers-reduced-motion: reduce) {
+  .maple-cloud { animation: none; left: 10%; }
+}
+
+/* ───────── 퀘스트 창 ───────── */
+.maple-quest {
+  position: relative;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(30, 60, 110, 0.12), 0 18px 40px -22px rgba(10, 20, 50, 0.45);
+}
+.maple-quest-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px;
+  border-radius: 12px 12px 0 0;
+  background: linear-gradient(90deg, rgba(255, 160, 40, 0.12), rgba(255, 160, 40, 0));
+  border-bottom: 1px solid #e7ebf2;
+}
+.maple-quest-head svg { width: 22px; height: 22px; flex: none; }
+.maple-quest-title { font-size: 15px; font-weight: 700; color: #172033; letter-spacing: -0.01em; }
+.maple-quest-title small { margin-left: 6px; font-size: 11px; font-weight: 700; color: #ff8a00; letter-spacing: 0.06em; }
+.maple-quest-link { margin-left: auto; font-size: 12px; font-weight: 600; color: #2f73e0; }
+.maple-quest-link:hover { text-decoration: underline; }
+.maple-quest .quick-panel { border-top: 0; padding: 14px; }
+.maple-quest .quick-panel > div:first-child { padding-top: 0; }
+
+/* 진행 막대 */
+.maple-bar { display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 700; color: #6b7690; }
+.maple-bar-track { position: relative; flex: 1; min-width: 0; height: 8px; border-radius: 99px; background: #eef1f6; overflow: hidden; }
+.maple-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #ffb340, #ff7a00);
+  box-shadow: 0 0 10px rgba(255, 170, 40, 0.55);
+  transition: width 0.4s;
+}
+.maple-bar b { color: #ff8a00; font-variant-numeric: tabular-nums; }
+
+/* 줄 */
+.maple-quest .quest-row,
+.maple-team .quest-row {
+  border-radius: 8px;
+  border-color: #e7ebf2;
+  background: #fff;
+  padding: 9px 10px;
+  transition: background 0.12s, border-color 0.12s;
+}
+.maple-quest .quest-row:hover,
+.maple-team .quest-row:hover { background: #fff6e8; }
+.maple-quest .quest-row.is-done,
+.maple-team .quest-row.is-done { opacity: 0.72; }
+
+/* 체크칸 */
+.maple-quest input[type="checkbox"],
+.maple-team .quest-check {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  border-radius: 5px;
+  border: 1.5px solid #b9c2d3;
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.maple-quest input[type="checkbox"]:checked,
+.maple-team .quest-check.is-on {
+  background: #ff9a1f;
+  border-color: #ff9a1f;
+  box-shadow: 0 0 8px rgba(255, 154, 31, 0.6);
+}
+.maple-quest input[type="checkbox"]:checked::after,
+.maple-team .quest-check.is-on::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 1.5px;
+  width: 5px;
+  height: 10px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.maple-quest input[type="checkbox"]:disabled { cursor: default; }
+
+/* 입력칸과 추가 단추 */
+.maple-quest .field { border-radius: 8px; padding: 10px 12px; }
+.maple-quest .field:focus { border-color: #ff9a1f; box-shadow: 0 0 0 3px rgba(255, 154, 31, 0.22); --tw-ring-color: transparent; }
+.maple-quest .primary-button {
+  border-radius: 8px;
+  color: #3a1d00;
+  font-weight: 700;
+  background: linear-gradient(180deg, #ffe08a 0%, #ffb52e 100%);
+  box-shadow: 0 0 0 1px rgba(160, 90, 0, 0.5), 0 6px 16px -6px rgba(255, 160, 30, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.maple-quest .primary-button:hover { filter: brightness(1.05); background: linear-gradient(180deg, #ffe08a 0%, #ffb52e 100%); }
+.maple-quest .primary-button:disabled { filter: grayscale(0.6) opacity(0.6); }
+/* 좁은 화면에서는 입력칸 아래로 내려가니 단추를 낮춘다 */
+@media (max-width: 639px) {
+  .maple-quest .quick-panel .primary-button { min-height: 40px; }
+}
+
+/* 라벨 */
+.quest-chip {
+  display: inline-block;
+  margin-right: 7px;
+  padding: 0 7px;
+  border-radius: 99px;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 19px;
+  vertical-align: 1px;
+  text-decoration: none;
+}
+.quest-chip-hand { background: rgba(255, 92, 92, 0.14); color: #e5484d; }
+.quest-chip-due { background: rgba(255, 163, 40, 0.18); color: #e07b00; }
+.quest-chip-up { background: rgba(70, 150, 255, 0.15); color: #2f73e0; }
+.quest-chip-routine { background: rgba(80, 190, 120, 0.16); color: #23995a; }
+.quest-chip-gap { background: transparent; color: #e5484d; box-shadow: inset 0 0 0 1px rgba(229, 72, 77, 0.55); }
+.quest-chip-etc { background: #eef1f6; color: #6b7690; }
+.quest-chip-done { background: #eef1f6; color: #9aa3b5; box-shadow: none; }
+
+/* 설명창: 아이템 설명창 느낌 */
+.quest-tip {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: calc(100% + 6px);
+  z-index: 30;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: rgba(24, 30, 48, 0.96);
+  color: #e9eefb;
+  border: 1px solid rgba(140, 170, 230, 0.5);
+  box-shadow: 0 0 0 1px #05070d, 0 14px 30px -10px rgba(0, 0, 0, 0.6);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.quest-tip-title {
+  margin: 0 0 8px;
+  padding: 0 0 8px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #ffd36b;
+  text-align: center;
+  border-bottom: 1px solid rgba(160, 185, 240, 0.25);
+  white-space: normal;
+}
+.quest-tip-part + .quest-tip-part { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(160, 185, 240, 0.22); }
+.quest-tip-sec { color: #8fd3ff; font-weight: 700; }
+.quest-tip-time { color: #b6f05a; }
+.quest-tip a { color: #8fd3ff; }
