@@ -1,6 +1,6 @@
 /* 회사 일정 달력(/schedule) 화면 검사. 개발 서버를 띄운 뒤 node scripts/test-company-schedule.mjs [주소].
    /api/schedule 과 /api/schedule/page 를 가짜(메모리)로 바꿔 끼워서 노션은 건드리지 않는다. 로그인도 가짜 토큰으로 넘긴다.
-   달력(만들기, 끌어 옮기기, 휴지통과 되돌리기, 필터, 검색, 정렬, 주 넘기기)과
+   달력(시간순 자동 정렬, 같은 날 끌어서 순서 바꾸기, 만들기, 날짜 옮기기, 휴지통과 되돌리기, 필터, 검색, 주 넘기기)과
    일정 창(제목, 날짜, 담당자, 장소, 댓글, 본문 고치기: Enter, 줄 앞 단축키, 굵게, 링크 붙여넣기, Backspace)을 차례로 눌러 본다. */
 import { chromium } from "file:///C:/Users/hjyeo/AppData/Roaming/npm/node_modules/playwright/index.mjs";
 
@@ -28,6 +28,10 @@ const db = [
   ev(3, "바로팜 미팅 10:00", { order: 1 }),
   ev(5, "김제조 미팅(사당) 10:30", { who: [KWON] }),
   ev(12, "전종열 약사님 촬영일"),
+  ev(11, "촬영 준비물 챙기기"),
+  ev(11, "김제조 회의 (오후 1시) 양재"),
+  ev(11, "아침 미팅 09:30"),
+  ev(11, "점심 약속", { time: "12:00" }),
 ];
 const owm = db.find((e) => e.title.startsWith("OWM"));
 const BULLET = uid();
@@ -90,7 +94,26 @@ const lastBody = () => [...calls].reverse().find((c) => c.path.endsWith("/page")
 const close = async () => { await page.locator(".pk-top .pk-ic").first().click(); await wait(400); };
 
 ok("2주 14칸", (await page.locator(".cs-day").count()) === 14);
-ok("정렬시간 순서 (노션과 같음)", (await titles(D(2))).join("|") === "에이트명동1번가약국 촬영 09:00|서민지 원장님 미팅(양재) 11:00|(주)옆문 15:00");
+ok("시간순 (제목 속 시각도 읽음)", (await titles(D(2))).join("|") === "에이트명동1번가약국 촬영 09:00|서민지 원장님 미팅(양재) 11:00|(주)옆문 15:00");
+ok("시간순 (오후 1시, 날짜 시각, 시각 없는 것은 뒤로)", (await titles(D(11))).join("|") === "아침 미팅 09:30|점심 약속 12:00|김제조 회의 (오후 1시) 양재|촬영 준비물 챙기기");
+ok("+ 기호가 상자 가운데", await page.evaluate(() => {
+  const b = document.querySelector(".cs-plus"), i = b.querySelector("svg");
+  const r1 = b.getBoundingClientRect(), r2 = i.getBoundingClientRect();
+  return Math.abs((r1.top + r1.height / 2) - (r2.top + r2.height / 2)) < 0.6 && Math.abs((r1.left + r1.width / 2) - (r2.left + r2.width / 2)) < 0.6;
+}));
+
+/* 같은 날 안에서 끌어 순서 바꾸기: (주)옆문을 맨 위(에이트 위)로 */
+const n0 = calls.length;
+const target = day(D(2)).locator(".cs-card", { hasText: "에이트" });
+const tb = await target.boundingBox();
+await day(D(2)).locator(".cs-card", { hasText: "옆문" }).dragTo(target, { targetPosition: { x: tb.width / 2, y: 4 } });
+await wait(600);
+const orderCalls = calls.slice(n0).filter((c) => c.method === "PATCH" && c.body.order !== undefined);
+ok("끌어서 같은 날 순서 바꾸기", (await titles(D(2))).join("|") === "(주)옆문 15:00|에이트명동1번가약국 촬영 09:00|서민지 원장님 미팅(양재) 11:00");
+ok("바꾼 순서는 정렬시간으로 노션에 저장", orderCalls.length === 3 && orderCalls.every((c) => [1, 2, 3].includes(c.body.order)) && !calls.slice(n0).some((c) => c.body.date));
+await page.reload({ waitUntil: "networkidle" });
+await page.waitForSelector(".cs-card");
+ok("다시 열어도 바꾼 순서", (await titles(D(2))).join("|") === "(주)옆문 15:00|에이트명동1번가약국 촬영 09:00|서민지 원장님 미팅(양재) 11:00");
 ok("오늘 빨간 표시", (await page.locator(`.cs-day.is-today[data-d="${TODAY}"]`).count()) === 1);
 
 /* 일정 창: 노션처럼 본문까지 */
@@ -221,14 +244,14 @@ await page.locator(".cs-search .cs-ic").click();
 await page.locator(".cs-search input").fill("촬영");
 await wait(200);
 const shown = await page.locator(".cs-ct").allInnerTexts();
-ok("검색", shown.length === 3 && shown.every((t) => t.includes("촬영")));
+ok("검색", shown.length === 4 && shown.every((t) => t.includes("촬영")));
 await page.locator(".cs-search input").fill("");
 
 await page.locator(".cs-ic-menu").first().click();
 await page.locator(".cs-menu label", { hasText: "권혁찬" }).locator("input").uncheck();
 await wait(200);
 const noKwon = await page.locator(".cs-ct").allInnerTexts();
-ok("필터 (담당자)", !noKwon.some((t) => t.includes("서민지") || t.includes("김제조")) && noKwon.some((t) => t.includes("에이트")));
+ok("필터 (담당자)", !noKwon.some((t) => t.includes("서민지") || t.includes("김제조 미팅")) && noKwon.some((t) => t.includes("에이트")));
 await page.locator(".cs-mbtn").click();
 await page.keyboard.press("Escape");
 

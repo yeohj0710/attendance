@@ -33,23 +33,41 @@ const dowOf = (date: string) => new Date(`${date}T00:00:00Z`).getUTCDay();
 const sundayOf = (date: string) => addDays(date, -dowOf(date));
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 const label = (date: string) => `${+date.slice(5, 7)}/${+date.slice(8, 10)}`;
-const titleTime = (e: CompanyEvent) => e.time || (e.title.match(/\b([01]?\d|2[0-3]):[0-5]\d\b/)?.[0] ?? "").padStart(5, "0");
+/* 일정의 시각(분). 날짜 속성에 시각이 없으면 제목 속 "10:30", "오후 1시", "2시 30분" 을 읽는다. 없으면 null */
+function minutesOf(e: CompanyEvent): number | null {
+  if (e.time) return +e.time.slice(0, 2) * 60 + +e.time.slice(3, 5);
+  const t = e.title;
+  let m = t.match(/(?:^|[^\d])([01]?\d|2[0-3]):([0-5]\d)(?!\d)/);
+  if (m) return +m[1] * 60 + +m[2];
+  m = t.match(/(오전|오후)\s*(\d{1,2})시(?:\s*(\d{1,2})분|\s*반)?/);
+  if (m) {
+    let h = +m[2] % 12;
+    if (m[1] === "오후") h += 12;
+    return h * 60 + (m[3] ? +m[3] : /반/.test(m[0]) ? 30 : 0);
+  }
+  m = t.match(/(?:^|[^\d])(\d{1,2})시(?!간)(?:\s*(\d{1,2})분|\s*반)?/);
+  if (m && +m[1] <= 24) return +m[1] * 60 + (m[2] ? +m[2] : /반/.test(m[0]) ? 30 : 0);
+  return null;
+}
 
-function sortEvents(list: CompanyEvent[], sort: string) {
+/* 하루 안의 순서. 기본은 시각 순(이른 시각부터, 시각 없는 일정은 뒤로).
+   그날 일정이 모두 정렬시간을 가지고 있으면(카드를 끌어 순서를 바꾼 날) 정렬시간 순서를 따른다. 노션도 정렬시간으로 줄 세운다 */
+function sortDay(list: CompanyEvent[]) {
+  const manual = list.length > 1 && list.every((e) => e.order != null);
   return [...list].sort((a, b) => {
-    if (sort === "title") return a.title.localeCompare(b.title, "ko");
-    const oa = a.order ?? 999, ob = b.order ?? 999;
-    if (oa !== ob) return oa - ob;
-    return (titleTime(a) || "99").localeCompare(titleTime(b) || "99") || a.title.localeCompare(b.title, "ko");
+    if (manual) return (a.order as number) - (b.order as number) || a.title.localeCompare(b.title, "ko");
+    const ta = minutesOf(a), tb = minutesOf(b);
+    if (ta !== tb) return ta == null ? 1 : tb == null ? -1 : ta - tb;
+    return (a.order ?? 999) - (b.order ?? 999) || a.title.localeCompare(b.title, "ko");
   });
 }
 
 function loadPrefs() {
   try {
     const raw = JSON.parse(localStorage.getItem("company-schedule-view") || "null");
-    return { hidePeople: Array.isArray(raw?.hidePeople) ? (raw.hidePeople as string[]) : [], sort: raw?.sort === "title" ? "title" : "order" };
+    return { hidePeople: Array.isArray(raw?.hidePeople) ? (raw.hidePeople as string[]) : [] };
   } catch {
-    return { hidePeople: [] as string[], sort: "order" };
+    return { hidePeople: [] as string[] };
   }
 }
 
@@ -62,8 +80,8 @@ export function CompanySchedule() {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [hidePeople, setHidePeople] = useState<string[]>([]);
-  const [sort, setSort] = useState("order");
-  const [menu, setMenu] = useState<null | { kind: "filter" | "sort"; x: number; y: number }>(null);
+  const [menu, setMenu] = useState<null | { kind: "filter"; x: number; y: number }>(null);
+  const [dropAt, setDropAt] = useState<{ date: string; id: string; before: boolean } | null>(null);
   const [peek, setPeek] = useState<{ initial: CompanyEvent | null; newDate: string | null; key: number } | null>(null);
   const [toast, setToast] = useState<Toast>(null);
   const [overDay, setOverDay] = useState<string | null>(null);
@@ -78,11 +96,10 @@ export function CompanySchedule() {
   useEffect(() => {
     const prefs = loadPrefs();
     setHidePeople(prefs.hidePeople);
-    setSort(prefs.sort);
   }, []);
   useEffect(() => {
-    try { localStorage.setItem("company-schedule-view", JSON.stringify({ hidePeople, sort })); } catch {}
-  }, [hidePeople, sort]);
+    try { localStorage.setItem("company-schedule-view", JSON.stringify({ hidePeople })); } catch {}
+  }, [hidePeople]);
 
   const showToast = useCallback((text: string, undo?: () => void) => {
     setToast({ text, undo });
@@ -165,9 +182,9 @@ export function CompanySchedule() {
         map.set(d, [...(map.get(d) ?? []), e]);
       }
     }
-    for (const [d, list] of map) map.set(d, sortEvents(list, sort));
+    for (const [d, list] of map) map.set(d, sortDay(list));
     return map;
-  }, [events, visible, from, to, sort]);
+  }, [events, visible, from, to]);
 
   function openNew(date: string) {
     setPeek({ initial: null, newDate: date, key: Date.now() });
@@ -217,7 +234,30 @@ export function CompanySchedule() {
     }
   }
 
-  function openMenu(kind: "filter" | "sort", target: HTMLElement) {
+  /* 같은 날 안에서 끌어 놓으면 그날 일정에 정렬시간 1, 2, 3... 을 매겨 노션에 저장한다 (노션 보기도 같은 순서가 된다) */
+  async function reorder(date: string, dragged: CompanyEvent, targetId: string, before: boolean) {
+    const list = (byDay.get(date) ?? []).filter((x) => x.id !== dragged.id);
+    const at = list.findIndex((x) => x.id === targetId);
+    if (at < 0) return;
+    list.splice(before ? at : at + 1, 0, dragged);
+    const changes = list.map((x, i) => ({ e: x, order: i + 1 })).filter(({ e, order }) => e.order !== order);
+    if (!changes.length) return;
+    const beforeAll = events;
+    const next = new Map(changes.map(({ e, order }) => [e.id, order]));
+    setEvents((all) => all.map((x) => (next.has(x.id) ? { ...x, order: next.get(x.id) as number } : x)));
+    try {
+      for (const { e, order } of changes) {
+        await call("/api/schedule", { method: "PATCH", body: JSON.stringify({ id: e.id, order }) });
+      }
+      showToast("순서를 바꿨어요. 노션 정렬시간에도 저장했어요");
+    } catch (err) {
+      setEvents(beforeAll);
+      if (!(err instanceof Error && err.message === "login")) showToast(err instanceof Error ? err.message : "순서를 저장하지 못했어요");
+      void load();
+    }
+  }
+
+  function openMenu(kind: "filter", target: HTMLElement) {
     if (menu?.kind === kind) return setMenu(null);
     const r = target.getBoundingClientRect();
     setMenu({ kind, x: Math.max(8, Math.min(window.innerWidth - 248, r.right - 240)), y: r.bottom + 6 });
@@ -243,9 +283,6 @@ export function CompanySchedule() {
         <div className="cs-tools">
           <button type="button" className={`cs-ic cs-ic-menu${filtered ? " is-on" : ""}`} title="필터" aria-label="필터" onClick={(e) => openMenu("filter", e.currentTarget)}>
             <svg viewBox="0 0 20 20"><path d="M3.5 6h13M6 10h8M8.5 14h3" /></svg>
-          </button>
-          <button type="button" className={`cs-ic cs-ic-menu${sort !== "order" ? " is-on" : ""}`} title="정렬" aria-label="정렬" onClick={(e) => openMenu("sort", e.currentTarget)}>
-            <svg viewBox="0 0 20 20"><path d="M6.5 15V5M3.8 7.7 6.5 5l2.7 2.7M13.5 5v10M10.8 12.3l2.7 2.7 2.7-2.7" /></svg>
           </button>
           <span className={`cs-search${searchOpen || query ? " is-open" : ""}`}>
             <button type="button" className="cs-ic" title="검색" aria-label="검색" onClick={() => setSearchOpen(true)}>
@@ -304,12 +341,31 @@ export function CompanySchedule() {
                     className={`cs-day${weekend ? " is-off" : ""}${date === today ? " is-today" : ""}${overDay === date ? " is-over" : ""}`}
                     data-d={date}
                     onDoubleClick={(e) => { if (!(e.target as HTMLElement).closest(".cs-card")) openNew(date); }}
-                    onDragOver={(e) => { if (dragRef.current) { e.preventDefault(); setOverDay(date); } }}
-                    onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOverDay(null); }}
-                    onDrop={(e) => { e.preventDefault(); setOverDay(null); const ev = dragRef.current; dragRef.current = null; if (ev) void move(ev, date); }}
+                    onDragOver={(e) => {
+                      if (!dragRef.current) return;
+                      e.preventDefault();
+                      setOverDay(date);
+                      if (!(e.target as HTMLElement).closest(".cs-card")) setDropAt(null);
+                    }}
+                    onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { setOverDay(null); setDropAt(null); } }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const ev = dragRef.current;
+                      const spot = dropAt;
+                      dragRef.current = null;
+                      setOverDay(null);
+                      setDropAt(null);
+                      if (!ev) return;
+                      /* 같은 날 카드 위에 놓으면 순서 바꾸기, 다른 날이면 날짜 옮기기 */
+                      if (list.some((x) => x.id === ev.id)) {
+                        if (spot && spot.date === date && spot.id !== ev.id) void reorder(date, ev, spot.id, spot.before);
+                      } else void move(ev, date);
+                    }}
                   >
                     <div className="cs-dhead">
-                      <button type="button" className="cs-plus" title="새로 만들기" aria-label={`${label(date)} 일정 만들기`} onClick={() => openNew(date)}>+</button>
+                      <button type="button" className="cs-plus" title="새로 만들기" aria-label={`${label(date)} 일정 만들기`} onClick={() => openNew(date)}>
+                        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" /></svg>
+                      </button>
                       <span className="cs-num">{day === 1 ? `${+date.slice(5, 7)}월 1일` : day}</span>
                       <span className="cs-full">{label(date)} ({DOW[i]}){date === today ? " 오늘" : ""}</span>
                     </div>
@@ -317,11 +373,17 @@ export function CompanySchedule() {
                       <button
                         type="button"
                         key={e.id}
-                        className="cs-card"
+                        className={`cs-card${dropAt?.date === date && dropAt.id === e.id ? (dropAt.before ? " is-drop-before" : " is-drop-after") : ""}`}
                         draggable
                         onClick={() => openEdit(e)}
                         onDragStart={(ev) => { dragRef.current = e; ev.dataTransfer.effectAllowed = "move"; ev.dataTransfer.setData("text/plain", e.id); }}
-                        onDragEnd={() => { dragRef.current = null; setOverDay(null); }}
+                        onDragEnd={() => { dragRef.current = null; setOverDay(null); setDropAt(null); }}
+                        onDragOver={(ev) => {
+                          if (!dragRef.current) return;
+                          const r = ev.currentTarget.getBoundingClientRect();
+                          const before = ev.clientY < r.top + r.height / 2;
+                          if (dropAt?.id !== e.id || dropAt.before !== before || dropAt.date !== date) setDropAt({ date, id: e.id, before });
+                        }}
                         title={[e.title, e.place && `장소 ${e.place}`, e.people.length ? `담당 ${e.people.join(", ")}` : ""].filter(Boolean).join("\n")}
                       >
                         <span className="cs-ct">{e.title || "제목 없음"}{e.time ? ` ${e.time}` : ""}</span>
@@ -338,25 +400,15 @@ export function CompanySchedule() {
 
       {menu ? (
         <div className="cs-menu" style={{ left: menu.x, top: menu.y }}>
-          {menu.kind === "filter" ? (
-            <>
-              <h4>담당자</h4>
-              {people.length ? people.map((p) => (
-                <label key={p}>
-                  <input type="checkbox" checked={!hidePeople.includes(p)} onChange={(e) => setHidePeople((h) => (e.target.checked ? h.filter((x) => x !== p) : [...h, p]))} />
-                  {p}
-                </label>
-              )) : <p className="cs-menu-empty">이 2주에는 담당자가 적힌 일정이 없어요</p>}
-              <hr />
-              <button type="button" className="cs-mbtn" onClick={() => setHidePeople([])}>필터 지우기</button>
-            </>
-          ) : (
-            <>
-              <h4>칸 안의 순서</h4>
-              <label><input type="radio" name="cs-sort" checked={sort === "order"} onChange={() => setSort("order")} />정렬시간, 시각 순 (노션과 같음)</label>
-              <label><input type="radio" name="cs-sort" checked={sort === "title"} onChange={() => setSort("title")} />이름 순</label>
-            </>
-          )}
+          <h4>담당자</h4>
+          {people.length ? people.map((p) => (
+            <label key={p}>
+              <input type="checkbox" checked={!hidePeople.includes(p)} onChange={(e) => setHidePeople((h) => (e.target.checked ? h.filter((x) => x !== p) : [...h, p]))} />
+              {p}
+            </label>
+          )) : <p className="cs-menu-empty">이 2주에는 담당자가 적힌 일정이 없어요</p>}
+          <hr />
+          <button type="button" className="cs-mbtn" onClick={() => setHidePeople([])}>필터 지우기</button>
         </div>
       ) : null}
 
