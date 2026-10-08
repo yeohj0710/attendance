@@ -8022,7 +8022,7 @@ function TaskSection({
                   </div>
                 ) : (
                   <div className="flex items-center gap-1">
-                    <HelpLaunch note={task.note} text={task.text} />
+                    <HelpLaunch label={task.calLabel} note={task.note} text={task.text} />
                     <button
                       aria-label={`${task.text} 수정`}
                       className="rounded p-1 text-muted transition hover:bg-accent/10 hover:text-accent disabled:hover:bg-transparent disabled:hover:text-muted"

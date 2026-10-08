@@ -401,37 +401,22 @@
 }
 @media (prefers-reduced-motion: reduce) { .desk-char-legendary, .desk-emote { animation: none; } }
 
-/* 도움받기 메뉴 (components/employee/HelpLaunch.tsx) */
-.help-launch-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 50;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: max-content;
-  min-width: 200px;
-  padding: 6px;
-  border-radius: 10px;
-  background: #fff;
+/* 도움받기 단추 (components/employee/HelpLaunch.tsx). 메뉴 없이 한 번에 Claude 나 Codex 를 연다 */
+.help-launch-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
   border: 1px solid #e1e7f0;
-  box-shadow: 0 14px 30px -12px rgba(10, 20, 50, 0.45);
-  text-align: left;
+  background: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+  color: #6b7690;
   white-space: nowrap;
-}
-.help-launch-menu a {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 7px 10px;
-  border-radius: 7px;
-  font-size: 13px;
-  color: #172033;
   text-decoration: none;
+  transition: background-color 120ms, border-color 120ms, color 120ms;
 }
-.help-launch-menu a b { font-weight: 700; }
-.help-launch-menu a:hover { background: #fff6e8; }
-.help-launch-menu a small { font-size: 11.5px; font-weight: 500; color: #8a93a8; }
-.help-launch-note { margin-top: 2px; padding: 6px 10px 2px; border-top: 1px solid #eef1f6; font-size: 11.5px; line-height: 1.4; color: #8a93a8; }
+.help-launch-btn:hover { background: #fff6e8; border-color: #f2c48a; color: #b8620e; }
+
