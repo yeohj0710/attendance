@@ -1940,7 +1940,7 @@ export function EmployeeApp() {
     <>
     <main className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col justify-start px-3 pb-16 pt-6 sm:px-5 sm:pt-8">
       <MapleScene />
-      <section className="w-full max-w-xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
+      <section className="w-full max-w-xl self-center rounded-lg border border-line bg-white p-4 shadow-panel">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <img
@@ -2166,7 +2166,7 @@ export function EmployeeApp() {
         {!isSharedView && auth && !contentWho && employee?.role === "admin" ? <ContentTeamPreview /> : null}
       </section>
 
-      <section className="mt-4 w-full max-w-xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
+      <section className="mt-4 w-full max-w-xl self-center rounded-lg border border-line bg-white p-4 shadow-panel">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-base font-bold text-ink">오늘 함께하는 사람들 🤝</h2>
           {isRefreshing ? (
@@ -2232,7 +2232,7 @@ export function EmployeeApp() {
         </div>
       </section>
 
-      <section className="mt-4 w-full max-w-5xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
+      <section className="mt-4 w-full max-w-5xl self-center rounded-lg border border-line bg-white p-4 shadow-panel">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -2296,7 +2296,7 @@ export function EmployeeApp() {
         </div>
       </section>
 
-      <section className="mt-4 w-full max-w-4xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
+      <section className="mt-4 w-full max-w-4xl self-center rounded-lg border border-line bg-white p-4 shadow-panel">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-base font-bold text-ink">나의 최근 발자국 👣</h2>
           {isRefreshing ? (
@@ -3266,7 +3266,7 @@ function GreetingTicker({
   const dotCount = Math.min(total, 6);
 
   return (
-    <div className="mx-auto mt-3 w-full max-w-md overflow-hidden rounded border border-line bg-field/70 px-3 py-2.5 text-center">
+    <div className="mx-auto mt-3 w-full max-w-md overflow-hidden rounded-lg border border-[#ffe2b8] bg-[#fff8ec] px-3 py-2.5 text-center">
       <div>
         <GreetingTickerLine
           animated
@@ -3290,10 +3290,10 @@ function GreetingTickerLine({ animated, message }: { animated?: boolean; message
     <div className="flex items-center justify-center gap-2">
       <span
         aria-hidden="true"
-        className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent shadow-[0_0_0_4px_rgba(69,104,245,0.10)]"
+        className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#ff9a1f] shadow-[0_0_0_4px_rgba(255,154,31,0.15)]"
       />
       <p
-        className={`${animated ? "greeting-marquee-line " : ""}greeting-ticker-text min-w-0 text-left text-sm font-semibold leading-relaxed text-muted`}
+        className={`${animated ? "greeting-marquee-line " : ""}greeting-ticker-text min-w-0 text-left text-[15px] font-semibold leading-relaxed text-ink`}
       >
         {message}
       </p>
@@ -3315,7 +3315,7 @@ function GreetingTickerDots({
       {Array.from({ length: dotCount }).map((_, dotIndex) => {
         const isActive = dotIndex === currentIndex % dotCount;
         const className = `h-1.5 rounded-full transition-all ${
-          isActive ? "w-5 bg-accent" : "w-2 bg-slate-300"
+          isActive ? "w-5 bg-[#ff9a1f]" : "w-2 bg-[#f3d9b1]"
         }`;
 
         return onSelect ? (
