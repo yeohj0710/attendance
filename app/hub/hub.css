@@ -1,11 +1,12 @@
 /* /hub: 노션 메인에 하나만 붙이는 화면.
    오른쪽 업무 시스템은 가운데 카드가 좁아(약 480px) 넓게 줘도 양옆만 비니 카드에 맞는 폭으로 고정하고,
    남는 폭은 왼쪽(위 회사 일정, 아래 채널 현황)에 준다. 아주 넓은 화면에서는 가운데로 모은다(최대 1680px).
-   1366px 노트북에서도 둘이 나란히, 1000px 보다 좁으면 위아래로 쌓는다. 노션 제목 모양을 따른다 */
+   1366px 노트북에서도 둘이 나란히, 1000px 보다 좁으면 위아래로 쌓는다. 노션 제목 모양을 따른다.
+   양옆은 일부러 비워 둔다: 이 화면 자체는 스크롤이 없어서, 빈 곳에서 휠을 굴리면 바깥 노션 페이지가 내려간다 */
 html:has(.hub), body:has(.hub) { margin: 0; height: 100%; overflow: hidden; background: #fff; }
 .hub {
-  display: grid; grid-template-columns: minmax(0, 1fr) clamp(420px, 30vw, 540px); gap: 24px;
-  max-width: 1680px; height: 100vh; margin: 0 auto; padding: 4px 2px 0; box-sizing: border-box;
+  display: grid; grid-template-columns: minmax(0, 1fr) clamp(420px, 30vw, 520px); gap: 24px;
+  max-width: 1440px; height: 100vh; margin: 0 auto; padding: 4px clamp(8px, 4vw, 72px) 0; box-sizing: border-box;
   font-family: "Pretendard Variable", Pretendard, ui-sans-serif, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
 }
 .hub-col { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
@@ -14,7 +15,7 @@ html:has(.hub), body:has(.hub) { margin: 0; height: 100%; overflow: hidden; back
 .hub-frame { flex: 1; min-height: 0; width: 100%; border: 0; border-radius: 4px; background: #fff; }
 
 /* 일정은 한눈에 보는 크기로: 칸을 낮게, 글을 조금 작게, 너무 길어지면 이 칸만 스크롤 */
-.hub-cal { flex: none; max-height: 46vh; overflow-y: auto; overscroll-behavior: contain; }
+.hub-cal { flex: none; max-height: 46vh; overflow-y: auto; }
 .hub-cal .cs { padding-bottom: 4px; }
 /* 달 이름, 오늘과 앞뒤, 도구를 한 줄로 */
 .hub-cal .cs { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; }
