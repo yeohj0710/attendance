@@ -2083,7 +2083,7 @@ export function EmployeeApp() {
           />
         </div>
         {/* 콘텐츠팀 네 분에게만 캘린더의 오늘 칸을 붙인다. 공유 링크에는 붙이지 않는다. */}
-        {!isSharedView && auth ? <ContentTeamToday name={employee?.name} /> : null}
+        {!isSharedView && auth ? <ContentTeamToday isAdmin={employee?.role === "admin"} name={employee?.name} /> : null}
       </section>
 
       <section className="mt-4 w-full max-w-xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
