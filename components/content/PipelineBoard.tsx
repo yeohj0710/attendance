@@ -95,59 +95,71 @@ export function Board({ data, embedded = false, forceAll = false }: { data: Pipe
   const accounts = mineOnly ? data.accounts.filter((a) => a.owner === owner) : data.accounts;
   const waiting = mineOnly ? data.waiting.filter((a) => a.owner === owner) : data.waiting;
 
+  const controls = (
+    <>
+      <span className="content-fresh" {...bind("노션 편집 진행도와 계정별 기획안을 5분마다 다시 읽어요.")}>
+        노션 {formatClock(data.fetchedAt)} 기준
+      </span>
+      {owner ? (
+        <div className="content-toggle" role="group" aria-label="보는 채널">
+          <button className={showAll ? "" : "is-on"} onClick={() => setShowAll(false)} type="button">
+            내 채널
+          </button>
+          <button className={showAll ? "is-on" : ""} onClick={() => setShowAll(true)} type="button">
+            전체
+          </button>
+        </div>
+      ) : null}
+      <div className="content-toggle" role="group" aria-label="보는 편수">
+        {COUNTS.map((c) => (
+          <button className={count === c ? "is-on" : ""} key={c} onClick={() => setCount(c)} type="button">
+            {c}편
+          </button>
+        ))}
+      </div>
+    </>
+  );
+  /* 칸이 좁으면 .pipe-legend-text 를 숨기고 색 칩만 남긴다(content.css 컨테이너 쿼리) */
+  const legendItems: Array<{ swatch: string; label: string; help: string }> = [
+    ...STAGES.map((stage) => ({ swatch: `stage-${stage.key}`, label: stage.label, help: `${stage.label}: ${stage.help}` })),
+    { swatch: "stage-empty", label: "빈 칸", help: "빈 칸: 올릴 영상이 아직 정해지지 않은 업로드 칸" },
+    { swatch: "stage-edit is-tentative", label: "날짜 미정", help: "날짜 미정: 노션에 업로드 날짜가 없어서 빈 날에 순서대로 넣어 본 편" },
+    { swatch: "is-target-swatch", label: "가장 급한 편", help: "가장 급한 편: 그 계정에서 지금 가장 먼저 챙겨야 하는 편" },
+  ];
+  const legend = (
+    <>
+      {legendItems.map((item) => (
+        <span className="pipe-legend-item" key={item.label} {...bind(item.help)} tabIndex={0}>
+          <i className={`pipe-swatch ${item.swatch}`} />
+          <span className="pipe-legend-text">{item.label}</span>
+        </span>
+      ))}
+    </>
+  );
+
   return (
     <>
       <section className={section}>
-        <header className={embedded ? "pipe-embed-head" : "content-head"}>
-          {embedded ? null : (
-            <div>
-              <h1 className="content-title">채널 파이프라인 현황</h1>
-              <p className="content-sub">
-                네모 하나가 앞으로 올릴 영상 한 편이에요. 노션 진행 상태로 칠했고, 급한 계정이 위에 와요.
-              </p>
-            </div>
-          )}
-          <div className="content-head-side">
-            <span className="content-fresh" {...bind("노션 편집 진행도와 계정별 기획안을 5분마다 다시 읽어요.")}>
-              노션 {formatClock(data.fetchedAt)} 기준
-            </span>
-            {owner ? (
-              <div className="content-toggle" role="group" aria-label="보는 채널">
-                <button className={showAll ? "" : "is-on"} onClick={() => setShowAll(false)} type="button">
-                  내 채널
-                </button>
-                <button className={showAll ? "is-on" : ""} onClick={() => setShowAll(true)} type="button">
-                  전체
-                </button>
-              </div>
-            ) : null}
-            <div className="content-toggle" role="group" aria-label="보는 편수">
-              {COUNTS.map((c) => (
-                <button className={count === c ? "is-on" : ""} key={c} onClick={() => setCount(c)} type="button">
-                  {c}편
-                </button>
-              ))}
-            </div>
+        {embedded ? (
+          /* /hub 와 첫 화면 칸 안: 범례와 기준 시각, 토글을 한 줄에 (위 빈 줄을 없앤다) */
+          <div className="pipe-embed-bar">
+            <div className="pipe-legend">{legend}</div>
+            <div className="content-head-side">{controls}</div>
           </div>
-        </header>
-
-        <div className="pipe-legend">
-          {STAGES.map((stage) => (
-            <span className="pipe-legend-item" key={stage.key} {...bind(stage.help)} tabIndex={0}>
-              <i className={`pipe-swatch stage-${stage.key}`} />
-              {stage.label}
-            </span>
-          ))}
-          <span className="pipe-legend-item" {...bind("올릴 영상이 아직 정해지지 않은 업로드 칸")} tabIndex={0}>
-            <i className="pipe-swatch stage-empty" />빈 칸
-          </span>
-          <span className="pipe-legend-item" {...bind("노션에 업로드 날짜가 없어서 빈 날에 순서대로 넣어 본 편")} tabIndex={0}>
-            <i className="pipe-swatch stage-edit is-tentative" />날짜 미정
-          </span>
-          <span className="pipe-legend-item" {...bind("그 계정에서 지금 가장 먼저 챙겨야 하는 편")} tabIndex={0}>
-            <i className="pipe-swatch is-target-swatch" />가장 급한 편
-          </span>
-        </div>
+        ) : (
+          <>
+            <header className="content-head">
+              <div>
+                <h1 className="content-title">채널 파이프라인 현황</h1>
+                <p className="content-sub">
+                  네모 하나가 앞으로 올릴 영상 한 편이에요. 노션 진행 상태로 칠했고, 급한 계정이 위에 와요.
+                </p>
+              </div>
+              <div className="content-head-side">{controls}</div>
+            </header>
+            <div className="pipe-legend">{legend}</div>
+          </>
+        )}
 
         <div className="pipe-rows">
           {accounts.length ? null : <p className="pipe-card-empty">맡은 채널 가운데 업로드 일정이 잡힌 곳이 없어요.</p>}

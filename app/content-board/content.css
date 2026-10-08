@@ -17,7 +17,7 @@
 body:has(.content-page.is-embed) { background: #fff; min-height: 0; }
 .content-page.is-embed .content-card { box-shadow: none; padding: 0; }
 .pipe-embed-section + .pipe-embed-section { margin-top: 16px; padding-top: 14px; border-top: 1px solid #e7ebf2; }
-.pipe-embed-head { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; }
+
 .content-bg {
   position: fixed;
   inset: 0;
@@ -311,3 +311,24 @@ body:has(.content-page.is-embed) { background: #fff; min-height: 0; }
 html:has(.content-page.is-embed),
 .pipe-scroll-x { scrollbar-width: thin; scrollbar-color: rgba(100, 116, 139, 0.38) transparent; }
 html:has(.content-page.is-embed):hover { scrollbar-color: rgba(100, 116, 139, 0.6) transparent; }
+
+/* 칸 안(embedded): 범례 왼쪽, 기준 시각과 토글 오른쪽을 한 줄에. 위 여백도 줄인다 */
+.pipe-embed-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 4px; }
+.pipe-embed-bar .pipe-legend { margin: 0; }
+.pipe-embed-bar .content-head-side { margin-left: auto; }
+.content-page.is-embed { padding-top: 4px; }
+/* 칸이 좁으면 범례 글자를 숨기고 색 칩만 (마우스를 올리면 뜻이 뜬다). 기준 시각과 토글이 범례와 한 줄에 남는다 */
+.pipe-embed-section { container-type: inline-size; }
+@container (max-width: 700px) {
+  .pipe-embed-bar .pipe-legend { gap: 6px; }
+  .pipe-embed-bar .pipe-legend-text { display: none; }
+  .pipe-embed-bar .pipe-swatch { width: 12px; height: 12px; }
+}
+/* 좁은 폭: 며칠분 표를 한 줄씩 흘려서 "편집 완료" 같은 글이 꺾이지 않게 */
+@media (max-width: 640px) {
+  .pipe-runway { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+  .pipe-runway > div { display: flex; gap: 6px; }
+  .pipe-runway dt { white-space: nowrap; }
+  .pipe-runway dd,
+  .content-page.is-embed .pipe-runway dd { display: inline-flex; gap: 4px; }
+}
