@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-/** 출퇴근기록부 오늘 할 일 칸 머리줄에 붙는 콘텐츠팀 화면 입구 */
+/** 업무 시스템 오늘 할 일 칸 머리줄에 붙는 콘텐츠팀 화면 입구 */
 export function ContentEntryLinks({ alone }: { alone: boolean }) {
   return (
     <span style={{ marginLeft: alone ? "auto" : 12, display: "inline-flex", gap: 12 }}>

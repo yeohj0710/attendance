@@ -10,13 +10,14 @@ const naverSiteVerification = process.env.NEXT_PUBLIC_NAVER_SITE_VERIFICATION;
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "웰니스박스 출퇴근기록부",
-    template: "%s | 웰니스박스 출퇴근기록부",
+    default: "웰니스박스 업무 시스템",
+    template: "%s | 웰니스박스 업무 시스템",
   },
-  description: "웰니스박스 구성원을 위한 사내 출퇴근 기록 웹사이트입니다.",
-  applicationName: "웰니스박스 출퇴근기록부",
+  description: "웰니스박스 구성원의 출퇴근 기록, 업무일지, 콘텐츠팀 채널 현황을 보는 업무 시스템입니다.",
+  applicationName: "웰니스박스 업무 시스템",
   keywords: [
     "웰니스박스",
+    "웰니스박스 업무 시스템",
     "웰니스박스 출퇴근",
     "웰니스박스 출퇴근기록부",
     "출퇴근 체크",
@@ -32,22 +33,22 @@ export const metadata: Metadata = {
     type: "website",
     locale: "ko_KR",
     url: "/",
-    siteName: "웰니스박스 출퇴근기록부",
-    title: "웰니스박스 출퇴근기록부",
-    description: "웰니스박스 구성원을 위한 사내 출퇴근 기록 웹사이트입니다.",
+    siteName: "웰니스박스 업무 시스템",
+    title: "웰니스박스 업무 시스템",
+    description: "웰니스박스 구성원의 출퇴근 기록, 업무일지, 콘텐츠팀 채널 현황을 보는 업무 시스템입니다.",
     images: [
       {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "웰니스박스 출퇴근기록부",
+        alt: "웰니스박스 업무 시스템",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "웰니스박스 출퇴근기록부",
-    description: "웰니스박스 구성원을 위한 사내 출퇴근 기록 웹사이트입니다.",
+    title: "웰니스박스 업무 시스템",
+    description: "웰니스박스 구성원의 출퇴근 기록, 업무일지, 콘텐츠팀 채널 현황을 보는 업무 시스템입니다.",
     images: ["/og-image.png"],
   },
   robots: {

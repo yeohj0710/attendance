@@ -2,7 +2,7 @@ import { unstable_cache } from "next/cache";
 import { addDays, kstToday, propDate, propPeople, propText, queryNotionDatabase } from "@/lib/notion";
 
 /**
- * 노션 왼쪽 「일정」 캘린더를 출퇴근기록부 달력(/content-board/schedule)으로 보여준다.
+ * 노션 왼쪽 「일정」 캘린더를 업무 시스템 달력(/content-board/schedule)으로 보여준다.
  * 노션 「일정 보기」(3c83b1f9b9ae80449f37d2739608fec6)는 이 DB를 보여주는 보기라 데이터 원본은 하나다
  * (collection://5ca2d15f-9b3e-4bee-8620-74beb77a0b0f). 데이터는 옮기지 않고 5분에 한 번 읽기만 한다.
  */

@@ -13,7 +13,7 @@ const NOTE_LIMIT = 1200;
 export function buildHelpPrompt(text: string, note?: string) {
   const trimmedNote = note ? (note.length > NOTE_LIMIT ? `${note.slice(0, NOTE_LIMIT)}…` : note) : "";
   return [
-    "출퇴근기록부 할 일을 같이 해 줘.",
+    "업무 시스템 할 일을 같이 해 줘.",
     "",
     `할 일: ${text.split("\n")[0]}`,
     trimmedNote ? `\n설명:\n${trimmedNote}` : "",

@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://wellnessbox-attendance.vercel.app";
-const siteName = "웰니스박스 출퇴근기록부";
+const siteName = "웰니스박스 업무 시스템";
 
 type SharePageProps = {
   params: Promise<{ shareId: string }>;
@@ -53,8 +53,8 @@ export async function generateMetadata({ params }: SharePageProps): Promise<Meta
     }
 
     return getShareMetadata({
-      title: `${ownerName}님의 출퇴근기록부`,
-      description: "공유된 웰니스박스 출퇴근기록부 화면입니다.",
+      title: `${ownerName}님의 업무 기록`,
+      description: "공유된 웰니스박스 업무 시스템 화면입니다.",
       url,
     });
   } catch {

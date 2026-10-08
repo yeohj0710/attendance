@@ -24,7 +24,7 @@ export function ContentShell<T>({
       <div className="content-bg" aria-hidden="true" />
       <nav className="content-nav">
         <Link className="content-back" href="/">
-          출퇴근기록부로
+          업무 시스템으로
         </Link>
         <div className="content-tabs">
           {TABS.map((tab) => (
@@ -48,7 +48,7 @@ export function ContentShell<T>({
           {state.kind === "loading" ? <p>노션에서 불러오는 중이에요.</p> : null}
           {state.kind === "login" ? (
             <p>
-              출퇴근기록부에 로그인한 뒤에 볼 수 있어요. <Link href="/">로그인하러 가기</Link>
+              업무 시스템에 로그인한 뒤에 볼 수 있어요. <Link href="/">로그인하러 가기</Link>
             </p>
           ) : null}
           {state.kind === "error" ? <p>불러오지 못했어요. {state.message}</p> : null}

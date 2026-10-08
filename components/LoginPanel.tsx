@@ -107,7 +107,7 @@ export function LoginPanel({
             src="/brand/wellnessbox-logo.png"
             width={160}
           />
-          <h1 className="text-xl font-bold text-ink">웰니스박스 출퇴근기록부</h1>
+          <h1 className="text-xl font-bold text-ink">웰니스박스 업무 시스템</h1>
           <p className="mt-1 text-sm text-muted">
             처음 한 번만 확인하면, 이 컴퓨터에서는 편하게 기록할 수 있어요.
           </p>

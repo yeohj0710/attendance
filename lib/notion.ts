@@ -1,6 +1,6 @@
 /**
  * 노션 API 읽기 전용 도우미. 콘텐츠팀 현황판과 일정 달력이 쓴다.
- * 토큰은 NOTION_TOKEN (출퇴근기록부 .env 와 Vercel 환경변수). 쓰기 호출은 만들지 않는다.
+ * 토큰은 NOTION_TOKEN (업무 시스템 attendance .env 와 Vercel 환경변수). 쓰기 호출은 만들지 않는다.
  */
 const NOTION_VERSION = "2022-06-28";
 

@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "웰니스박스 출퇴근기록부",
-    short_name: "출퇴근기록부",
-    description: "웰니스박스 구성원을 위한 사내 출퇴근 기록 웹사이트",
+    name: "웰니스박스 업무 시스템",
+    short_name: "업무 시스템",
+    description: "웰니스박스 구성원의 출퇴근 기록, 업무일지, 콘텐츠팀 채널 현황을 보는 업무 시스템",
     start_url: "/",
     scope: "/",
     display: "standalone",

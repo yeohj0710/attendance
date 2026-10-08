@@ -484,7 +484,7 @@ export function AdminApp() {
             width={160}
           />
           <p className="text-sm font-semibold text-muted">관리자</p>
-          <h1 className="text-2xl font-bold text-ink">웰니스박스 출퇴근기록부</h1>
+          <h1 className="text-2xl font-bold text-ink">웰니스박스 업무 시스템</h1>
         </div>
         <div className="flex items-center gap-3 text-xs">
           <a className="text-muted underline-offset-4 hover:text-ink hover:underline" href="/">
