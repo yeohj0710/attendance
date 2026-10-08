@@ -20,6 +20,8 @@ html:has(.cs), body:has(.cs) { background: #fff; }
 .cs button { font: inherit; color: inherit; }
 .cs svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 
+.cs.is-embed { min-height: 0; padding: 2px 2px 12px; }
+.cs.is-embed .cs-head { display: none; }
 .cs-head h1 { margin: 0 0 10px; font-size: 30px; font-weight: 700; letter-spacing: -0.02em; color: var(--cs-text); }
 
 .cs-bar { display: flex; align-items: center; gap: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--cs-line); }
