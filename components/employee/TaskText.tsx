@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * 업무 한 줄의 글 부분. 직접 적은 업무와 콘텐츠팀 캘린더에서 들어온 업무가 같은 모양으로 보인다.
@@ -43,6 +44,37 @@ export function TaskText({
   const textRef = useRef<HTMLSpanElement>(null);
   const timerRef = useRef<number | null>(null);
   const canHoverRef = useRef(false);
+  // 설명창은 줄 밖(body)에 띄운다. 줄 안에 두면 끝낸 줄의 흐림(opacity)을 같이 먹고, 아래 줄들이 위에 겹쳐 그려졌다.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [tipStyle, setTipStyle] = useState<CSSProperties | null>(null);
+
+  function place() {
+    const anchor = (wrapRef.current?.closest(".quest-row, [data-task-row], li") as HTMLElement | null) ?? wrapRef.current;
+    if (!anchor) return;
+    const r = anchor.getBoundingClientRect();
+    const below = r.bottom < window.innerHeight * 0.6;
+    setTipStyle({
+      position: "fixed",
+      zIndex: 1000,
+      left: r.left + 10,
+      right: "auto",
+      width: Math.max(220, r.width - 20),
+      ...(below
+        ? { top: r.bottom + 6, bottom: "auto", maxHeight: window.innerHeight - r.bottom - 16 }
+        : { top: "auto", bottom: window.innerHeight - r.top + 6, maxHeight: r.top - 16 }),
+    });
+  }
+
+  useEffect(() => {
+    if (!showNote) return;
+    const hide = () => setShowNote(false);
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("resize", hide);
+    return () => {
+      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("resize", hide);
+    };
+  }, [showNote]);
 
   /* 한 줄에 다 안 들어가는지 잰다. 폭이 바뀌면 다시 잰다. */
   useEffect(() => {
@@ -65,7 +97,10 @@ export function TaskText({
   function open() {
     if (!note || !canHoverRef.current) return;
     if (timerRef.current) window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => setShowNote(true), 220);
+    timerRef.current = window.setTimeout(() => {
+      place();
+      setShowNote(true);
+    }, 220);
   }
 
   function close() {
@@ -74,14 +109,17 @@ export function TaskText({
   }
 
   return (
-    <div onMouseEnter={open} onMouseLeave={close}>
+    <div onMouseEnter={open} onMouseLeave={close} ref={wrapRef}>
       <span
         className={`break-words leading-relaxed ${expanded ? "block whitespace-pre-wrap" : "line-clamp-1"} ${
           done ? "text-muted line-through" : label === "빈 날" ? "font-bold text-danger" : "text-ink"
         } ${overflows && !expanded ? "cursor-pointer" : note ? "cursor-help" : ""}`}
         onClick={(event) => {
           if ((event.target as HTMLElement).closest("a")) return;
-          if (note && !canHoverRef.current) setShowNote((v) => !v);
+          if (note && !canHoverRef.current) {
+            place();
+            setShowNote((v) => !v);
+          }
           else if (overflows && !expanded) setExpanded(true);
         }}
         ref={textRef}
@@ -101,13 +139,36 @@ export function TaskText({
           접기
         </button>
       ) : null}
-      {note && showNote ? <QuestTip note={note} title={text} /> : null}
+      {note && showNote && tipStyle
+        ? createPortal(
+            <QuestTip
+              note={note}
+              onMouseEnter={() => timerRef.current && window.clearTimeout(timerRef.current)}
+              onMouseLeave={close}
+              style={tipStyle}
+              title={text}
+            />,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
 
 /* 설명을 빈 줄로 나눠 칸마다 구분선을 긋는다. "하는 순서"는 하늘색, 걸리는 시간은 연두색. */
-function QuestTip({ note, title }: { note: string; title: string }) {
+function QuestTip({
+  note,
+  title,
+  style,
+  onMouseEnter,
+  onMouseLeave,
+}: {
+  note: string;
+  title: string;
+  style: CSSProperties;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+}) {
   const parts = note
     .split(/\n{2,}/)
     .map((part) => part.trim())
@@ -115,7 +176,7 @@ function QuestTip({ note, title }: { note: string; title: string }) {
   const heading = title.split("\n")[0].slice(0, 80);
 
   return (
-    <div className="quest-tip" role="tooltip">
+    <div className="quest-tip" onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} role="tooltip" style={style}>
       <p className="quest-tip-title">{heading}</p>
       {parts.map((part, index) => {
         if (part.startsWith("하는 순서")) {
