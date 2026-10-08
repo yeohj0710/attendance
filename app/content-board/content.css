@@ -282,3 +282,25 @@
   .cal-event b { display: none; }
 }
 .content-page .pipe-card-empty { margin: 0; padding: 16px 0; text-align: center; font-size: 13px; color: #6b7690; }
+
+/* ?embed=1 (/hub 칸) 글자 단계: 소제목 14px, 본문 13px, 보조 글 12px. 날짜 네모는 그대로 (261008 대표님) */
+.content-page.is-embed .pipe-name,
+.content-page.is-embed .content-section-title { font-size: 14px; }
+.content-page.is-embed .pipe-name small,
+.content-page.is-embed .pipe-legend,
+.content-page.is-embed .content-fresh,
+.content-page.is-embed .content-toggle button,
+.content-page.is-embed .pipe-runway dd span,
+.content-page.is-embed .pipe-shoot,
+.content-page.is-embed .pipe-stale,
+.content-page.is-embed .pipe-stock,
+.content-page.is-embed .pipe-next span,
+.content-page.is-embed .pipe-detail-meta { font-size: 12px; }
+.content-page.is-embed .pipe-runway,
+.content-page.is-embed .pipe-runway dd b,
+.content-page.is-embed .pipe-next,
+.content-page.is-embed .pipe-note,
+.content-page.is-embed .pipe-detail,
+.content-page.is-embed .pipe-missing,
+.content-page.is-embed .content-sub { font-size: 13px; }
+.content-page.is-embed .pipe-runway dd { grid-template-columns: 48px 58px; }
