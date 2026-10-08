@@ -22,6 +22,8 @@ import { SCHEDULE_DATABASE_ID } from "@/lib/content-schedule";
  */
 
 const PROGRESS_DATABASE_ID = "3453b1f9b9ae80e8b0c0f319797c99f3";
+/* 할 일 달력 업로드 줄 시작일. 캘린더는 이날부터 노션 제목으로 체크 키를 만들어서 고정이어야 한다 (캘린더 이사 세션과 맞춤) */
+const UPLOADS_FROM = "2026-10-09";
 const HORIZON_DAYS = 56;
 const CACHE_SECONDS = 300;
 
@@ -269,7 +271,7 @@ export type PipelineData = {
   missing: Array<{ account: string; label: string; url: string }>;
   /**
    * 콘텐츠팀 할 일 달력(public/content/daily.js)의 UPLOADS 와 같은 모양: [MM-DD, 계정 키, 제목, 상태, 편집자, 메모(비고)].
-   * 지난 7일부터 120일 앞까지, 노션 편집 진행도에 업로드 예정일이 있는 편. 업로드 요일이 있는 계정만.
+   * 2026-10-09(고정)부터 120일 앞까지, 노션 편집 진행도에 업로드 예정일이 있는 편(업로드 완료 포함, 반려와 업로드 보류 제외). 업로드 요일이 있는 계정만.
    * 캘린더 쪽(lib/content-uploads.ts)이 노션을 따로 읽지 않고 getPipelineData().uploads 를 쓰면 노션 호출이 늘지 않는다.
    */
   uploads: Array<[string, string, string, string, string, string]>;
@@ -320,8 +322,21 @@ function isUploadDay(account: AccountConfig, date: string) {
   );
 }
 
-function progressItem(page: NotionPage): (PipelineItem & { influencer: string }) | null {
+/** 편집 진행도 한 줄. item 은 현황판에 쓰는 것(업로드 완료, 반려, 보류는 null), 나머지는 할 일 달력 업로드 줄용 */
+function progressRow(page: NotionPage) {
   const status = propText(page, "진행 상태");
+  return {
+    status,
+    influencer: propText(page, "인플루언서"),
+    title: propText(page, "영상 제목") || "제목 없음",
+    date: propDate(page, "업로드 예정일")?.start.slice(0, 10) ?? null,
+    editor: propText(page, "편집자"),
+    memo: propText(page, "비고"),
+    item: progressItem(page, status),
+  };
+}
+
+function progressItem(page: NotionPage, status: string): (PipelineItem & { influencer: string }) | null {
   const stage = PROGRESS_STAGE[status];
   if (!stage) return null;
   return {
@@ -435,15 +450,13 @@ function buildAccount(
 async function loadPipeline(): Promise<PipelineData> {
   const today = kstToday();
 
+  /* 현황판: 업로드 완료가 아닌 편(최근 30일, 날짜 없음). 할 일 달력 업로드 줄: UPLOADS_FROM 부터는 업로드 완료까지 전부 */
+  const notDone = { property: "진행 상태", status: { does_not_equal: "업로드 완료" } };
   const progressFilter = {
-    and: [
-      { property: "진행 상태", status: { does_not_equal: "업로드 완료" } },
-      {
-        or: [
-          { property: "업로드 예정일", date: { on_or_after: addDays(today, -30) } },
-          { property: "업로드 예정일", date: { is_empty: true } },
-        ],
-      },
+    or: [
+      { and: [notDone, { property: "업로드 예정일", date: { on_or_after: addDays(today, -30) } }] },
+      { and: [notDone, { property: "업로드 예정일", date: { is_empty: true } }] },
+      { property: "업로드 예정일", date: { on_or_after: UPLOADS_FROM } },
     ],
   };
   const scheduleFilter = {
@@ -472,7 +485,8 @@ async function loadPipeline(): Promise<PipelineData> {
   const planById = new Map<string, NotionPage[] | null>();
   planIds.forEach((id, index) => planById.set(id, planResults[index] as NotionPage[] | null));
 
-  const progress = (progressPages as NotionPage[]).map(progressItem).filter((x) => x !== null);
+  const progressRows = (progressPages as NotionPage[]).map(progressRow);
+  const progress = progressRows.map((row) => row.item).filter((x) => x !== null);
   const shootEvents = (schedulePages as NotionPage[])
     .map((page) => ({ date: propDate(page, "날짜")?.start.slice(0, 10) ?? "", title: propText(page, "이름") }))
     .filter((e) => e.date >= today && e.title.includes("촬영"))
@@ -480,20 +494,22 @@ async function loadPipeline(): Promise<PipelineData> {
 
   const missing: PipelineData["missing"] = [];
   const uploads: PipelineData["uploads"] = [];
-  const uploadFrom = addDays(today, -7);
   const uploadTo = addDays(today, 120);
   const built = ACCOUNTS.map((account) => {
     const mine: PipelineItem[] = progress.filter((p) => account.notion.includes(p.influencer));
     if (account.cadence.length) {
-      for (const item of mine) {
-        if (!item.date || item.date < uploadFrom || item.date > uploadTo) continue;
+      for (const row of progressRows) {
+        if (!account.notion.includes(row.influencer) || !row.date) continue;
+        if (row.date < UPLOADS_FROM || row.date > uploadTo) continue;
+        if (row.status === "반려" || row.status === "업로드 보류") continue;
+        const status = row.status === "업로드 완료" ? "ok" : row.item ? calendarStatus(row.item) : "nosh";
         uploads.push([
-          item.date.slice(5),
-          calendarAccount(account.key, item.date),
-          item.title,
-          calendarStatus(item),
-          item.editor === "미정" ? "" : item.editor,
-          item.memo ?? "",
+          row.date.slice(5),
+          calendarAccount(account.key, row.date),
+          row.title,
+          status,
+          row.editor === "미정" ? "" : row.editor,
+          row.memo,
         ]);
       }
     }
