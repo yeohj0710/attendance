@@ -28,7 +28,9 @@ html:has(.hub), body:has(.hub) { margin: 0; height: 100%; overflow: hidden; back
 .hub-cal .cs-nav button { height: 26px; }
 .hub-cal .cs-nav .cs-arrow { width: 26px; }
 .hub-cal .cs-dow div { padding: 5px 0; font-size: 12px; }
-.hub-cal .cs-day { min-height: 74px; padding: 4px 5px 6px; }
+/* 주 칸 높이를 고정해 주를 넘겨도 아래 채널 현황이 움직이지 않게. 일정이 많은 날은 그 칸 안에서만 스크롤 */
+.hub-cal .cs-week { height: 122px; }
+.hub-cal .cs-day { min-height: 0; padding: 4px 5px 6px; overflow-y: auto; scrollbar-width: thin; }
 .hub-cal .cs-dhead { height: 22px; margin-bottom: 2px; }
 .hub-cal .cs-num { min-width: 22px; height: 22px; line-height: 22px; font-size: 13px; }
 .hub-cal .cs-hol { font-size: 10.5px; }
