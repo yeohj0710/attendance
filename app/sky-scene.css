@@ -211,3 +211,9 @@
   background: radial-gradient(circle at 50% 100%, transparent 58%, rgba(255, 90, 90, 0.35) 59%, rgba(255, 170, 60, 0.35) 62%, rgba(255, 230, 80, 0.35) 65%, rgba(100, 210, 120, 0.35) 68%, rgba(80, 160, 255, 0.35) 71%, rgba(150, 110, 230, 0.35) 74%, transparent 76%);
   opacity: 0.8;
 }
+
+/* 배경이 일에 방해되지 않게: 떨어지는 것은 옅게, 구름은 느리게 */
+.sky-particles span { opacity: 0.55; }
+.sky-cloud { animation-duration: 160s; }
+.sky-cloud-1, .sky-cloud-3 { animation-duration: 200s; }
+.sky-cloud-2, .sky-cloud-4 { animation-duration: 240s; }

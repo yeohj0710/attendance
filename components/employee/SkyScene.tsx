@@ -22,13 +22,13 @@ import {
  * - 언덕 색, 떨어지는 것(벚꽃잎, 단풍, 눈, 비): 계절과 실제 날씨
  * - 오늘의 랜드마크: 날마다 다른 건물 하나
  * - 기념일 장식: 크리스마스 전구, 추석 보름달 등
- * - 하늘 이벤트: 25~70초마다 하나가 지나간다. 레어, 극레어는 도감에 남는다.
+ * - 하늘 이벤트: 2~5분에 하나가 지나간다(일할 때 눈이 덜 가게). 레어, 극레어는 도감에 남는다.
  * 트래픽: 그림은 전부 코드 안(pixelSprites.ts)에 있고, 타이머는 하나뿐이다. 창을 안 보고 있으면 띄우지 않는다.
  */
 
 const RARITY_WEIGHT: Record<Rarity, number> = { common: 60, uncommon: 26, rare: 11, legendary: 3 };
-const EVENT_GAP_MIN = 25_000;
-const EVENT_GAP_MAX = 70_000;
+const EVENT_GAP_MIN = 120_000;
+const EVENT_GAP_MAX = 300_000;
 const MOTION_SECONDS: Record<SkyEventDef["motion"], number> = { fly: 20, drift: 34, streak: 2.4, float: 7 };
 
 type LiveEvent = { def: SkyEventDef; key: number; top: number; seconds: number };
@@ -76,10 +76,10 @@ export function SkyScene({ weatherLabel }: { weatherLabel?: string | null }) {
     const rand = seededRandom(hashSeed(`scene:${scene.dayKey}`));
     const landmark = LANDMARKS.length ? LANDMARKS[Math.floor(rand() * LANDMARKS.length)] : null;
     const landmarkLeft = 8 + rand() * 70;
-    const particles = Array.from({ length: 16 }, () => ({
+    const particles = Array.from({ length: 7 }, () => ({
       left: rand() * 100,
       delay: -rand() * 14,
-      seconds: 9 + rand() * 9,
+      seconds: 16 + rand() * 12,
       drift: (rand() - 0.5) * 80,
       size: 0.7 + rand() * 0.8,
     }));
@@ -117,13 +117,13 @@ export function SkyScene({ weatherLabel }: { weatherLabel?: string | null }) {
         schedule(EVENT_GAP_MIN + rand() * (EVENT_GAP_MAX - EVENT_GAP_MIN));
       }, ms);
     };
-    schedule(6000);
+    schedule(40_000);
     return () => window.clearTimeout(timer);
   }, []);
 
   const particleKind =
     scene.weather === "rain" ? "rain" : scene.weather === "snow" || scene.season === "winter" ? "snow" : scene.season === "spring" ? "petal" : scene.season === "autumn" ? "leaf" : scene.time === "night" ? "firefly" : null;
-  const cloudCount = scene.weather === "clear" ? 3 : 6;
+  const cloudCount = scene.weather === "clear" ? 2 : 4;
   const sunProgress = Math.min(1, Math.max(0, (scene.hour + scene.minute / 60 - 6) / 13));
 
   return (

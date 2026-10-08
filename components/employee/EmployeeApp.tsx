@@ -2697,7 +2697,7 @@ function CommentNotificationModal({
   );
 }
 
-/* 작업실 말풍선 아이콘: 15~35초마다 한 사람에게 하나. 창을 안 보면 쉰다 */
+/* 작업실 말풍선 아이콘: 45~90초마다 한 사람에게 하나. 창을 안 보면 쉰다 */
 const DESK_EMOTES = ["☕", "💡", "❗", "🎵", "💬", "✨", "📞", "📝", "🍪", "👍", "🔥", "❓", "🌱", "📸", "🎬"];
 
 function DeskEmoteTicker({ count, onEmote }: { count: number; onEmote: (emote: { index: number; icon: string; key: number } | null) => void }) {
@@ -2724,7 +2724,7 @@ function DeskEmoteTicker({ count, onEmote }: { count: number; onEmote: (emote: {
           window.setTimeout(() => onEmote(null), 3200);
         }
         tick();
-      }, 15_000 + Math.random() * 20_000);
+      }, 45_000 + Math.random() * 45_000);
     };
     tick();
     return () => window.clearTimeout(timer);
