@@ -31,8 +31,19 @@ export type DailyCharacter = { def: CharacterDef; outfit: string[] };
 const MALE_ONLY = new Set(["worker-short", "worker-cap", "golden-king"]);
 const FEMALE_ONLY = new Set(["worker-long", "worker-bun"]);
 
-/** 직원 성별 (이름 기준). 이름으로 짐작하지 않고, 대표님이 알려 준 명단만 적는다. 없으면 구분 없이 뽑는다 */
-export const EMPLOYEE_GENDER: Record<string, "m" | "f"> = {};
+/** 직원 성별 (이름 기준, 261008 대표님 명단). 명단에 없는 사람은 구분 없이 뽑는다 */
+export const EMPLOYEE_GENDER: Record<string, "m" | "f"> = {
+  송아영: "f",
+  풍자헌: "f",
+  한세아: "f",
+  김호준: "m",
+  권현우: "m",
+  이민우: "m",
+  유현일: "m",
+  김승민: "m",
+  여형준: "m",
+  권혁찬: "m",
+};
 
 /** 사람 + 날짜로 오늘의 캐릭터를 뽑는다. 같은 날 같은 사람은 늘 같은 결과 */
 export function pickDailyCharacter(employeeId: string, dayKey: string, employeeName?: string): DailyCharacter {
