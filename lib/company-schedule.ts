@@ -1,3 +1,4 @@
+import { revalidateTag, unstable_cache } from "next/cache";
 import { NotionAccessError, propDate, propPeople, propText, queryNotionDatabase } from "@/lib/notion";
 import type { NotionPage } from "@/lib/notion";
 import { badRequest } from "@/lib/http";
@@ -67,7 +68,7 @@ export function checkRange(from: string | null, to: string | null) {
 }
 
 /** 범위 안에 걸치는 일정 (여러 날 일정은 시작이 범위 앞이어도 끝이 범위 안이면 포함) */
-export async function listCompanyEvents(from: string, to: string) {
+async function readCompanyEvents(from: string, to: string) {
   const pages = await queryNotionDatabase(COMPANY_SCHEDULE_DB, {
     or: [
       { and: [{ property: "날짜", date: { on_or_after: from } }, { property: "날짜", date: { on_or_before: to } }] },
@@ -78,6 +79,12 @@ export async function listCompanyEvents(from: string, to: string) {
     .map(toEvent)
     .filter((e): e is CompanyEvent => !!e && (e.end ?? e.start) >= from && e.start <= to);
 }
+
+/* 노션 통합 하나에 초당 3회 안팎 한도라, 보는 사람 수와 상관없이 같은 2주는 45초에 한 번만 읽는다.
+   쓰고 나면 태그를 비워 다음 읽기가 바로 노션에서 온다 (쓴 사람 화면은 응답으로 바로 맞춘다) */
+const SCHEDULE_TAG = "company-schedule";
+export const listCompanyEvents = unstable_cache(readCompanyEvents, ["company-schedule-v1"], { revalidate: 45, tags: [SCHEDULE_TAG] });
+const fresh = () => revalidateTag(SCHEDULE_TAG, { expire: 0 });
 
 function addDaysIso(date: string, days: number) {
   const d = new Date(`${date}T00:00:00Z`);
@@ -154,12 +161,14 @@ export async function createCompanyEvent(input: EventInput) {
     parent: { database_id: COMPANY_SCHEDULE_DB },
     properties: toProperties(input, true),
   })) as unknown as NotionPage;
+  fresh();
   return toEvent(page);
 }
 
 export async function updateCompanyEvent(id: string, input: EventInput) {
   await ownPage(id);
   const page = (await notion(`pages/${id}`, "PATCH", { properties: toProperties(input, false) })) as unknown as NotionPage;
+  fresh();
   return toEvent(page);
 }
 
@@ -167,5 +176,6 @@ export async function updateCompanyEvent(id: string, input: EventInput) {
 export async function archiveCompanyEvent(id: string, archived: boolean) {
   await ownPage(id);
   const page = (await notion(`pages/${id}`, "PATCH", { archived })) as unknown as NotionPage;
+  fresh();
   return archived ? null : toEvent(page);
 }
