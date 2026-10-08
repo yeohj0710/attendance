@@ -166,34 +166,12 @@ export function Board({ data, embedded = false, forceAll = false }: { data: Pipe
           {accounts.map((account) => (
             <AccountRow account={account} bind={bind} count={count} key={account.key} today={data.today} />
           ))}
+          {/* 업로드 요일이 아직 없는 계정도 같은 목록 맨 아래에 (따로 칸을 두지 않는다, 10/8 대표님) */}
+          {waiting.map((account) => (
+            <AccountRow account={account} bind={bind} count={count} key={account.key} today={data.today} />
+          ))}
         </div>
       </section>
-
-      {waiting.length ? (
-        <section className={section}>
-          <h2 className="content-section-title">업로드 전 계정</h2>
-          <div className="pipe-waiting">
-            {waiting.map((account) => (
-              <div className="pipe-waiting-item" key={account.key}>
-                <div className="pipe-name">
-                  {account.name}
-                  <small>{account.owner}</small>
-                </div>
-                <p className="pipe-note">{account.note}</p>
-                <p className="pipe-stock">
-                  {STAGES.map((stage) => (
-                    <span key={stage.key}>
-                      <i className={`pipe-swatch stage-${stage.key}`} />
-                      {stage.label} {account.stock[stage.key]}편
-                    </span>
-                  ))}
-                </p>
-                <ShootLine account={account} />
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
 
       {data.missing.length ? (
         <section className={section}>
@@ -289,6 +267,19 @@ function AccountRow({
         ) : null}
       </div>
 
+      {account.slots.length === 0 ? (
+        <div className="pipe-track">
+          <p className="pipe-note">업로드 시작 전이에요. {account.note}</p>
+          <p className="pipe-stock">
+            {STAGES.map((stage) => (
+              <span key={stage.key}>
+                <i className={`pipe-swatch stage-${stage.key}`} />
+                {stage.label} {account.stock[stage.key]}편
+              </span>
+            ))}
+          </p>
+        </div>
+      ) : (
       <div className="pipe-track">
         <div className="pipe-scroll-x">
         <div className="pipe-squares">
@@ -341,6 +332,7 @@ function AccountRow({
         </p>
         {pickedSlot ? <SlotDetail slot={pickedSlot} /> : null}
       </div>
+      )}
     </div>
   );
 }
