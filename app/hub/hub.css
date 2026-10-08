@@ -1,12 +1,12 @@
 /* /hub: 노션 메인에 하나만 붙이는 화면 (app/hub/page.tsx).
    배경은 업무 시스템 하늘 한 장(SkyScene, 화면 전체에 고정)으로 통일하고 그 위에 흰 카드를 놓는다.
-   창 너비가 바뀌면 왼쪽(위 일정, 아래 채널 현황)만 늘고 줄며, 오른쪽 업무 시스템은 600px 로 고정한다(그 안 카드는 칸 폭을 다 쓰고 위 여백 0, app/page.tsx 의 ?inhub=1).
+   창 너비가 바뀌면 왼쪽(위 일정, 아래 채널 현황)만 늘고 줄며, 오른쪽 업무 시스템은 720px 로 고정한다(업무 시스템이 더 중요해 넓게, 대표님 261008)(그 안 카드는 칸 폭을 다 쓰고 위 여백 0, app/page.tsx 의 ?inhub=1).
    양옆 하늘에서 휠을 굴리면 바깥 노션 페이지가 내려간다. 왼쪽 칸은 끝까지 내리면 노션으로 이어진다.
    글자 크기는 세 칸이 같은 단계를 쓴다: 칸 제목 16px, 본문 13px, 작은 글 12px */
 html:has(.hub), body:has(.hub) { margin: 0; height: 100%; overflow: hidden; background: transparent !important; }
 .hub { position: relative; height: 100vh; }
 .hub-grid {
-  display: grid; grid-template-columns: minmax(0, 1fr) 600px; gap: 20px;
+  display: grid; grid-template-columns: minmax(0, 1fr) 720px; gap: 20px;
   height: 100%; max-width: 1880px; margin: 0 auto; padding: 16px 32px; box-sizing: border-box;
   font-family: "Pretendard Variable", Pretendard, ui-sans-serif, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
 }
