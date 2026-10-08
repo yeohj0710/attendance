@@ -15,11 +15,21 @@ import "./pipeline-card.css";
  * - 회사 일정: /schedule?embed=1 (캘린더 이사 세션 화면을 그대로 끼움)
  * - 할 일 달력: /content/daily.html (같은 출처)
  * 사용량: 카드가 화면 가까이 와야 채널 데이터를 받고(노션 5분 캐시), 일정과 할 일 달력은 처음 펼칠 때만 불러온다.
+ * 노션 메인 /hub 안(?inhub=1)에서는 왼쪽에 채널 현황과 일정이 따로 있어서 이 카드를 숨긴다 (261008 대표님).
  */
 type Tab = "mine" | "all" | "schedule" | "todo";
 const TAB_KEY = "attendance.contentHub.tab";
 
 export function ContentHub({ who }: { who: string | null }) {
+  /* 주소를 읽기 전(null)에는 그리지 않는다. /hub 안에서 잠깐 떴다가 사라지거나 데이터를 받는 일이 없게 */
+  const [inHub, setInHub] = useState<boolean | null>(null);
+  useEffect(() => {
+    setInHub(new URLSearchParams(window.location.search).get("inhub") === "1");
+  }, []);
+  return inHub === false ? <ContentHubCard who={who} /> : null;
+}
+
+function ContentHubCard({ who }: { who: string | null }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [near, setNear] = useState(false);
   const [tab, setTab] = useState<Tab | null>("mine");
