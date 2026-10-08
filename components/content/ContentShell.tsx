@@ -9,12 +9,33 @@ const TABS = [
   { href: "/content-board/schedule", label: "일정 달력" },
 ];
 
-/** ?embed=1 이면 다른 화면(/hub, 노션) 안에 끼워진 것이라 이동 줄과 하늘 배경을 뺀다 */
+/**
+ * ?embed=1 이면 다른 화면(/hub, 노션) 안에 끼워진 것이라 이동 줄과 하늘 배경을 뺀다.
+ * 같은 출처 부모(/hub)에는 내용 높이를 알려 준다. 부모가 iframe 높이를 맞추면 안쪽 스크롤 없이 바깥 칸과 같이 움직인다.
+ * 메시지: { source: "content-board", type: "height", height }
+ */
 export function useEmbedMode() {
   const [embed, setEmbed] = useState(false);
   useEffect(() => {
     setEmbed(new URLSearchParams(window.location.search).get("embed") === "1");
   }, []);
+  useEffect(() => {
+    if (!embed || window.parent === window || typeof ResizeObserver === "undefined") return;
+    let last = 0;
+    const post = () => {
+      /* html 의 scrollHeight 는 창 높이보다 작아지지 않아서, 본문(main) 높이를 잰다 */
+      const main = document.querySelector("main");
+      const height = Math.ceil(main ? main.getBoundingClientRect().height : document.body.scrollHeight);
+      if (Math.abs(height - last) < 2) return;
+      last = height;
+      window.parent.postMessage({ source: "content-board", type: "height", height }, window.location.origin);
+    };
+    const observer = new ResizeObserver(post);
+    const main = document.querySelector("main");
+    observer.observe(main ?? document.body);
+    post();
+    return () => observer.disconnect();
+  }, [embed]);
   return embed;
 }
 
