@@ -213,6 +213,8 @@ export type PipelineItem = {
   url: string;
   /** 편집 진행도 「영상 폴더」 (소스 폴더) */
   folder?: string;
+  /** 편집 진행도 「비고」 */
+  memo?: string;
 };
 
 export type PipelineSlot = {
@@ -265,7 +267,27 @@ export type PipelineData = {
   accounts: PipelineAccount[];
   waiting: PipelineAccount[];
   missing: Array<{ account: string; label: string; url: string }>;
+  /**
+   * 콘텐츠팀 할 일 달력(public/content/daily.js)의 UPLOADS 와 같은 모양: [MM-DD, 계정 키, 제목, 상태, 편집자, 메모(비고)].
+   * 지난 7일부터 120일 앞까지, 노션 편집 진행도에 업로드 예정일이 있는 편. 업로드 요일이 있는 계정만.
+   * 캘린더 쪽(lib/content-uploads.ts)이 노션을 따로 읽지 않고 getPipelineData().uploads 를 쓰면 노션 호출이 늘지 않는다.
+   */
+  uploads: Array<[string, string, string, string, string, string]>;
 };
+
+/* daily.js 상태 기호: ok 편집 끝, rv 검수 중, ed 편집 중, raw 의뢰 전, noed 편집자 미정, nosh 촬영본 없음 */
+function calendarStatus(item: PipelineItem) {
+  if (item.stage === "ready") return "ok";
+  if (item.stage === "edit") return item.status === "요청 완료" ? "ed" : "rv";
+  if (item.stage === "shot") return item.editor && item.editor !== "미정" ? "raw" : "noed";
+  return "nosh";
+}
+
+/* 현황판 계정 키 → daily.js 계정 키. 제이약사님은 영어 계정(10/15까지)과 한국 계정(10/26부터)이 나뉜다 */
+function calendarAccount(key: string, date: string) {
+  if (key === "jay") return date <= "2026-10-15" ? "jay" : "jaykr";
+  return key;
+}
 
 const PLAN_LEAD = [
   { stage: "empty" as const, lead: 17, label: "기획안 쓰기" },
@@ -310,6 +332,7 @@ function progressItem(page: NotionPage): (PipelineItem & { influencer: string })
     date: propDate(page, "업로드 예정일")?.start.slice(0, 10) ?? null,
     url: page.url,
     folder: propText(page, "영상 폴더") || undefined,
+    memo: propText(page, "비고") || undefined,
     influencer: propText(page, "인플루언서"),
   };
 }
@@ -456,8 +479,24 @@ async function loadPipeline(): Promise<PipelineData> {
     .sort((a, b) => a.date.localeCompare(b.date));
 
   const missing: PipelineData["missing"] = [];
+  const uploads: PipelineData["uploads"] = [];
+  const uploadFrom = addDays(today, -7);
+  const uploadTo = addDays(today, 120);
   const built = ACCOUNTS.map((account) => {
     const mine: PipelineItem[] = progress.filter((p) => account.notion.includes(p.influencer));
+    if (account.cadence.length) {
+      for (const item of mine) {
+        if (!item.date || item.date < uploadFrom || item.date > uploadTo) continue;
+        uploads.push([
+          item.date.slice(5),
+          calendarAccount(account.key, item.date),
+          item.title,
+          calendarStatus(item),
+          item.editor === "미정" ? "" : item.editor,
+          item.memo ?? "",
+        ]);
+      }
+    }
     const planPages = account.planDb ? planById.get(account.planDb) : undefined;
     const planDbMissing = Boolean(account.planDb) && planPages === null;
     if (planDbMissing && account.planDb) {
@@ -498,9 +537,10 @@ async function loadPipeline(): Promise<PipelineData> {
     accounts,
     waiting: built.filter((a) => a.slots.length === 0),
     missing,
+    uploads: uploads.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1])),
   };
 }
 
-export const getPipelineData = unstable_cache(loadPipeline, ["content-pipeline-v1"], {
+export const getPipelineData = unstable_cache(loadPipeline, ["content-pipeline-v2"], {
   revalidate: CACHE_SECONDS,
 });
