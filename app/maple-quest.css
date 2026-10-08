@@ -401,22 +401,4 @@
 }
 @media (prefers-reduced-motion: reduce) { .desk-char-legendary, .desk-emote { animation: none; } }
 
-/* 도움받기 단추 (components/employee/HelpLaunch.tsx). 메뉴 없이 한 번에 Claude 나 Codex 를 연다 */
-.help-launch-btn {
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 999px;
-  border: 1px solid #e1e7f0;
-  background: #fff;
-  font-size: 11.5px;
-  font-weight: 700;
-  line-height: 1;
-  color: #6b7690;
-  white-space: nowrap;
-  text-decoration: none;
-  transition: background-color 120ms, border-color 120ms, color 120ms;
-}
-.help-launch-btn:hover { background: #fff6e8; border-color: #f2c48a; color: #b8620e; }
 

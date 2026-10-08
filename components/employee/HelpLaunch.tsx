@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 /**
  * 할 일 줄의 "도움" 단추. 누르면 Claude 나 Codex 데스크톱 앱이 켜지고, 새 대화에 그 할 일이 채워진다.
- * 메뉴 없이 할 일 종류로 앱을 고른다(261008 대표님: 중간 단계 줄이기, 업로드만 Codex).
+ * 메뉴 없이 할 일 종류로 앱을 고른다(261008 대표님: 중간 단계 줄이기, 업로드만 Codex). 모양은 아이콘, 마우스를 올리면 앱 이름.
  * - 영상 업로드(캘린더 라벨 "업로드", "예약" 또는 제목에 "업로드"): Codex. codex://new?prompt=... 크롬 확장으로 올린다
  * - 나머지: Claude 데스크톱 Code 탭 새 세션. claude://code/new?q=...&folder=G:\내 드라이브\에이전트
  *   (claude.ai/new 는 채팅 화면이라 파일과 명령을 못 써서 쓰지 않는다. PD님 PC 는 모두 G: 드라이브)
@@ -68,21 +68,30 @@ export function HelpLaunch({ text, note, label }: { text: string; note?: string;
     window.setTimeout(() => setOpened(false), 2500);
   }
 
+  /* 글자 단추는 줄마다 자리를 차지해 할 일 제목이 잘려서(261008 대표님) 아이콘으로. 마우스를 올리면 어느 앱인지 뜬다.
+     업로드 할 일은 위 화살표, 나머지는 반짝이. 누른 직후 잠깐 주황으로 바뀐다 */
   return (
     <a
       aria-label={`${text}, ${appName}로 하기`}
-      className="help-launch-btn"
+      className={`rounded p-1 transition hover:bg-accent/10 hover:text-accent ${opened ? "text-accent" : "text-muted"}`}
       href={href}
       onClick={onOpen}
       rel="noopener"
       target={inFrame ? "_blank" : undefined}
-      title={
-        upload
-          ? "Codex 가 열리고 이 할 일이 채워져요. 영상 업로드는 크롬 확장으로 해요. 안 열리면 붙여 넣으세요(복사해 둠)"
-          : "Claude 코드 탭이 열리고 이 할 일이 채워져요. 안 열리면 붙여 넣으세요(복사해 둠)"
-      }
+      title={upload ? "Codex로 하기 (영상 업로드, 크롬 확장)" : "Claude로 하기 (코드 탭)"}
     >
-      {opened ? "열었어요" : `${appName}로`}
+      {upload ? (
+        <svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24">
+          <path d="M12 16V4" />
+          <path d="M7 9l5-5 5 5" />
+          <path d="M5 16v3a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3" />
+        </svg>
+      ) : (
+        <svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+          <path d="M12 3l1.8 4.6L18 9l-4.2 1.4L12 15l-1.8-4.6L6 9l4.2-1.4z" strokeLinejoin="round" />
+          <path d="M18.5 15.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" strokeLinejoin="round" />
+        </svg>
+      )}
     </a>
   );
 }
