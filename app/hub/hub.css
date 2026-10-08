@@ -6,14 +6,16 @@
 html:has(.hub), body:has(.hub) { margin: 0; height: 100%; overflow: hidden; background: transparent !important; }
 .hub { position: relative; height: 100vh; }
 /* 넓을 때: 왼쪽 줄(일정, 채널 현황)은 이 판과 함께 세로로 스크롤하고, 오른쪽 업무 시스템은 화면에 붙어 자기 스크롤을 쓴다.
-   두 줄은 5:6 비율이라 창이 좁아지면 같이 줄어든다(업무 시스템이 더 중요해 조금 넓게, 대표님 261008) */
+   두 줄은 3:2 비율이라 창이 좁아지면 같이 줄어든다(1920 화면에서 업무 시스템 약 720px, 대표님 261008) */
 .hub-grid {
-  display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+  display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
   grid-template-areas: "cal app" "pipe app"; grid-template-rows: auto 1fr; gap: 16px 20px; align-items: start;
   height: 100%; max-width: 1880px; margin: 0 auto; padding: 16px 32px; box-sizing: border-box;
-  overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(100, 116, 139, 0.38) transparent;
+  overflow-y: auto; scrollbar-width: none;
   font-family: "Pretendard Variable", Pretendard, ui-sans-serif, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
 }
+/* 스크롤 막대는 보이지 않게(휠과 끌기로는 그대로 스크롤된다, 대표님 261008) */
+.hub-grid::-webkit-scrollbar { display: none; }
 .hub-cal-card { grid-area: cal; }
 .hub-pipe-card { grid-area: pipe; }
 .hub-app {
@@ -45,6 +47,8 @@ html:has(.hub), body:has(.hub) { margin: 0; height: 100%; overflow: hidden; back
 .hub-cal .cs-nav .cs-arrow { width: 30px; }
 .hub-cal .cs-grid { box-shadow: none; border-radius: 12px; }
 .hub-cal .cs-dow div { padding: 6px 0; font-size: 12px; }
+/* 토요일과 일요일 칸은 좁게(평일의 2/3), 남는 폭을 평일에 */
+.hub-cal .cs-dow, .hub-cal .cs-week { grid-template-columns: minmax(0, 0.66fr) repeat(5, minmax(0, 1fr)) minmax(0, 0.66fr); }
 /* 일정이 많은 날은 칸이 늘고, 그만큼 아래 채널 현황이 밀려 내려간다. 날짜 칸 안 스크롤은 절대 두지 않는다(대표님 261008) */
 .hub-cal .cs-day { min-height: 104px; padding: 5px 6px 6px; overflow: visible; }
 .hub-cal .cs-card { min-width: 0; }
@@ -53,7 +57,7 @@ html:has(.hub), body:has(.hub) { margin: 0; height: 100%; overflow: hidden; back
 .hub-cal .cs-num { min-width: 24px; height: 24px; line-height: 24px; font-size: 13px; }
 .hub-cal .cs-hol { font-size: 12px; }
 .hub-cal .cs-card { padding: 5px 8px 6px; margin-bottom: 4px; border-radius: 8px; }
-.hub-cal .cs-ct { font-size: 13px; -webkit-line-clamp: 2; }
+.hub-cal .cs-ct { font-size: 13px; }
 .hub-cal .cs-cp { display: none; }
 
 /* 좁을 때: 한 줄로 일정, 업무 시스템, 채널 현황 순서. 판 전체가 스크롤하고 업무 시스템은 화면 높이만큼 */

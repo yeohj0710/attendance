@@ -100,7 +100,8 @@ html:has(.cs), body:has(.cs) { background: #fff; }
 .cs-card:hover { transform: translateY(-1px); box-shadow: 0 6px 14px -8px rgba(23, 32, 51, 0.35), 0 0 0 1px rgba(69, 104, 245, 0.25); }
 .cs-card.is-drop-before { box-shadow: 0 -3px 0 -1px var(--cs-blue), var(--cs-card); }
 .cs-card.is-drop-after { box-shadow: 0 3px 0 -1px var(--cs-blue), var(--cs-card); }
-.cs-ct { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+/* 일정 제목은 "…" 로 자르지 않고 다 보여 준다(카드가 길어져도 됨, 대표님 261008) */
+.cs-ct { display: block; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
 .cs-cp { display: block; margin-top: 1px; font-size: 12px; color: var(--cs-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .cs-menu { position: fixed; z-index: 70; width: 240px; padding: 6px; background: #fff; border-radius: 12px; box-shadow: var(--cs-pop); }
