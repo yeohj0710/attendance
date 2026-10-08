@@ -39,12 +39,24 @@ export function HelpLaunch({ text, note }: { text: string; note?: string }) {
     return () => window.removeEventListener("mousedown", close);
   }, [open]);
 
+  /* 노션 같은 다른 페이지 안(iframe)에 떠 있는지. 처음 그릴 때는 모르니 안전한 쪽(안에 있음)으로 둔다 */
+  const [inFrame, setInFrame] = useState(true);
+  useEffect(() => {
+    try {
+      setInFrame(window.self !== window.top);
+    } catch {
+      setInFrame(true);
+    }
+  }, []);
+
   const prompt = buildHelpPrompt(text, note);
   // 노션 안(iframe)에서 앱 주소로 바로 가면 노션이 막고 화면이 "차단됨"으로 바뀐다.
-  // 그래서 새 탭의 중간 페이지(public/open-app.html)가 앱 주소로 이동한다.
-  const viaHelper = (url: string) => `/open-app.html?u=${encodeURIComponent(url)}`;
-  const claudeUrl = viaHelper(`claude://code/new?q=${encodeURIComponent(prompt)}`);
-  const codexUrl = viaHelper(`codex://new?prompt=${encodeURIComponent(prompt)}`);
+  // 그때만 새 탭의 중간 페이지(public/open-app.html)가 앱 주소로 이동한다.
+  // 업무 시스템을 직접 열었을 때는 새 탭 없이 바로 앱을 연다(새 탭이 매번 떠서 불편하다는 261008 요청).
+  const appLink = (url: string) => (inFrame ? `/open-app.html?u=${encodeURIComponent(url)}` : url);
+  const linkTarget = inFrame ? "_blank" : undefined;
+  const claudeUrl = appLink(`claude://code/new?q=${encodeURIComponent(prompt)}`);
+  const codexUrl = appLink(`codex://new?prompt=${encodeURIComponent(prompt)}`);
 
   /* 링크는 그대로 열고(앱 실행), 같은 순간 프롬프트를 클립보드에도 넣어 둔다 */
   function copyPrompt() {
@@ -74,11 +86,11 @@ export function HelpLaunch({ text, note }: { text: string; note?: string }) {
       </button>
       {open ? (
         <span className="help-launch-menu">
-          <a href={claudeUrl} onClick={copyPrompt} rel="noopener" target="_blank">
+          <a href={claudeUrl} onClick={copyPrompt} rel="noopener" target={linkTarget}>
             <b>Claude로 하기</b>
             <small>코드 탭</small>
           </a>
-          <a href={codexUrl} onClick={copyPrompt} rel="noopener" target="_blank">
+          <a href={codexUrl} onClick={copyPrompt} rel="noopener" target={linkTarget}>
             <b>Codex로 하기</b>
             <small>업로드, 브라우저</small>
           </a>
