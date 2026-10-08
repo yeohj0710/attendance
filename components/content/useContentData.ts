@@ -12,7 +12,8 @@ export type ContentState<T> =
   | { kind: "error"; message: string }
   | { kind: "ready"; data: T };
 
-export function useContentData<T>(path: string) {
+/** enabled 가 false 면 아무것도 받지 않는다 (화면에 닿거나 펼칠 때 켠다) */
+export function useContentData<T>(path: string, enabled = true) {
   const [state, setState] = useState<ContentState<T>>({ kind: "loading" });
   const lastLoadRef = useRef(0);
 
@@ -40,6 +41,7 @@ export function useContentData<T>(path: string) {
   }, [path]);
 
   useEffect(() => {
+    if (!enabled) return;
     void load();
 
     function refreshIfStale() {
@@ -54,7 +56,7 @@ export function useContentData<T>(path: string) {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", refreshIfStale);
     };
-  }, [load]);
+  }, [load, enabled]);
 
   return state;
 }

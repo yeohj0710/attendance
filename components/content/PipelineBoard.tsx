@@ -76,20 +76,24 @@ export function PipelineBoard() {
   );
 }
 
-function Board({ data }: { data: PipelineData }) {
+/** 채널 현황 본문. embedded 면 업무 시스템 첫 화면 토글 안에 머리글 없이 들어간다 */
+export function Board({ data, embedded = false }: { data: PipelineData; embedded?: boolean }) {
   const [count, setCount] = useState<(typeof COUNTS)[number]>(12);
   const { bind, node } = useTip();
+  const section = embedded ? "pipe-embed-section" : "content-card";
 
   return (
     <>
-      <section className="content-card">
-        <header className="content-head">
-          <div>
-            <h1 className="content-title">채널 파이프라인 현황</h1>
-            <p className="content-sub">
-              네모 하나가 앞으로 올릴 영상 한 편이에요. 노션 진행 상태로 칠했고, 급한 계정이 위에 와요.
-            </p>
-          </div>
+      <section className={section}>
+        <header className={embedded ? "pipe-embed-head" : "content-head"}>
+          {embedded ? null : (
+            <div>
+              <h1 className="content-title">채널 파이프라인 현황</h1>
+              <p className="content-sub">
+                네모 하나가 앞으로 올릴 영상 한 편이에요. 노션 진행 상태로 칠했고, 급한 계정이 위에 와요.
+              </p>
+            </div>
+          )}
           <div className="content-head-side">
             <span className="content-fresh" {...bind("노션 편집 진행도와 계정별 기획안을 5분마다 다시 읽어요.")}>
               노션 {formatClock(data.fetchedAt)} 기준
@@ -130,7 +134,7 @@ function Board({ data }: { data: PipelineData }) {
       </section>
 
       {data.waiting.length ? (
-        <section className="content-card">
+        <section className={section}>
           <h2 className="content-section-title">업로드 전 계정</h2>
           <div className="pipe-waiting">
             {data.waiting.map((account) => (
@@ -156,7 +160,7 @@ function Board({ data }: { data: PipelineData }) {
       ) : null}
 
       {data.missing.length ? (
-        <section className="content-card">
+        <section className={section}>
           <h2 className="content-section-title">노션 연결이 필요한 DB</h2>
           <p className="content-sub">
             아래 DB는 이 사이트가 못 읽어서 기획안 수가 빠져 있어요. 노션에서 DB를 열고 오른쪽 위 점 세 개 메뉴의

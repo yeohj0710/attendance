@@ -18,15 +18,13 @@ import { WorkInsights } from "@/components/employee/WorkInsights";
 import {
   ContentCalendarSync,
   ContentTeamPreview,
-  contentCalendarUrl,
   contentTeamKey,
   sendCalendarToggle,
 } from "@/components/employee/ContentTeamToday";
 import type { CalendarImportItem, UpcomingCalendarDay } from "@/components/employee/ContentTeamToday";
 import { TaskText } from "@/components/employee/TaskText";
 import { HelpLaunch } from "@/components/employee/HelpLaunch";
-import { ContentEntryLinks } from "@/components/content/ContentEntryLinks";
-import { PipelineHomeCard } from "@/components/content/PipelineHomeCard";
+import { ContentHub } from "@/components/content/ContentHub";
 import { OtherDayTasks, TaskDayNav } from "@/components/employee/TaskDayBrowser";
 import { createMixedGreetings, pickFreshGreetings, type MixedGreetingContext } from "@/lib/greeting-mix";
 import { MapleScene, QuestIcon, QuestProgress } from "@/components/employee/MapleQuest";
@@ -2151,17 +2149,6 @@ export function EmployeeApp() {
             <span className="maple-quest-title">
               오늘 할 일 / 한 일<small>QUEST</small>
             </span>
-            {contentWho ? (
-              <a
-                className="maple-quest-link"
-                href={contentCalendarUrl(contentWho)}
-                rel="noopener noreferrer"
-                target="_blank"
-              >
-                콘텐츠팀 캘린더
-              </a>
-            ) : null}
-            {!isSharedView && auth ? <ContentEntryLinks alone={!contentWho} /> : null}
           </div>
           <QuickWorkLogPanel
             canEdit={!isReadOnly}
@@ -2182,7 +2169,7 @@ export function EmployeeApp() {
             workLog={todayWorkLog}
           />
         </div>
-        {!isSharedView && auth && (contentWho || employee?.role === "admin") ? <PipelineHomeCard who={contentWho} /> : null}
+        {!isSharedView && auth && (contentWho || employee?.role === "admin") ? <ContentHub who={contentWho} /> : null}
         {/* 관리자는 콘텐츠팀 네 분 목록을 골라 미리 본다 (보기만). */}
         {!isSharedView && auth && !contentWho && employee?.role === "admin" ? <ContentTeamPreview /> : null}
       </section>
@@ -7382,18 +7369,23 @@ function QuickWorkLogPanel({
 
       {!isLoading && workLog ? (
         <div className="space-y-3 pt-3">
-          <TaskDayNav
-            onChange={(date) => setViewDate(date === today ? null : date)}
-            today={today}
-            viewDate={viewDate ?? today}
-          />
+          {/* 날짜 넘기기와 진행 막대를 한 줄에 (위아래 자리를 아낀다) */}
+          <div className="flex items-center gap-3">
+            <TaskDayNav
+              onChange={(date) => setViewDate(date === today ? null : date)}
+              today={today}
+              viewDate={viewDate ?? today}
+            />
+            {!viewDate && tasks.length ? (
+              <div className="min-w-0 flex-1">
+                <QuestProgress done={tasks.filter((task) => task.done).length} total={tasks.length} />
+              </div>
+            ) : null}
+          </div>
           {viewDate ? (
             <OtherDayTasks date={viewDate} loadLog={loadLog} today={today} upcoming={contentWho ? upcoming : null} />
           ) : null}
           {viewDate ? null : <>
-          {tasks.length ? (
-            <QuestProgress done={tasks.filter((task) => task.done).length} total={tasks.length} />
-          ) : null}
           <TaskSection
             canEdit={canEdit}
             isSaving={isSaving}
