@@ -11,6 +11,7 @@ const PAGES = {
   "index.html": [["styles.css", "href"], ["app.js", "src"]],
   "team.html": [["team.css", "href"], ["team.js", "src"]],
   "daily.html": [["daily.css", "href"], ["daily.js", "src"]],
+  "daily-v2.html": [["daily-v2.css", "href"], ["daily-v2.js", "src"]],
 };
 
 function hash(name) {
