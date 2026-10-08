@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { ContentState } from "@/components/content/useContentData";
 
 const TABS = [
@@ -9,19 +9,31 @@ const TABS = [
   { href: "/content-board/schedule", label: "일정 달력" },
 ];
 
+/** ?embed=1 이면 다른 화면(/hub, 노션) 안에 끼워진 것이라 이동 줄과 하늘 배경을 뺀다 */
+export function useEmbedMode() {
+  const [embed, setEmbed] = useState(false);
+  useEffect(() => {
+    setEmbed(new URLSearchParams(window.location.search).get("embed") === "1");
+  }, []);
+  return embed;
+}
+
 /** 콘텐츠팀 화면 공통 틀: 위쪽 이동 줄, 로그인 안내, 불러오는 중 표시 */
 export function ContentShell<T>({
   active,
   state,
+  embed = false,
   children,
 }: {
   active: string;
   state: ContentState<T>;
+  embed?: boolean;
   children: (data: T) => ReactNode;
 }) {
   return (
-    <main className="content-page">
-      <div className="content-bg" aria-hidden="true" />
+    <main className={`content-page${embed ? " is-embed" : ""}`}>
+      {embed ? null : <div className="content-bg" aria-hidden="true" />}
+      {embed ? null : (
       <nav className="content-nav">
         <Link className="content-back" href="/">
           업무 시스템으로
@@ -40,6 +52,7 @@ export function ContentShell<T>({
           <a href="/content/daily.html">할 일 달력</a>
         </div>
       </nav>
+      )}
 
       {state.kind === "ready" ? (
         children(state.data)
@@ -48,7 +61,10 @@ export function ContentShell<T>({
           {state.kind === "loading" ? <p>노션에서 불러오는 중이에요.</p> : null}
           {state.kind === "login" ? (
             <p>
-              업무 시스템에 로그인한 뒤에 볼 수 있어요. <Link href="/">로그인하러 가기</Link>
+              업무 시스템에 로그인한 뒤에 볼 수 있어요.{" "}
+              <Link href="/" target={embed ? "_blank" : undefined}>
+                로그인하러 가기
+              </Link>
             </p>
           ) : null}
           {state.kind === "error" ? <p>불러오지 못했어요. {state.message}</p> : null}

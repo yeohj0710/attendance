@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ContentShell, useTip } from "@/components/content/ContentShell";
+import { ContentShell, useEmbedMode, useTip } from "@/components/content/ContentShell";
 import { formatClock, formatMonthDay, useContentData, weekdayLabel } from "@/components/content/useContentData";
 import { stageRuns, type RunStage } from "@/components/content/pipelineRuns";
 import type { PipelineAccount, PipelineData, PipelineSlot, Stage } from "@/lib/content-pipeline";
@@ -69,9 +69,10 @@ function urgency(due: string, today: string) {
 
 export function PipelineBoard() {
   const state = useContentData<PipelineData>("/api/content-board/pipeline");
+  const embed = useEmbedMode();
   return (
-    <ContentShell active="/content-board/pipeline" state={state}>
-      {(data) => <Board data={data} />}
+    <ContentShell active="/content-board/pipeline" embed={embed} state={state}>
+      {(data) => <Board data={data} embedded={embed} />}
     </ContentShell>
   );
 }

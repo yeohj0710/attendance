@@ -11,6 +11,11 @@
   flex-direction: column;
   gap: 16px;
 }
+/* ?embed=1: 다른 화면 안에 끼울 때. 이동 줄과 하늘 배경 없이 흰 바탕 본문만 */
+.content-page.is-embed { max-width: none; padding: 12px; gap: 12px; background: #fff; min-height: 100vh; }
+.content-page.is-embed .content-card { box-shadow: none; padding: 0; }
+.pipe-embed-section + .pipe-embed-section { margin-top: 16px; padding-top: 14px; border-top: 1px solid #e7ebf2; }
+.pipe-embed-head { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; }
 .content-bg {
   position: fixed;
   inset: 0;
