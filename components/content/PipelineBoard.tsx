@@ -5,13 +5,20 @@ import { ContentShell, useTip } from "@/components/content/ContentShell";
 import { formatClock, formatMonthDay, useContentData, weekdayLabel } from "@/components/content/useContentData";
 import type { PipelineAccount, PipelineData, PipelineSlot, Stage } from "@/lib/content-pipeline";
 
-/* 덜 된 단계일수록 옅게, 다 된 단계일수록 진하게 (한 가지 색으로 순서를 보인다). 빈 칸은 빨간 점선 */
-const STAGES: Array<{ key: Exclude<Stage, "empty">; label: string; short: string; help: string }> = [
-  { key: "ready", label: "편집 끝", short: "편집 끝", help: "편집이 끝나 올리기만 하면 되는 편" },
-  { key: "edit", label: "편집 중", short: "편집 중", help: "편집자님께 맡겨서 초안이나 수정본을 기다리는 편" },
-  { key: "shot", label: "촬영 소스", short: "촬영 소스", help: "찍어 두었지만 아직 편집을 맡기지 않은 편" },
-  { key: "plan", label: "기획안", short: "기획안", help: "기획안만 있고 아직 찍지 않은 편" },
+/*
+ * 영상 한 편 = 네모 하나. 네모 안에 업로드 날짜와 요일을 적고 단계 색으로 칠한다.
+ * 업로드가 없는 날(주말, 공휴일)은 아예 안 나온다. 주가 바뀌는 곳만 살짝 띄운다.
+ * 덜 된 단계일수록 옅게, 다 된 단계일수록 진하게 (한 가지 파란색). 빈 칸은 빨간 점선.
+ */
+const STAGES: Array<{ key: Exclude<Stage, "empty">; label: string; help: string }> = [
+  { key: "ready", label: "편집 끝", help: "편집이 끝나 올리기만 하면 되는 편" },
+  { key: "edit", label: "편집 중", help: "편집자님께 맡겨서 초안이나 수정본을 기다리는 편" },
+  { key: "shot", label: "촬영 소스", help: "찍어 두었지만 아직 편집을 맡기지 않은 편" },
+  { key: "plan", label: "기획안", help: "기획안만 있고 아직 찍지 않은 편" },
 ];
+
+const COUNTS = [12, 24] as const;
+const BOARD_URL = "https://wellnessbox-board.vercel.app";
 
 function dayLabel(date: string) {
   return `${formatMonthDay(date)} (${weekdayLabel(date)})`;
@@ -23,12 +30,14 @@ function eul(word: string) {
   return code >= 0 && code <= 11171 && code % 28 !== 0 ? `${word}을` : `${word}를`;
 }
 
-function daysText(days: number | null) {
-  if (days === null) return "8주 넘게";
-  return `${days}일치`;
+/** 월요일 날짜로 주를 나눈다 */
+function weekOf(date: string) {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return d.toISOString().slice(0, 10);
 }
 
-function slotTip(slot: PipelineSlot, account: PipelineAccount) {
+function slotTip(slot: PipelineSlot, account: PipelineAccount, isTarget: boolean) {
   const when = dayLabel(slot.date);
   if (slot.stage === "empty") {
     return `${when} ${account.name} 업로드 칸이 비어 있어요. 기획안부터 써야 해요.`;
@@ -39,6 +48,8 @@ function slotTip(slot: PipelineSlot, account: PipelineAccount) {
   if (stage) parts.push(`${stage.label} 단계예요.`);
   if (slot.tentative) parts.push("노션에 업로드 날짜가 없어서 빈 날에 순서대로 넣어 봤어요.");
   if (slot.offDay) parts.push("업로드 요일이 아닌 날에 잡혀 있어요.");
+  if (isTarget && account.next) parts.push(`지금 가장 급한 편이에요. ${formatMonthDay(account.next.due)}까지 ${eul(account.next.label)} 끝내야 해요.`);
+  parts.push("누르면 노션, 보드, 소스 폴더 링크가 아래에 펼쳐져요.");
   return parts.join("\n");
 }
 
@@ -58,13 +69,8 @@ export function PipelineBoard() {
 }
 
 function Board({ data }: { data: PipelineData }) {
-  const [weeks, setWeeks] = useState<4 | 8>(4);
+  const [count, setCount] = useState<(typeof COUNTS)[number]>(12);
   const { bind, node } = useTip();
-  const dates = Array.from({ length: weeks * 7 }, (_, i) => {
-    const d = new Date(`${data.start}T00:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + i);
-    return d.toISOString().slice(0, 10);
-  });
 
   return (
     <>
@@ -73,17 +79,17 @@ function Board({ data }: { data: PipelineData }) {
           <div>
             <h1 className="content-title">채널 파이프라인 현황</h1>
             <p className="content-sub">
-              내일부터 올릴 업로드 칸을 노션 진행 상태로 칠했어요. 계정마다 며칠치가 준비됐는지 보고, 급한 계정이 위에 와요.
+              네모 하나가 앞으로 올릴 영상 한 편이에요. 노션 진행 상태로 칠했고, 급한 계정이 위에 와요.
             </p>
           </div>
           <div className="content-head-side">
             <span className="content-fresh" {...bind("노션 편집 진행도와 계정별 기획안을 5분마다 다시 읽어요.")}>
               노션 {formatClock(data.fetchedAt)} 기준
             </span>
-            <div className="content-toggle" role="group" aria-label="보는 기간">
-              {([4, 8] as const).map((w) => (
-                <button className={weeks === w ? "is-on" : ""} key={w} onClick={() => setWeeks(w)} type="button">
-                  {w}주
+            <div className="content-toggle" role="group" aria-label="보는 편수">
+              {COUNTS.map((c) => (
+                <button className={count === c ? "is-on" : ""} key={c} onClick={() => setCount(c)} type="button">
+                  {c}편
                 </button>
               ))}
             </div>
@@ -100,33 +106,18 @@ function Board({ data }: { data: PipelineData }) {
           <span className="pipe-legend-item" {...bind("올릴 영상이 아직 정해지지 않은 업로드 칸")} tabIndex={0}>
             <i className="pipe-swatch stage-empty" />빈 칸
           </span>
-          <span className="pipe-legend-item" {...bind("노션에 날짜가 없어서 빈 날에 순서대로 넣어 본 편")} tabIndex={0}>
+          <span className="pipe-legend-item" {...bind("노션에 업로드 날짜가 없어서 빈 날에 순서대로 넣어 본 편")} tabIndex={0}>
             <i className="pipe-swatch stage-edit is-tentative" />날짜 미정
+          </span>
+          <span className="pipe-legend-item" {...bind("그 계정에서 지금 가장 먼저 챙겨야 하는 편")} tabIndex={0}>
+            <i className="pipe-swatch is-target-swatch" />가장 급한 편
           </span>
         </div>
 
-        <div className="pipe-scroll">
-          <div className="pipe-grid" style={{ gridTemplateColumns: `var(--pipe-info) repeat(${dates.length}, minmax(var(--pipe-cell), 1fr))` }}>
-            <div className="pipe-corner">계정</div>
-            {dates.map((date) => {
-              const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
-              const first = date.endsWith("-01") || date === data.start;
-              return (
-                <div
-                  className={`pipe-date${dow === 0 || dow === 6 ? " is-weekend" : ""}${date === data.today ? " is-today" : ""}${dow === 1 ? " is-monday" : ""}`}
-                  key={date}
-                >
-                  <span className="pipe-date-month">{first ? `${Number(date.slice(5, 7))}월` : ""}</span>
-                  <span className="pipe-date-day">{Number(date.slice(8, 10))}</span>
-                  <span className="pipe-date-dow">{weekdayLabel(date)}</span>
-                </div>
-              );
-            })}
-
-            {data.accounts.map((account) => (
-              <AccountRow account={account} bind={bind} dates={dates} key={account.key} today={data.today} />
-            ))}
-          </div>
+        <div className="pipe-rows">
+          {data.accounts.map((account) => (
+            <AccountRow account={account} bind={bind} count={count} key={account.key} today={data.today} />
+          ))}
         </div>
       </section>
 
@@ -145,7 +136,7 @@ function Board({ data }: { data: PipelineData }) {
                   {STAGES.map((stage) => (
                     <span key={stage.key}>
                       <i className={`pipe-swatch stage-${stage.key}`} />
-                      {stage.short} {account.stock[stage.key]}편
+                      {stage.label} {account.stock[stage.key]}편
                     </span>
                   ))}
                 </p>
@@ -183,94 +174,149 @@ type Bind = ReturnType<typeof useTip>["bind"];
 
 function AccountRow({
   account,
-  dates,
+  count,
   today,
   bind,
 }: {
   account: PipelineAccount;
-  dates: string[];
+  count: number;
   today: string;
   bind: Bind;
 }) {
-  const byDate = new Map<string, PipelineSlot[]>();
-  for (const slot of account.slots) byDate.set(slot.date, [...(byDate.get(slot.date) ?? []), slot]);
+  const [picked, setPicked] = useState<number | null>(null);
+  const slots = account.slots.slice(0, count);
+  const pickedSlot = picked !== null ? slots[picked] : undefined;
+  let readyRun = 0;
+  while (readyRun < account.slots.length && account.slots[readyRun].stage === "ready") readyRun += 1;
+  const lastReady = readyRun ? account.slots[readyRun - 1].date : null;
+  const level = account.next ? urgency(account.next.due, today) : "is-ok";
+  const targetIndex = account.next ? account.slots.findIndex((s) => s.date === account.next?.forDate) : -1;
+
+  const actionText = account.next
+    ? account.next.due < today
+      ? `${account.next.label} 늦음 (마감 ${formatMonthDay(account.next.due)})`
+      : `${account.next.due === today ? "오늘" : formatMonthDay(account.next.due)}까지 ${account.next.label}`
+    : "준비 끝";
 
   return (
-    <>
+    <div className="pipe-row">
       <div className="pipe-info">
         <div className="pipe-name" {...bind(account.note)} tabIndex={0}>
           {account.name}
           <small>{account.owner}</small>
         </div>
-        {account.next ? (
-          <p
-            className={`pipe-next ${urgency(account.next.due, today)}`}
-            {...bind(
-              account.next.due < today
-                ? `${dayLabel(account.next.forDate)} 업로드분을 맞추려면 ${formatMonthDay(account.next.due)}까지 ${eul(account.next.label)} 끝냈어야 해요. 지금 바로 챙겨야 해요.`
-                : `${dayLabel(account.next.forDate)} 업로드분을 맞추려면 ${formatMonthDay(account.next.due)}까지 ${eul(account.next.label)} 끝내야 해요.`,
-            )}
-            tabIndex={0}
-          >
-            {account.next.due < today
-              ? `${account.next.label} 늦음`
-              : `${account.next.due === today ? "오늘" : formatMonthDay(account.next.due)}까지 ${account.next.label}`}
-            <span> ({formatMonthDay(account.next.forDate)} 업로드분)</span>
-          </p>
-        ) : (
-          <p className="pipe-next is-ok">8주치 준비 끝</p>
-        )}
-        <p className="pipe-days">
-          {STAGES.filter((s) => s.key !== "edit").map((stage) => (
-            <span
-              key={stage.key}
-              {...bind(
-                stage.key === "ready"
-                  ? "내일부터 편집이 끝난 편으로 끊기지 않고 올릴 수 있는 날 수"
-                  : stage.key === "shot"
-                    ? "내일부터 찍어 둔 소스(편집 중 포함)로 채울 수 있는 날 수"
-                    : "내일부터 기획안까지 포함해서 채울 수 있는 날 수",
-              )}
-              tabIndex={0}
-            >
-              <i className={`pipe-swatch stage-${stage.key}`} />
-              {stage.key === "ready" ? "편집 끝" : stage.key === "shot" ? "소스" : "기획"} {daysText(account.days[stage.key])}
-            </span>
-          ))}
-        </p>
+        <div
+          className={`pipe-run ${level}`}
+          {...bind(
+            readyRun
+              ? `편집이 끝난 영상으로 ${dayLabel(lastReady!)} 업로드까지 ${readyRun}편을 끊기지 않고 올릴 수 있어요.`
+              : "다음 업로드할 영상부터 편집이 아직 안 끝났어요.",
+          )}
+          tabIndex={0}
+        >
+          <span className="pipe-run-label">편집 끝</span>
+          <b>{readyRun}편</b>
+          <span className="pipe-run-sub">{lastReady ? `${formatMonthDay(lastReady)} 업로드까지` : "다음 편부터 없음"}</span>
+        </div>
         <ShootLine account={account} />
         {account.stale ? (
-          <p className="pipe-stale" {...bind("노션 업로드 예정일이 지났는데 진행 상태가 업로드 완료로 안 바뀐 편이에요. 상태를 고쳐 주세요.")} tabIndex={0}>
+          <p
+            className="pipe-stale"
+            {...bind("노션 업로드 예정일이 지났는데 진행 상태가 업로드 완료로 안 바뀐 편이에요. 상태를 고쳐 주세요.")}
+            tabIndex={0}
+          >
             날짜 지난 편 {account.stale}개 상태 확인
           </p>
         ) : null}
       </div>
-      {dates.map((date) => {
-        const slots = byDate.get(date) ?? [];
-        const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
-        return (
-          <div
-            className={`pipe-cell${dow === 0 || dow === 6 ? " is-weekend" : ""}${date === today ? " is-today" : ""}${dow === 1 ? " is-monday" : ""}`}
-            key={date}
-          >
-            {slots.map((slot, index) =>
-              slot.url ? (
-                <a
-                  className={`pipe-slot stage-${slot.stage}${slot.tentative ? " is-tentative" : ""}${slot.offDay ? " is-offday" : ""}`}
-                  href={slot.url}
-                  key={index}
-                  rel="noopener noreferrer"
-                  target="_blank"
-                  {...bind(slotTip(slot, account))}
-                />
-              ) : (
-                <span className={`pipe-slot stage-${slot.stage}`} key={index} tabIndex={0} {...bind(slotTip(slot, account))} />
-              ),
-            )}
-          </div>
-        );
-      })}
-    </>
+
+      <div className="pipe-track">
+        <div className="pipe-squares">
+          {slots.map((slot, index) => {
+            const gap = index > 0 && weekOf(slot.date) !== weekOf(slots[index - 1].date);
+            const isTarget = index === targetIndex;
+            const className = [
+              "pipe-sq",
+              `stage-${slot.stage}`,
+              slot.tentative ? "is-tentative" : "",
+              isTarget ? "is-target" : "",
+              gap ? "is-week-start" : "",
+            ]
+              .filter(Boolean)
+              .join(" ");
+            const body = (
+              <>
+                <span className="pipe-sq-date">{formatMonthDay(slot.date)}</span>
+                <span className={`pipe-sq-dow${slot.offDay ? " is-off" : ""}`}>
+                  {slot.holiday ? "공휴일" : weekdayLabel(slot.date)}
+                </span>
+              </>
+            );
+            return (
+              <button
+                aria-pressed={picked === index}
+                className={`${className}${picked === index ? " is-picked" : ""}`}
+                key={`${slot.date}-${index}`}
+                onClick={() => setPicked(picked === index ? null : index)}
+                type="button"
+                {...bind(slotTip(slot, account, isTarget))}
+              >
+                {body}
+              </button>
+            );
+          })}
+        </div>
+        <p
+          className={`pipe-next ${level}`}
+          {...bind(
+            account.next
+              ? `${dayLabel(account.next.forDate)} 업로드분을 맞추려면 ${formatMonthDay(account.next.due)}까지 ${eul(account.next.label)} ${account.next.due < today ? "끝냈어야 해요. 지금 바로 챙겨야 해요." : "끝내야 해요."}`
+              : "앞으로 8주 업로드분이 모두 편집까지 끝났어요.",
+          )}
+          tabIndex={0}
+        >
+          {actionText}
+          {account.next ? <span> ({formatMonthDay(account.next.forDate)} 업로드분, 빨간 테두리)</span> : null}
+        </p>
+        {pickedSlot ? <SlotDetail slot={pickedSlot} /> : null}
+      </div>
+    </div>
+  );
+}
+
+/** 네모를 누르면 줄 아래에 펼치는 그 영상의 정보와 링크 */
+function SlotDetail({ slot }: { slot: PipelineSlot }) {
+  const stage = STAGES.find((s) => s.key === slot.stage);
+  return (
+    <div className="pipe-detail">
+      <p className="pipe-detail-title">
+        {dayLabel(slot.date)} {slot.stage === "empty" ? "올릴 영상 없음" : slot.title}
+      </p>
+      {slot.stage !== "empty" ? (
+        <p className="pipe-detail-meta">
+          {stage?.label}, 노션 상태 {slot.status}
+          {slot.editor && slot.editor !== "미정" ? `, 편집 ${slot.editor}` : ""}
+          {slot.tentative ? ", 노션에 업로드 날짜 없음" : ""}
+        </p>
+      ) : null}
+      <p className="pipe-detail-links">
+        {slot.url ? (
+          <a href={slot.url} rel="noopener noreferrer" target="_blank">
+            노션
+          </a>
+        ) : null}
+        <a href={BOARD_URL} rel="noopener noreferrer" target="_blank">
+          보드에서 보기
+        </a>
+        {slot.folder ? (
+          <a href={slot.folder} rel="noopener noreferrer" target="_blank">
+            소스 폴더
+          </a>
+        ) : (
+          <span className="is-none">소스 폴더 없음</span>
+        )}
+      </p>
+    </div>
   );
 }
 

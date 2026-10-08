@@ -211,6 +211,8 @@ export type PipelineItem = {
   editor: string;
   date: string | null;
   url: string;
+  /** 편집 진행도 「영상 폴더」 (소스 폴더) */
+  folder?: string;
 };
 
 export type PipelineSlot = {
@@ -220,10 +222,13 @@ export type PipelineSlot = {
   status?: string;
   editor?: string;
   url?: string;
+  folder?: string;
   /** 노션에 날짜가 없어 순서대로 넣어 본 편 */
   tentative?: boolean;
   /** 업로드 요일이 아닌 날에 노션 날짜가 잡힌 편 */
   offDay?: boolean;
+  /** 평일 공휴일 */
+  holiday?: boolean;
 };
 
 export type PipelineAction = {
@@ -302,6 +307,7 @@ function progressItem(page: NotionPage): (PipelineItem & { influencer: string })
     editor: propText(page, "편집자"),
     date: propDate(page, "업로드 예정일")?.start.slice(0, 10) ?? null,
     url: page.url,
+    folder: propText(page, "영상 폴더") || undefined,
     influencer: propText(page, "인플루언서"),
   };
 }
@@ -355,15 +361,16 @@ function buildAccount(
     for (let date = start; date <= end; date = addDays(date, 1)) {
       const onDay = dated.get(date) ?? [];
       const uploadDay = isUploadDay(account, date);
+      const holiday = HOLIDAYS.has(date) && dayOfWeek(date) >= 1 && dayOfWeek(date) <= 5;
       for (const item of onDay) {
-        slots.push({ date, stage: item.stage, title: item.title, status: item.status, editor: item.editor, url: item.url, offDay: !uploadDay });
+        slots.push({ date, stage: item.stage, title: item.title, status: item.status, editor: item.editor, url: item.url, folder: item.folder, offDay: !uploadDay, holiday });
       }
       if (uploadDay && onDay.length === 0) {
         const item = undated.shift();
         slots.push(
           item
-            ? { date, stage: item.stage, title: item.title, status: item.status, editor: item.editor, url: item.url, tentative: true }
-            : { date, stage: "empty" },
+            ? { date, stage: item.stage, title: item.title, status: item.status, editor: item.editor, url: item.url, folder: item.folder, tentative: true, holiday }
+            : { date, stage: "empty", holiday },
         );
       }
     }

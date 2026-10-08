@@ -20,6 +20,7 @@ type NotionProperty = {
   date?: { start: string; end: string | null } | null;
   people?: Array<{ name?: string }>;
   number?: number | null;
+  url?: string | null;
 };
 
 export class NotionAccessError extends Error {
@@ -83,6 +84,8 @@ export function propText(page: NotionPage, name: string) {
       return (prop.people ?? []).map((p) => p.name ?? "").filter(Boolean).join(", ");
     case "number":
       return prop.number == null ? "" : String(prop.number);
+    case "url":
+      return prop.url ?? "";
     default:
       return "";
   }
