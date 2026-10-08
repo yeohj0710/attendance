@@ -6460,12 +6460,25 @@ function getTeamMonthlyTitleProfileMap(
       .map((record) => record.employeeId),
   );
 
+  const perEmployee = [...employeeIds].map((employeeId) => {
+    const stats = getEmployeeTitleStats(employeeId, teamMonth, todayDate, todayWorkLog);
+    const titles = getEmployeeTitles(stats);
+    return { employeeId, stats, titles, achievedTitles: titles.filter((title) => title.achieved) };
+  });
+
+  /* 대표 칭호: 그 달 팀에서 가장 적은 사람이 받은 칭호(같으면 목록 뒤쪽). 첫 칸 "출근 스타터"는 누구나 받아서
+     모두 같은 칭호만 뜨던 것을 고친다. 다른 칭호가 하나도 없을 때만 "출근 스타터"가 나온다 (261008 대표님) */
+  const holders = new Map<string, number>();
+  for (const { achievedTitles } of perEmployee) {
+    for (const title of achievedTitles) holders.set(title.id, (holders.get(title.id) ?? 0) + 1);
+  }
+
   return new Map(
-    [...employeeIds].map((employeeId) => {
-      const stats = getEmployeeTitleStats(employeeId, teamMonth, todayDate, todayWorkLog);
-      const titles = getEmployeeTitles(stats);
-      const achievedTitles = titles.filter((title) => title.achieved);
-      const representativeTitle = achievedTitles[0] ?? titles[0];
+    perEmployee.map(({ employeeId, stats, titles, achievedTitles }) => {
+      const representativeTitle =
+        achievedTitles
+          .map((title, index) => ({ title, index, count: holders.get(title.id) ?? 0 }))
+          .sort((a, b) => a.count - b.count || b.index - a.index)[0]?.title ?? titles[0];
       const totalXp = getMonthlyTitleXp(stats, achievedTitles.length);
       const levelInfo = getTitleLevelInfo(totalXp);
       const entry: TeamTitleEntry = {
