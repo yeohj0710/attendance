@@ -110,6 +110,18 @@ function firstNameOf(name?: string | null) {
   return trimmed.length >= 3 ? trimmed.slice(1) : trimmed;
 }
 
+/* 마지막 근무일 퇴근 인사. [이름, 마지막 날(KST YYYY-MM-DD), 인사] 그날 그 사람이 퇴근을 찍으면 맨 앞에 보인다 */
+const FAREWELLS: Array<[string, string, string]> = [
+  ["유현일", "2026-10-08", "현일님, 오늘이 마지막 퇴근이네요. 그동안 콘텐츠팀 일을 하나하나 챙겨 주셔서 정말 고마웠어요. 어디서든 잘 지내요, 늘 응원할게요!"],
+];
+
+function farewellFor(name: string | null | undefined, nowIso?: string | null) {
+  const plain = (name ?? "").replace(/\s/g, "");
+  const now = nowIso ? new Date(nowIso) : new Date();
+  const day = new Date(now.getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
+  return FAREWELLS.find(([who, last]) => plain.includes(who) && day === last)?.[2] ?? null;
+}
+
 export function createMixedGreetings(
   context: MixedGreetingContext,
   event: GreetingEvent = "visit",
@@ -229,7 +241,9 @@ export function createMixedGreetings(
   for (let round = 0; round < 2; round++) {
     for (const pool of pools) if (pool[round]) out.push(pool[round]);
   }
-  return Array.from(new Set(out.map((line) => line.replace(/[—·]/g, ",").trim()))).slice(0, count);
+  const lines = Array.from(new Set(out.map((line) => line.replace(/[—·]/g, ",").trim())));
+  const farewell = event === "checkOut" ? farewellFor(context.employeeName, context.nowIso) : null;
+  return (farewell ? [farewell, ...lines] : lines).slice(0, count);
 }
 
 /* 이 PC에서 최근 보여 준 문장은 빼고 고른다. 숫자만 다른 같은 틀도 같은 문장으로 본다. */
