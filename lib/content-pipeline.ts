@@ -22,7 +22,11 @@ import { SCHEDULE_DATABASE_ID } from "@/lib/content-schedule";
  */
 
 const PROGRESS_DATABASE_ID = "3453b1f9b9ae80e8b0c0f319797c99f3";
-/* 할 일 달력 업로드 줄 시작일. 캘린더는 이날부터 노션 제목으로 체크 키를 만들어서 고정이어야 한다 (캘린더 이사 세션과 맞춤) */
+/*
+ * 할 일 달력 업로드 줄(getPipelineData().uploads)은 캘린더(lib/content-uploads.ts → public/content/daily.js)가 그대로 쓴다.
+ * 캘린더는 제목(공백 정리)으로 할 일 체크 키를 만들어서, 아래 셋을 바꾸면 체크가 사라진다. 바꾸기 전에 캘린더 쪽과 먼저 맞춘다.
+ * 1. 시작일 UPLOADS_FROM(10/9 고정) 2. 제목은 노션 「영상 제목」 원문 3. 계정 키(calendarAccount: 전종열 약사님 jay, 10/26 부터 jaykr, 닥터 닭갈비 taeeun)
+ */
 const UPLOADS_FROM = "2026-10-09";
 const HORIZON_DAYS = 56;
 const CACHE_SECONDS = 300;
