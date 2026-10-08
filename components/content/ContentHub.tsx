@@ -108,7 +108,7 @@ export function ContentHub({ who }: { who: string | null }) {
             <PipelineSummary data={state.data} onOpenAll={() => choose("all")} who={who} />
           ) : (
             <div className="hub-board">
-              <Board data={state.data} embedded />
+              <Board data={state.data} embedded forceAll />
             </div>
           )
         ) : (

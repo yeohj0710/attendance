@@ -4,6 +4,8 @@ import { useState } from "react";
 import { ContentShell, useEmbedMode, useTip } from "@/components/content/ContentShell";
 import { formatClock, formatMonthDay, useContentData, weekdayLabel } from "@/components/content/useContentData";
 import { stageRuns, type RunStage } from "@/components/content/pipelineRuns";
+import { OWNER_BY_WHO } from "@/components/content/PipelineHomeCard";
+import { contentTeamKey } from "@/components/employee/ContentTeamToday";
 import type { PipelineAccount, PipelineData, PipelineSlot, Stage } from "@/lib/content-pipeline";
 
 /*
@@ -77,11 +79,21 @@ export function PipelineBoard() {
   );
 }
 
-/** 채널 현황 본문. embedded 면 업무 시스템 첫 화면 토글 안에 머리글 없이 들어간다 */
-export function Board({ data, embedded = false }: { data: PipelineData; embedded?: boolean }) {
+/**
+ * 채널 현황 본문. embedded 면 업무 시스템 첫 화면 토글이나 /hub 안에 머리글 없이 들어간다.
+ * 보는 사람이 콘텐츠팀 PD님이면 그분 담당 채널만 먼저 보여 주고 "전체"로 넓힐 수 있다 (261008 대표님 결정).
+ * forceAll 이면 처음부터 전체 (첫 화면 "전체 채널" 토글).
+ */
+export function Board({ data, embedded = false, forceAll = false }: { data: PipelineData; embedded?: boolean; forceAll?: boolean }) {
   const [count, setCount] = useState<(typeof COUNTS)[number]>(12);
+  const who = contentTeamKey(data.viewer?.name);
+  const owner = who ? OWNER_BY_WHO[who] : null;
+  const [showAll, setShowAll] = useState(forceAll);
   const { bind, node } = useTip();
   const section = embedded ? "pipe-embed-section" : "content-card";
+  const mineOnly = Boolean(owner) && !showAll;
+  const accounts = mineOnly ? data.accounts.filter((a) => a.owner === owner) : data.accounts;
+  const waiting = mineOnly ? data.waiting.filter((a) => a.owner === owner) : data.waiting;
 
   return (
     <>
@@ -99,6 +111,16 @@ export function Board({ data, embedded = false }: { data: PipelineData; embedded
             <span className="content-fresh" {...bind("노션 편집 진행도와 계정별 기획안을 5분마다 다시 읽어요.")}>
               노션 {formatClock(data.fetchedAt)} 기준
             </span>
+            {owner ? (
+              <div className="content-toggle" role="group" aria-label="보는 채널">
+                <button className={showAll ? "" : "is-on"} onClick={() => setShowAll(false)} type="button">
+                  내 채널
+                </button>
+                <button className={showAll ? "is-on" : ""} onClick={() => setShowAll(true)} type="button">
+                  전체
+                </button>
+              </div>
+            ) : null}
             <div className="content-toggle" role="group" aria-label="보는 편수">
               {COUNTS.map((c) => (
                 <button className={count === c ? "is-on" : ""} key={c} onClick={() => setCount(c)} type="button">
@@ -128,17 +150,18 @@ export function Board({ data, embedded = false }: { data: PipelineData; embedded
         </div>
 
         <div className="pipe-rows">
-          {data.accounts.map((account) => (
+          {accounts.length ? null : <p className="pipe-card-empty">맡은 채널 가운데 업로드 일정이 잡힌 곳이 없어요.</p>}
+          {accounts.map((account) => (
             <AccountRow account={account} bind={bind} count={count} key={account.key} today={data.today} />
           ))}
         </div>
       </section>
 
-      {data.waiting.length ? (
+      {waiting.length ? (
         <section className={section}>
           <h2 className="content-section-title">업로드 전 계정</h2>
           <div className="pipe-waiting">
-            {data.waiting.map((account) => (
+            {waiting.map((account) => (
               <div className="pipe-waiting-item" key={account.key}>
                 <div className="pipe-name">
                   {account.name}

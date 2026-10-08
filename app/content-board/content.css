@@ -280,3 +280,4 @@
   .cal-event { padding: 1px 3px; font-size: 10.5px; }
   .cal-event b { display: none; }
 }
+.content-page .pipe-card-empty { margin: 0; padding: 16px 0; text-align: center; font-size: 13px; color: #6b7690; }

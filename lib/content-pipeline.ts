@@ -255,6 +255,8 @@ export type PipelineAccount = {
 };
 
 export type PipelineData = {
+  /** 보는 사람 (API 가 붙인다, 캐시에는 없다) */
+  viewer?: { name: string; role: string };
   today: string;
   /** 칸을 세기 시작하는 날 (내일) */
   start: string;
@@ -473,13 +475,19 @@ async function loadPipeline(): Promise<PipelineData> {
     return buildAccount(account, today, mine, shoots, planDbMissing);
   });
 
+  /* 급한 순서: 편집 완료가 며칠분 남았나(화면 왼쪽 표 숫자)가 적은 순, 같으면 다음 할 일 마감이 빠른 순 */
+  const readyDays = (a: PipelineAccount) => {
+    let n = 0;
+    while (n < a.slots.length && a.slots[n].stage === "ready") n += 1;
+    if (n === a.slots.length) return 9999;
+    return n ? daysBetween(today, a.slots[n - 1].date) : 0;
+  };
   const accounts = built
     .filter((a) => a.slots.length > 0)
     .sort((a, b) => {
-      const ad = a.next?.due ?? "9999";
-      const bd = b.next?.due ?? "9999";
-      if (ad !== bd) return ad.localeCompare(bd);
-      return (a.days.ready ?? 999) - (b.days.ready ?? 999);
+      const diff = readyDays(a) - readyDays(b);
+      if (diff) return diff;
+      return (a.next?.due ?? "9999").localeCompare(b.next?.due ?? "9999");
     });
 
   return {
