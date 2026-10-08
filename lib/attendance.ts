@@ -157,7 +157,8 @@ type SessionData = {
   device_id?: string;
 };
 
-const formerTeamMemberNames = new Set(["홍현석"]);
+/** 화면에 안 보이게 하는 계정. 퇴사했거나 안 쓰는 계정이다. 기록은 지우지 않는다(261008 신소여, 이현수, 웰니스박스 추가). */
+const formerTeamMemberNames = new Set(["홍현석", "신소여", "이현수", "웰니스박스"]);
 const fixedPublicHolidayNames: Record<string, string> = {
   "01-01": "신정",
   "03-01": "삼일절",
@@ -746,13 +747,18 @@ const loadActiveEmployees = unstable_cache(
       .where("is_active", "==", true)
       .get();
 
-    return snapshot.docs.map((doc) => ({
-      id: doc.id,
-      employeeNo: (doc.data() as EmployeeData).employee_no ?? "",
-      employeeName: (doc.data() as EmployeeData).name ?? "",
-    }));
+    return snapshot.docs
+      .map((doc) => ({
+        id: doc.id,
+        employeeNo: (doc.data() as EmployeeData).employee_no ?? "",
+        employeeName: (doc.data() as EmployeeData).name ?? "",
+      }))
+      .filter(
+        (employee) =>
+          !formerTeamMemberNames.has(employee.employeeName.normalize("NFC").replace(/\s+/g, "")),
+      );
   },
-  ["active-employees-v2"],
+  ["active-employees-v3"],
   { revalidate: 36 * 60 * 60, tags: [ACTIVE_EMPLOYEES_CACHE_TAG] },
 );
 

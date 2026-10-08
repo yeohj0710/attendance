@@ -237,7 +237,8 @@ const CALENDAR_COLUMN_MIN_WIDTH = 88;
 const CALENDAR_CELL_INLINE_PADDING = 12;
 const CALENDAR_RECORD_INLINE_PADDING = 14;
 const weekdayLabels = ["일", "월", "화", "수", "목", "금", "토"];
-const formerTeamMemberNames = new Set(["홍현석"]);
+/** 화면에 안 보이게 하는 계정 (퇴사, 안 쓰는 계정). lib/attendance.ts 와 같은 목록. */
+const formerTeamMemberNames = new Set(["홍현석", "신소여", "이현수", "웰니스박스"]);
 const fixedPublicHolidayNames: Record<string, string> = {
   "01-01": "신정",
   "03-01": "삼일절",
@@ -3336,11 +3337,14 @@ function GreetingTickerDots({
   );
 }
 
+const TEAM_TASK_PREVIEW_LIMIT = 6;
+
 function TodayTeamTasks({ record }: { record: TeamAttendanceRecord }) {
   const tasks = record.tasks ?? [];
   const mainTasks = tasks.filter((task) => task.section !== "later");
   const laterTasks = tasks.filter((task) => task.section === "later");
-  const shouldScroll = tasks.length > 6;
+  const [showAll, setShowAll] = useState(false);
+  const hiddenCount = showAll ? 0 : Math.max(0, mainTasks.length - TEAM_TASK_PREVIEW_LIMIT);
 
   if (!tasks.length) {
     return (
@@ -3351,14 +3355,19 @@ function TodayTeamTasks({ record }: { record: TeamAttendanceRecord }) {
   }
 
   return (
-    <div
-      className={`maple-team mt-3 space-y-3 ${
-        shouldScroll
-          ? "team-task-scroll max-h-[26rem] overflow-y-auto overscroll-contain rounded px-1.5 py-1"
-          : ""
-      }`}
-    >
-      <TaskPreviewList tasks={mainTasks} />
+    // 예전에는 7개부터 카드 안에서 따로 스크롤됐는데, 마우스가 카드 위에 있으면 페이지가 안 내려갔다.
+    // 이제 안쪽 스크롤 없이 6개까지 보이고 나머지는 "더 보기"로 편다.
+    <div className="maple-team mt-3 space-y-3">
+      <TaskPreviewList tasks={hiddenCount ? mainTasks.slice(0, TEAM_TASK_PREVIEW_LIMIT) : mainTasks} />
+      {hiddenCount || (showAll && mainTasks.length > TEAM_TASK_PREVIEW_LIMIT) ? (
+        <button
+          className="w-full rounded border border-dashed border-line py-1.5 text-xs font-bold text-muted hover:text-accent"
+          onClick={() => setShowAll((v) => !v)}
+          type="button"
+        >
+          {hiddenCount ? `${hiddenCount}개 더 보기` : "접기"}
+        </button>
+      ) : null}
       {laterTasks.length ? (
         <div>
           <p className="mb-1 text-[11px] font-bold text-muted">후순위</p>

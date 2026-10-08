@@ -82,6 +82,18 @@ function kstClock(nowIso?: string | null) {
   return { hour: kst.getUTCHours(), minute: kst.getUTCMinutes() };
 }
 
+/* lib/weather.ts 가 주는 날씨 코드 → 말 */
+const WEATHER_WORD: Record<string, string> = {
+  clear: "맑고",
+  cloudy: "흐리고",
+  rain: "비가 오고",
+  snow: "눈이 오고",
+  fog: "안개가 끼고",
+  windy: "바람이 세고",
+  hot: "덥고",
+  cold: "춥고",
+};
+
 function weekdayLine(weekday: string) {
   const lines: Record<string, string> = {
     월요일: "월요일이에요. 이번 주 할 일을 한 번 훑어보고 시작해요.",
@@ -177,7 +189,8 @@ export function createMixedGreetings(
   if (w && w.temperature != null) {
     const t = Math.round(w.temperature);
     const feel = w.apparentTemperature != null ? Math.round(w.apparentTemperature) : null;
-    const lines = [`지금 바깥은 ${w.label}, ${t}도예요.`];
+    const sky = WEATHER_WORD[w.label] ?? "";
+    const lines = [sky ? `지금 바깥은 ${sky} ${t}도예요.` : `지금 바깥은 ${t}도예요.`];
     if (feel !== null && Math.abs(feel - t) >= 3) lines.push(`기온은 ${t}도인데 체감은 ${feel}도예요. 나갈 때 옷 한 겹 챙겨요.`);
     if (w.precipitation) lines.push(`밖에 비가 와요(${w.precipitation}mm). 우산 챙겨 두세요.`);
     if (t <= 5) lines.push(`${t}도, 꽤 추워요. 따뜻한 차 한 잔 어때요?`);
