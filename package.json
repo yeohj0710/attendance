@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/stamp-content.mjs",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",

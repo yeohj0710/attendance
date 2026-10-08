@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>콘텐츠 팀 배치</title>
+<meta name="description" content="PD 3명, 보조 1명, 편집자 4명이 계정 10개를 나눠 맡는 배치와 4주 촬영 달력." />
+<meta name="robots" content="noindex, nofollow" />
+<meta name="theme-color" content="#EDF2F7" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+<link rel="stylesheet" href="./team.css?v=6d91466f6d" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231E62A8'/%3E%3Cpath d='M9 22V10h5.4c2.4 0 3.9 1.4 3.9 3.6 0 2.2-1.5 3.6-3.9 3.6H11.6V22H9zm2.6-6.9h2.5c1.1 0 1.8-.6 1.8-1.5s-.7-1.5-1.8-1.5h-2.5v3z' fill='%23fff'/%3E%3C/svg%3E" />
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="back" href="./index.html">← 육성 조직 구조안</a>
+    <div class="mark">WELLNESSBOX 콘텐츠팀</div>
+    <h1>콘텐츠 팀 배치</h1>
+    <p class="lead">
+      PD 3명, 보조 1명, 편집자 4명이 계정 10개를 나눠 맡습니다.
+      PD 한 명은 되도록 편집자 한 명하고만 일하고(퓨어 후 3팀만 두 명), 외근 보조는 전부 이민우님이 갑니다.
+    </p>
+    <p class="asof">2026. 09. 29 기준. 노션 일정, 편집 진행도, 유현일님 폴더 편집 의뢰 목록을 맞춰 짰습니다.</p>
+    <div class="mode" role="group" aria-label="퓨어약국 약사님 합류 전후">
+      <button type="button" class="mode-btn phase-btn is-on" data-phase="before">퓨어 전: 약국 계정 촬영은 권현우 PD님</button>
+      <button type="button" class="mode-btn phase-btn" data-phase="after">퓨어 후: 어라운드팜 김호준 PD님, 미미팜 송아영 PD님</button>
+    </div>
+    <p class="asof"><a href="./daily.html"><b>4인 운영 달력 (10/12부터 날마다 할 일) →</b></a></p>
+    <p class="asof">위 버튼은 01 담당표, 04 반복 4주, 06 편집자 물량을 바꿉니다. 02 10월 표는 퓨어 전 기준입니다.</p>
+
+  </div>
+</header>
+
+<main>
+
+<section class="sec">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-no">01</span>
+      <h2>계정별 담당표</h2>
+      <p>한 줄이 한 계정입니다. 누가 찍는지, 누가 보조로 따라가는지, 누가 편집하는지를 한 줄에 적었습니다.</p>
+    </div>
+    <div class="roster" id="roster"></div>
+  </div>
+</section>
+
+<section class="sec sec-alt">
+  <div class="wrap wide">
+    <div class="sec-head">
+      <span class="sec-no">02</span>
+      <h2>10월 주차별 촬영</h2>
+      <p>요일은 정하지 않고 주차만 정했습니다. 한 주에 촬영이 몰리지 않게 흩었습니다. <b>색이 찬 칸</b>은 본인이 찍는 촬영, <b>테두리만 있는 칸</b>은 보조나 동행입니다.</p>
+    </div>
+    <div class="legend">
+      <span><i class="lg lg-booked"></i>노션에 잡힌 촬영</span>
+      <span><i class="lg lg-prop"></i>새로 넣은 촬영</span>
+      <span><i class="lg lg-done"></i>끝난 촬영</span>
+    </div>
+    <div class="mx" id="octMatrix"></div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="wrap wide">
+    <div class="sec-head">
+      <span class="sec-no">03</span>
+      <h2>계정별 업로드 이어짐</h2>
+      <p>한 줄이 한 계정입니다. 진한 막대는 노션에 날짜가 잡힌 업로드, 빗금 막대는 그 주차 촬영분으로 채울 구간, 빨간 칸은 비는 날입니다.</p>
+    </div>
+    <div class="gantt-wrap"><div class="gantt" id="gantt"></div></div>
+  </div>
+</section>
+
+<section class="sec sec-alt">
+  <div class="wrap wide">
+    <div class="sec-head">
+      <span class="sec-no">04</span>
+      <h2>반복 4주</h2>
+      <p>10월 3주차부터 이 4주가 돌아갑니다 (1주 = 10/12, 11/9, 12/7 주). 퓨어 전후 모두 주마다 촬영 3~5회, 이민우님 외근 1~2회입니다. 맨 위 버튼으로 전후를 바꿔 보세요.</p>
+    </div>
+    <div class="mx" id="cycleMatrix"></div>
+    <div class="counts" id="counts"></div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-no">05</span>
+      <h2>확인할 것</h2>
+      <p>노션 일정, 편집 진행도, 유현일님 폴더의 편집 의뢰 목록을 맞춰 보다가 걸린 것들입니다.</p>
+    </div>
+    <ol class="checks" id="checks"></ol>
+  </div>
+</section>
+
+<section class="sec sec-alt">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-no">06</span>
+      <h2>편집자 물량</h2>
+      <p>막대 하나가 편집자 한 명입니다. 새 계정까지 다 열린 뒤 주간 편수입니다.</p>
+    </div>
+    <div class="card">
+      <div id="editorBars"></div>
+      <p class="foot">노재영님, 윤민유님은 물량을 더 원합니다(점선은 예전 목표 16편). 엄성미님은 주 10편 미만. 조하늘님은 계약상 주 10편 이내.</p>
+    </div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-no">07</span>
+      <h2>옮겨 가는 순서</h2>
+      <p>새 PD님들(송아영 PD님, 권현우 PD님)은 입사한 날 바로 계정을 넘겨받습니다. 첫 외근에만 김호준 PD님이 같이 갑니다.</p>
+    </div>
+    <ol class="steps" id="steps"></ol>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot-bar">
+  <div class="wrap">자세한 조건과 대안: 노션 "업무 분배_260929"</div>
+</footer>
+
+<script src="./team.js?v=08d03267aa"></script>
+</body>
+</html>

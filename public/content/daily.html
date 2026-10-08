@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>콘텐츠팀 캘린더</title>
+<meta name="description" content="10/12부터 김호준, 송아영, 권현우 PD님과 이민우님 네 분의 날짜별 할 일 달력." />
+<meta name="robots" content="noindex, nofollow" />
+<meta name="theme-color" content="#F3F5F8" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&display=swap" />
+<link rel="stylesheet" href="./daily.css?v=9c0cc4b09d" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231E62A8'/%3E%3Cpath d='M9 22V10h5.4c2.4 0 3.9 1.4 3.9 3.6 0 2.2-1.5 3.6-3.9 3.6H11.6V22H9zm2.6-6.9h2.5c1.1 0 1.8-.6 1.8-1.5s-.7-1.5-1.8-1.5h-2.5v3z' fill='%23fff'/%3E%3C/svg%3E" />
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="back" href="./team.html">← 콘텐츠 팀 배치</a>
+    <h1>콘텐츠팀 캘린더</h1>
+    <p class="lead">10/12(월)부터 네 분이 계정 11개를 맡습니다. 한 분에 달력 하나, 날짜 칸마다 그날 할 일과 걸리는 시간을 적었습니다.</p>
+    <p class="howto">칸 아래 <b>+ 할 일</b>로 추가, 항목을 다른 날로 <b>끌어다 놓기</b>, <b>✎</b>로 고치기와 지우기. <span id="sync" class="sync"></span></p>
+    <p class="asof">2026. 10. 07 기준. 노션 편집 진행도와 일정, 피드백 보드, 카톡 방별 대화, 드라이브 릴스 목록을 맞췄습니다.</p>
+    <nav class="jump" id="jump" aria-label="사람별 달력으로 이동"></nav>
+  </div>
+</header>
+
+<main id="cals"></main>
+
+<section class="panel" id="panel-editors" hidden>
+  <div class="wrap wide">
+    <div class="panel-box">
+      <h2 class="sec-title">계정별 남은 영상과 촬영 편수</h2>
+      <p class="sec-sub">남은 영상이 업로드 속도로 언제까지 버티는지 보고, 다음 촬영에 몇 편을 찍어야 끊기지 않는지 계산했습니다. 촬영분은 편집에 1~2주 걸려 촬영 2주 뒤부터 올린다고 봤습니다. 달력 주 띠와 촬영 준비 줄에도 편수를 적었습니다.</p>
+      <div class="stock" id="stock"></div>
+      <h2 class="sec-title sec-gap">편집자 물량</h2>
+      <p class="sec-sub">10/7 노션 편집 진행도에서 셌습니다. 편집 의뢰는 매주 월요일 "편집 점검" 한 번에 합니다(이번 주 업로드 일정 확인, 조정 + 의뢰). 편집이 안 끝난 업로드는 이틀 전 칸에 "납품 확인"으로 한 번 더 걸어 두었습니다.</p>
+      <div class="editors" id="editors"></div>
+    </div>
+  </div>
+</section>
+
+<section class="panel" id="panel-ref" hidden>
+  <div class="wrap wide">
+    <div class="panel-box">
+      <h2 class="sec-title">촬영 준비 규칙</h2>
+      <div class="rule-grid" id="rules"></div>
+      <h2 class="sec-title sec-gap">확인할 것</h2>
+      <ol class="checks" id="checks"></ol>
+      <h2 class="sec-title sec-gap">자료 위치</h2>
+      <ul class="sources" id="sources"></ul>
+    </div>
+  </div>
+</section>
+
+<footer class="foot-bar">
+  <div class="wrap">원장: 노션 인플루언서 스케줄 및 진행도, 업무 매뉴얼, 업무 분배_260929. 배치 전체는 <a href="./team.html">콘텐츠 팀 배치</a>.</div>
+</footer>
+
+<script src="./daily.js?v=8bb7ebc2f9"></script>
+</body>
+</html>

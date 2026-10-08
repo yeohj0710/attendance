@@ -4,18 +4,20 @@ import { useEffect, useRef, useState } from "react";
 import { TaskText } from "@/components/employee/TaskText";
 
 /**
- * 콘텐츠팀 캘린더(별도 사이트)의 오늘 할 일을 출퇴근기록부 업무일지에 진짜 업무로 넣는다.
+ * 콘텐츠팀 캘린더(public/content/daily.html, 같은 출처)의 오늘 할 일을 출퇴근기록부 업무일지에 진짜 업무로 넣는다.
  *
  * 보이지 않는 창으로 캘린더를 ?embed=data 로 열면 캘린더가 오늘 할 일 목록을 보내 준다.
  * 일지에 없는 게 있거나 설명이 바뀌었으면 /api/work-log/calendar 를 한 번 불러 맞춘다.
  * 넣고 나면 보통 업무와 똑같이 드래그, 고치기, 지우기, 이월이 된다.
  * 체크는 양쪽에 남는다: 여기서 체크하면 sendCalendarToggle 로 캘린더에도 보내고,
  * 캘린더에서 끝낸 일은 다음 동기화 때 여기도 끝냄으로 바뀐다.
- * 메시지 모양은 C:\dev\pharmacist-mcn-structure\dist\daily.js 의 sendTasks 와 맞춘다.
+ * 메시지 모양은 public/content/daily.js 의 sendTasks 와 맞춘다.
  */
-const CALENDAR_URL =
-  process.env.NEXT_PUBLIC_CONTENT_CALENDAR_URL ?? "https://pharmacist-mcn-structure.vercel.app";
-const CALENDAR_ORIGIN = new URL(CALENDAR_URL).origin;
+const CALENDAR_URL = process.env.NEXT_PUBLIC_CONTENT_CALENDAR_URL ?? "/content";
+/* 261008 캘린더를 출퇴근기록부 안으로 옮겨서 보통은 같은 출처다 */
+function calendarOrigin() {
+  return new URL(CALENDAR_URL, window.location.href).origin;
+}
 const FRAME_ATTR = "data-content-calendar";
 
 /* 출퇴근기록부 이름 → 캘린더의 사람 키 */
@@ -69,7 +71,7 @@ function isRecentlyToggled(key: string) {
 export function sendCalendarToggle(key: string, done: boolean) {
   recentToggles.set(key, Date.now());
   const frame = document.querySelector<HTMLIFrameElement>(`iframe[${FRAME_ATTR}]`);
-  frame?.contentWindow?.postMessage({ source: "attendance", type: "toggle", key, done }, CALENDAR_ORIGIN);
+  frame?.contentWindow?.postMessage({ source: "attendance", type: "toggle", key, done }, calendarOrigin());
 }
 
 function useCalendarData(who: string | null) {
@@ -81,7 +83,7 @@ function useCalendarData(who: string | null) {
     if (!who) return;
 
     function handleMessage(event: MessageEvent) {
-      if (event.origin !== CALENDAR_ORIGIN) return;
+      if (event.origin !== calendarOrigin()) return;
       const msg = event.data as (CalendarData & { source?: string; type?: string }) | null;
       if (!msg || msg.source !== "content-calendar" || msg.type !== "tasks" || msg.who !== who) return;
       setData({ who: msg.who, today: msg.today, upcoming: msg.upcoming ?? [], url: msg.url });
@@ -89,7 +91,7 @@ function useCalendarData(who: string | null) {
 
     /* 창을 다시 볼 때 캘린더에서 바뀐 것 받아 오기 */
     function handleFocus() {
-      frameRef.current?.contentWindow?.postMessage({ source: "attendance", type: "refresh" }, CALENDAR_ORIGIN);
+      frameRef.current?.contentWindow?.postMessage({ source: "attendance", type: "refresh" }, calendarOrigin());
     }
 
     window.addEventListener("message", handleMessage);
