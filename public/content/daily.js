@@ -674,7 +674,7 @@ const fmtMin = (m) => (m >= 60 ? `${Math.floor(m / 60)}시간${m % 60 ? ` ${m % 
 const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; };
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 /* 이 이름(과 TODO 의 lb "인수인계", "할 일")은 업무 시스템 lib/work-log.ts getCarryoverTasks 가 못 끝낸 일을 다음 날로 넘길지 정하는 데 쓴다.
-   루틴, 업로드, 촬영, 예약, 원격, 확인, 빈 날, 미정은 안 넘긴다. 이름을 바꾸면 그쪽 규칙도 같이 고친다 (261008) */
+   업로드, 예약, 마감, 편집, 할 일, 인수인계, 추가만 넘기고 나머지(새 종류 포함)는 안 넘긴다. 이름을 바꾸거나 새 종류를 넘기려면 그쪽 규칙도 같이 고친다 (261008) */
 const KIND = { shoot: "촬영", todo: "할 일", due: "마감", edit: "편집", remote: "원격", up: "업로드", gap: "빈 날", tbd: "미정", routine: "루틴", check: "확인", own: "추가", plan: "기획", mirror: "예약" };
 
 let toastTimer = null;
