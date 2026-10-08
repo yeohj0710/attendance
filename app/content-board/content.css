@@ -140,7 +140,19 @@
 .pipe-stock { display: flex; flex-wrap: wrap; gap: 2px 10px; margin: 6px 0 0; font-size: 12px; color: #4a5568; }
 .pipe-stock span { display: inline-flex; align-items: center; gap: 4px; }
 
-.pipe-squares { display: flex; flex-wrap: wrap; gap: 5px; }
+.pipe-scroll-x { overflow-x: auto; padding: 3px 3px 4px; margin: -3px -3px 0; }
+.pipe-squares { display: flex; gap: 5px; width: max-content; }
+/* 막대 하나: 칸마다 그 칸까지 빈틈없이 이어진 가장 높은 단계 색. 네모와 같은 폭, 같은 주 간격으로 줄을 맞춘다 */
+.pipe-bar { display: flex; width: max-content; margin-top: 6px; }
+.pipe-bar-cell { width: 49px; height: 12px; }
+.pipe-bar-cell.is-first { border-radius: 4px 0 0 4px; }
+.pipe-bar-cell.is-last { width: 44px; border-radius: 0 4px 4px 0; }
+.pipe-bar-cell.is-week-start { margin-left: 9px; }
+.pipe-bar-cell.stage-empty { background: #f6d0d0; box-shadow: none; }
+.pipe-runs { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 8px 0 0; font-size: 12px; color: #4a5568; }
+.pipe-runs span { display: inline-flex; align-items: center; gap: 5px; cursor: default; }
+.pipe-runs b { color: #172033; font-variant-numeric: tabular-nums; }
+.pipe-runs .is-none b { color: #d13438; }
 .pipe-sq {
   width: 44px;
   height: 44px;
@@ -185,6 +197,8 @@
   .pipe-row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .pipe-run { flex-direction: row; align-items: baseline; gap: 6px; }
   .pipe-sq { width: 40px; height: 40px; }
+  .pipe-bar-cell { width: 45px; }
+  .pipe-bar-cell.is-last { width: 40px; }
 }
 
 /* ───────── 일정 달력 ───────── */

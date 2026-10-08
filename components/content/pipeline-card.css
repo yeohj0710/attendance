@@ -1,0 +1,28 @@
+/* 업무 시스템 첫 화면 채널 현황 카드 (components/content/PipelineHomeCard.tsx). 창은 maple-quest 를 그대로 쓴다 */
+.pipe-card-body { padding: 6px 14px; }
+.pipe-card-row {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 4px 12px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #eef1f6;
+  color: #172033;
+}
+.pipe-card-row:last-child { border-bottom: 0; }
+.pipe-card-row:hover .pipe-card-name { color: #2f73e0; }
+.pipe-card-name { font-size: 13px; font-weight: 700; }
+.pipe-card-bar { display: flex; gap: 2px; height: 12px; }
+.pipe-card-bar i { flex: 1; min-width: 6px; max-width: 28px; }
+.pipe-card-bar i:first-child { border-radius: 3px 0 0 3px; }
+.pipe-card-bar i:last-child { border-radius: 0 3px 3px 0; }
+.pc-ready { background: #1b4f9c; }
+.pc-edit { background: #4a86d9; }
+.pc-shot { background: #8db4ea; }
+.pc-plan { background: #d3e2f6; }
+.pc-empty { background: #f6d0d0; }
+.pipe-card-runs { grid-column: 2; font-size: 12px; color: #6b7690; white-space: pre-wrap; }
+.pipe-card-runs b { color: #172033; font-weight: 600; }
+.pipe-card-next { grid-column: 2; font-size: 12px; font-weight: 700; color: #2e7d4f; }
+.pipe-card-next.is-late { color: #d13438; }
+.pipe-card-next.is-soon { color: #d66a00; }

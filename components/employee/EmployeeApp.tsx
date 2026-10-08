@@ -26,6 +26,7 @@ import type { CalendarImportItem, UpcomingCalendarDay } from "@/components/emplo
 import { TaskText } from "@/components/employee/TaskText";
 import { HelpLaunch } from "@/components/employee/HelpLaunch";
 import { ContentEntryLinks } from "@/components/content/ContentEntryLinks";
+import { PipelineHomeCard } from "@/components/content/PipelineHomeCard";
 import { OtherDayTasks, TaskDayNav } from "@/components/employee/TaskDayBrowser";
 import { createMixedGreetings, pickFreshGreetings, type MixedGreetingContext } from "@/lib/greeting-mix";
 import { MapleScene, QuestIcon, QuestProgress } from "@/components/employee/MapleQuest";
@@ -2181,6 +2182,7 @@ export function EmployeeApp() {
             workLog={todayWorkLog}
           />
         </div>
+        {!isSharedView && auth && (contentWho || employee?.role === "admin") ? <PipelineHomeCard who={contentWho} /> : null}
         {/* 관리자는 콘텐츠팀 네 분 목록을 골라 미리 본다 (보기만). */}
         {!isSharedView && auth && !contentWho && employee?.role === "admin" ? <ContentTeamPreview /> : null}
       </section>

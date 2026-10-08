@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ContentShell, useTip } from "@/components/content/ContentShell";
 import { formatClock, formatMonthDay, useContentData, weekdayLabel } from "@/components/content/useContentData";
+import { RUN_LABEL, runStageAt, stageRuns, type RunStage } from "@/components/content/pipelineRuns";
 import type { PipelineAccount, PipelineData, PipelineSlot, Stage } from "@/lib/content-pipeline";
 
 /*
@@ -186,9 +187,7 @@ function AccountRow({
   const [picked, setPicked] = useState<number | null>(null);
   const slots = account.slots.slice(0, count);
   const pickedSlot = picked !== null ? slots[picked] : undefined;
-  let readyRun = 0;
-  while (readyRun < account.slots.length && account.slots[readyRun].stage === "ready") readyRun += 1;
-  const lastReady = readyRun ? account.slots[readyRun - 1].date : null;
+  const runs = stageRuns(account, today);
   const level = account.next ? urgency(account.next.due, today) : "is-ok";
   const targetIndex = account.next ? account.slots.findIndex((s) => s.date === account.next?.forDate) : -1;
 
@@ -205,19 +204,6 @@ function AccountRow({
           {account.name}
           <small>{account.owner}</small>
         </div>
-        <div
-          className={`pipe-run ${level}`}
-          {...bind(
-            readyRun
-              ? `편집이 끝난 영상으로 ${dayLabel(lastReady!)} 업로드까지 ${readyRun}편을 끊기지 않고 올릴 수 있어요.`
-              : "다음 업로드할 영상부터 편집이 아직 안 끝났어요.",
-          )}
-          tabIndex={0}
-        >
-          <span className="pipe-run-label">편집 끝</span>
-          <b>{readyRun}편</b>
-          <span className="pipe-run-sub">{lastReady ? `${formatMonthDay(lastReady)} 업로드까지` : "다음 편부터 없음"}</span>
-        </div>
         <ShootLine account={account} />
         {account.stale ? (
           <p
@@ -231,6 +217,7 @@ function AccountRow({
       </div>
 
       <div className="pipe-track">
+        <div className="pipe-scroll-x">
         <div className="pipe-squares">
           {slots.map((slot, index) => {
             const gap = index > 0 && weekOf(slot.date) !== weekOf(slots[index - 1].date);
@@ -266,6 +253,46 @@ function AccountRow({
             );
           })}
         </div>
+        <div className="pipe-bar" aria-hidden="true">
+          {slots.map((slot, index) => {
+            const gap = index > 0 && weekOf(slot.date) !== weekOf(slots[index - 1].date);
+            const stage = runStageAt(index, runs);
+            return (
+              <span
+                className={`pipe-bar-cell stage-${stage}${gap ? " is-week-start" : ""}${index === 0 ? " is-first" : ""}${index === slots.length - 1 ? " is-last" : ""}`}
+                key={`${slot.date}-${index}`}
+              />
+            );
+          })}
+        </div>
+        </div>
+        <p className="pipe-runs">
+          {(["ready", "edit", "shot", "plan"] as RunStage[]).map((stage) => {
+            const run = runs[stage];
+            return (
+              <span
+                className={run.count ? "" : "is-none"}
+                key={stage}
+                {...bind(
+                  run.count
+                    ? `${RUN_LABEL[stage]} 빈틈없이 ${run.count}편, ${dayLabel(run.last!)} 업로드까지 채워져 있어요. 오늘부터 ${run.days}일분이에요.${run.beyond ? " 8주 안 업로드가 모두 채워졌어요." : ""}`
+                    : `다음 업로드할 영상부터 ${RUN_LABEL[stage].replace("까지", "")} 단계가 아니에요.`,
+                )}
+                tabIndex={0}
+              >
+                <i className={`pipe-swatch stage-${stage}`} />
+                {RUN_LABEL[stage]}{" "}
+                {run.count ? (
+                  <>
+                    <b>{formatMonthDay(run.last!)}</b> {run.beyond ? `${run.days}일분 넘게` : `${run.days}일분`}
+                  </>
+                ) : (
+                  <b>없음</b>
+                )}
+              </span>
+            );
+          })}
+        </p>
         <p
           className={`pipe-next ${level}`}
           {...bind(
