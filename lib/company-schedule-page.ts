@@ -1,5 +1,6 @@
 import { badRequest } from "@/lib/http";
-import { notion, ownPage, toEvent } from "@/lib/company-schedule";
+import { unstable_cache } from "next/cache";
+import { COMPANY_SCHEDULE_DB, koName, notion, ownPage, toEvent } from "@/lib/company-schedule";
 import type { NotionPage } from "@/lib/notion";
 
 /**
@@ -123,10 +124,58 @@ async function readBlocks(pageId: string) {
 }
 
 type Person = { id: string; name: string };
+type RawUser = { id: string; type?: string; name?: string | null };
+const PROGRESS_DB = "3453b1f9b9ae80e8b0c0f319797c99f3";
+
+/* 노션 API 는 게스트를 사람 목록에 안 준다. 일정 DB 와 편집 진행도에 한 번이라도 나온 사람(담당자, 기획자, 만든 사람, 고친 사람)을
+   모아 이름을 묻는다. 사람이 자주 바뀌지 않아 6시간에 한 번만 다시 모은다 */
+async function readPeople(): Promise<Person[]> {
+  const seen = new Map<string, number>();
+  const note = (id: string | undefined, weight: number) => { if (id) seen.set(id, Math.max(seen.get(id) ?? 0, weight)); };
+  const scan = async (db: string, pages: number) => {
+    let cursor: string | undefined;
+    for (let i = 0; i < pages; i++) {
+      const res = (await notion(`databases/${db}/query`, "POST", {
+        page_size: 100,
+        sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
+        ...(cursor ? { start_cursor: cursor } : {}),
+      })) as { results: Array<{ created_by?: { id: string }; last_edited_by?: { id: string }; properties: Record<string, { type: string; people?: RawUser[] }> }>; has_more: boolean; next_cursor: string | null };
+      for (const page of res.results) {
+        note(page.created_by?.id, 1);
+        note(page.last_edited_by?.id, 1);
+        for (const prop of Object.values(page.properties)) if (prop.type === "people") for (const u of prop.people ?? []) note(u.id, 2);
+      }
+      if (!res.has_more || !res.next_cursor) break;
+      cursor = res.next_cursor;
+    }
+  };
+  const users: RawUser[] = [];
+  try {
+    users.push(...((await notion("users?page_size=100", "GET")) as { results: RawUser[] }).results);
+  } catch {}
+  await Promise.all([scan(COMPANY_SCHEDULE_DB, 3).catch(() => {}), scan(PROGRESS_DB, 2).catch(() => {})]);
+  const known = new Set(users.map((u) => u.id));
+  for (const id of seen.keys()) {
+    if (known.has(id)) continue;
+    try {
+      users.push((await notion(`users/${id}`, "GET")) as RawUser);
+    } catch {}
+  }
+  /* 사람만, 이름이 같으면 하나만. 일정 담당자로 쓰인 사람이 앞에 */
+  const byName = new Map<string, Person & { w: number }>();
+  for (const u of users) {
+    if (u.type !== "person" || !u.name) continue;
+    const name = koName(u.name);
+    const w = seen.get(u.id) ?? 0;
+    const prev = byName.get(name);
+    if (!prev || w > prev.w) byName.set(name, { id: u.id, name, w });
+  }
+  return [...byName.values()].sort((a, b) => b.w - a.w || a.name.localeCompare(b.name, "ko")).map(({ id, name }) => ({ id, name }));
+}
+const knownPeople = unstable_cache(readPeople, ["company-schedule-people-v1"], { revalidate: 21_600 });
 async function workspacePeople(): Promise<Person[]> {
   try {
-    const res = (await notion("users?page_size=100", "GET")) as { results: Array<{ id: string; type: string; name?: string }> };
-    return res.results.filter((u) => u.type === "person").map((u) => ({ id: u.id, name: u.name ?? "" }));
+    return await knownPeople();
   } catch {
     return [];
   }
@@ -148,7 +197,7 @@ export async function getSchedulePage(id: string) {
   const event = toEvent(page);
   /* 담당자 고르기 목록: 워크스페이스 사람 + 이 페이지에 이미 있는 사람(게스트 포함) */
   const all = new Map<string, Person>();
-  for (const p of [...people, ...(event?.who ?? [])]) if (p.name) all.set(norm(p.id), p);
+  for (const p of [...people, ...(event?.who ?? [])]) if (p.name && !all.has(norm(p.id))) all.set(norm(p.id), p);
   const comments = await readComments(id, new Map([...all.values()].map((p) => [norm(p.id), p.name])));
   return { event, blocks, comments, people: [...all.values()] };
 }

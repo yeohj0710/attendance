@@ -19,6 +19,8 @@ export type PeekEvent = {
   place: string;
   people: string[];
   who: Array<{ id: string; name: string }>;
+  /** 노션 사람이 아닌 담당자 (노션 「담당자 이름」 글 칸) */
+  names?: string[];
   order: number | null;
   url: string;
   extra: Array<{ name: string; value: string }>;
@@ -76,6 +78,7 @@ export function PagePeek({
   const [editDate, setEditDate] = useState(false);
   const [pickPeople, setPickPeople] = useState(false);
   const [people, setPeople] = useState<Person[]>([]);
+  const [findPerson, setFindPerson] = useState("");
   const [comments, setComments] = useState<Comment[] | null>(null);
   const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(!!initial);
@@ -208,8 +211,24 @@ export function PagePeek({
     const cur = evRef.current ?? (await ensure());
     if (!cur) return;
     const ids = cur.who.some((w) => w.id === p.id) ? cur.who.filter((w) => w.id !== p.id) : [...cur.who, p];
-    setEv({ ...cur, who: ids, people: ids.map((w) => w.name) });
+    setEv({ ...cur, who: ids, people: [...ids.map((w) => w.name), ...(cur.names ?? [])] });
     queue({ people: ids.map((w) => w.id) }, 0);
+  }
+
+  /* 노션 사람 목록에 없는 사람은 이름만 글로 (노션 「담당자 이름」 칸) */
+  async function setNames(next: string[]) {
+    const cur = evRef.current ?? (await ensure());
+    if (!cur) return;
+    setEv({ ...cur, names: next, people: [...cur.who.map((w) => w.name), ...next] });
+    queue({ names: next }, 0);
+  }
+  function addTyped() {
+    const name = findPerson.trim().replace(/[,，、]/g, " ").slice(0, 30).trim();
+    if (!name) return;
+    const hit = people.find((p) => p.name === name);
+    if (hit) { if (!ev?.who.some((w) => w.id === hit.id)) void togglePerson(hit); }
+    else if (!(ev?.names ?? []).includes(name)) void setNames([...(ev?.names ?? []), name]);
+    setFindPerson("");
   }
 
   async function sendComment() {
@@ -271,17 +290,40 @@ export function PagePeek({
               <span className="pk-name">{Icon.people}담당자</span>
               <div className="pk-val pk-people">
                 <button type="button" className="pk-chips" onClick={() => setPickPeople((v) => !v)}>
-                  {ev?.who.length ? ev.who.map((p) => <span key={p.id} className="pk-chip"><i>{p.name.slice(0, 1)}</i>{p.name}</span>) : <span className="pk-empty">비어 있음</span>}
+                  {ev?.who.length || ev?.names?.length ? (
+                    <>
+                      {ev.who.map((p) => <span key={p.id} className="pk-chip"><i>{p.name.slice(0, 1)}</i>{p.name}</span>)}
+                      {(ev.names ?? []).map((n) => <span key={`n-${n}`} className="pk-chip"><i>{n.slice(0, 1)}</i>{n}</span>)}
+                    </>
+                  ) : <span className="pk-empty">비어 있음</span>}
                 </button>
                 {pickPeople ? (
                   <div className="pk-pop" onMouseLeave={() => setPickPeople(false)}>
-                    {people.length ? people.map((p) => (
+                    <input
+                      className="pk-pop-find"
+                      autoFocus
+                      placeholder="이름 찾기, 없으면 적고 Enter"
+                      maxLength={30}
+                      value={findPerson}
+                      onChange={(e) => setFindPerson(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTyped(); } if (e.key === "Escape") { e.stopPropagation(); setPickPeople(false); } }}
+                    />
+                    {(ev?.names ?? []).map((n) => (
+                      <label key={`n-${n}`}>
+                        <input type="checkbox" checked onChange={() => void setNames((ev?.names ?? []).filter((x) => x !== n))} />
+                        <i>{n.slice(0, 1)}</i>{n}
+                      </label>
+                    ))}
+                    {people.filter((p) => !findPerson.trim() || p.name.includes(findPerson.trim())).map((p) => (
                       <label key={p.id}>
                         <input type="checkbox" checked={!!ev?.who.some((w) => w.id === p.id)} onChange={() => void togglePerson(p)} />
                         <i>{p.name.slice(0, 1)}</i>{p.name}
                       </label>
-                    )) : <p>고를 수 있는 사람이 없어요</p>}
-                    <p className="pk-pop-note">게스트는 노션에서 한 번 담당자로 넣은 사람만 보여요</p>
+                    ))}
+                    {findPerson.trim() && !people.some((p) => p.name === findPerson.trim()) && !(ev?.names ?? []).includes(findPerson.trim()) ? (
+                      <button type="button" className="pk-pop-add" onClick={addTyped}>+ 「{findPerson.trim()}」 담당자로 넣기</button>
+                    ) : null}
+                    <p className="pk-pop-note">노션 사람 목록에 없는 이름은 노션 「담당자 이름」 칸에 글로 저장해요</p>
                   </div>
                 ) : null}
               </div>

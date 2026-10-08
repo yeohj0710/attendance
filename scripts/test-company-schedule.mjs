@@ -81,6 +81,8 @@ await page.route("**/api/schedule**", async (route) => {
   if (body.place !== undefined) e.place = body.place;
   if (body.order !== undefined) e.order = body.order;
   if (body.people !== undefined) { e.who = [KIM, KWON].filter((p) => body.people.includes(p.id)); e.people = e.who.map((p) => p.name); }
+  if (body.names !== undefined) e.names = body.names;
+  if (body.people !== undefined || body.names !== undefined) e.people = [...e.who.map((p) => p.name), ...(e.names ?? [])];
   return json({ event: e });
 });
 
@@ -203,6 +205,20 @@ await page.locator(".pk-chips").click();
 await page.locator(".pk-pop label", { hasText: "김호준" }).locator("input").check();
 await wait(500);
 ok("담당자 넣기", calls.some((c) => c.method === "PATCH" && Array.isArray(c.body.people) && c.body.people.includes(KIM.id)));
+await page.locator(".pk-pop-find").fill("박세무");
+await page.locator(".pk-pop-find").press("Enter");
+await wait(500);
+ok("노션에 없는 이름 넣기", calls.some((c) => c.method === "PATCH" && Array.isArray(c.body.names) && c.body.names.includes("박세무")) && (await page.locator(".pk-chips", { hasText: "박세무" }).count()) === 1);
+await page.locator(".pk-pop label", { hasText: "박세무" }).locator("input").click();
+await wait(500);
+ok("넣은 이름 빼기", calls.some((c) => c.method === "PATCH" && Array.isArray(c.body.names) && c.body.names.length === 0) && (await page.locator(".pk-chips", { hasText: "박세무" }).count()) === 0);
+await page.locator(".pk-pop-find").fill("김");
+ok("이름 찾기", (await page.locator(".pk-pop label").count()) === 1);
+await page.locator(".pk-pop-find").fill("");
+await page.locator(".pk-pop-find").fill("최");
+await page.screenshot({ path: process.env.PEOPLE_SHOT || `${process.env.TEMP || "."}/pk-people.png` });
+await page.locator(".pk-pop-find").fill("");
+await page.locator(".pk-pop-find").press("Escape");
 
 await page.locator(".pk-title").fill("OWM 분당 촬영 10:30 (확정)");
 await wait(1200);

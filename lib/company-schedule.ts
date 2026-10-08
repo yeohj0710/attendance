@@ -1,11 +1,11 @@
 import { revalidateTag, unstable_cache } from "next/cache";
-import { NotionAccessError, propDate, propPeople, propText, queryNotionDatabase } from "@/lib/notion";
+import { NotionAccessError, propDate, propText, queryNotionDatabase } from "@/lib/notion";
 import type { NotionPage } from "@/lib/notion";
 import { badRequest } from "@/lib/http";
 
 /**
  * 회사 일정 달력(/schedule). 노션 메인 왼쪽 「일정」 DB 를 그대로 읽고 쓴다. 데이터를 옮기지 않으니 노션과 늘 같다.
- * 이 DB 의 칸: 이름(제목), 날짜, 장소, 담당자(사람), 정렬시간(숫자, 같은 날 안의 순서). 시각은 보통 제목 글자에 적는다("바로팜 미팅 10:00").
+ * 이 DB 의 칸: 이름(제목), 날짜, 장소, 담당자(사람), 담당자 이름(글, 노션 사람 목록에 없는 사람을 쉼표로), 정렬시간(숫자, 같은 날 안의 순서). 시각은 보통 제목 글자에 적는다("바로팜 미팅 10:00").
  * 쓰기는 이 DB 에 속한 페이지에만 한다(고치거나 지우기 전에 부모 DB 를 확인). 지우기는 노션 휴지통으로 보내기라 되살릴 수 있다.
  * lib/notion.ts 는 채널 현황판 세션의 읽기 도우미라 고치지 않고, 쓰기 호출은 이 파일에만 둔다.
  */
@@ -25,13 +25,17 @@ export type CompanyEvent = {
   people: string[];
   /** 담당자 id 와 이름 (고칠 때 쓴다) */
   who: Array<{ id: string; name: string }>;
+  /** 노션 사람이 아닌 담당자 (「담당자 이름」 글 칸) */
+  names: string[];
   order: number | null;
   url: string;
   /** 위 칸 말고 노션에 더 있는 속성 (보기만) */
   extra: Array<{ name: string; value: string }>;
 };
 
-const KNOWN_PROPS = ["이름", "날짜", "장소", "담당자", "정렬시간"];
+const KNOWN_PROPS = ["이름", "날짜", "장소", "담당자", "담당자 이름", "정렬시간"];
+const NAMES_PROP = "담당자 이름";
+const splitNames = (text: string) => text.split(/[,，、]/).map((x) => x.trim()).filter(Boolean);
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -47,9 +51,16 @@ function kstTime(value: string) {
   return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
 }
 
+/* 노션 이름을 한국식으로: "아영 송" → "송아영", "권혁찬(약학대학 약학과)" → "권혁찬" */
+export function koName(name: string) {
+  const n = name.replace(/\s*\(.*?\)\s*/g, "").trim();
+  const m = /^([가-힣]{1,3}) ([가-힣])$/.exec(n);
+  return m ? m[2] + m[1] : n;
+}
+
 function whoOf(page: NotionPage) {
   const prop = page.properties["담당자"] as unknown as { type?: string; people?: Array<{ id: string; name?: string }> } | undefined;
-  return prop?.type === "people" ? (prop.people ?? []).map((p) => ({ id: p.id, name: p.name ?? "" })) : [];
+  return prop?.type === "people" ? (prop.people ?? []).map((p) => ({ id: p.id, name: koName(p.name ?? "") })) : [];
 }
 
 export function toEvent(page: NotionPage): CompanyEvent | null {
@@ -58,6 +69,7 @@ export function toEvent(page: NotionPage): CompanyEvent | null {
   const start = kstDate(date.start);
   const end = date.end ? kstDate(date.end) : null;
   const order = page.properties["정렬시간"]?.number;
+  const names = splitNames(propText(page, NAMES_PROP));
   return {
     id: page.id,
     title: propText(page, "이름"),
@@ -65,8 +77,9 @@ export function toEvent(page: NotionPage): CompanyEvent | null {
     end: end && end > start ? end : null,
     time: kstTime(date.start),
     place: propText(page, "장소"),
-    people: propPeople(page, "담당자"),
+    people: [...whoOf(page).map((p) => p.name).filter(Boolean), ...names],
     who: whoOf(page),
+    names,
     order: typeof order === "number" ? order : null,
     url: page.url,
     extra: Object.keys(page.properties)
@@ -135,7 +148,7 @@ export async function ownPage(id: string) {
   return page;
 }
 
-export type EventInput = { title?: unknown; date?: unknown; end?: unknown; time?: unknown; place?: unknown; order?: unknown; people?: unknown };
+export type EventInput = { title?: unknown; date?: unknown; end?: unknown; time?: unknown; place?: unknown; order?: unknown; people?: unknown; names?: unknown };
 
 function cleanText(value: unknown, max: number) {
   if (value == null) return "";
@@ -178,6 +191,12 @@ function toProperties(input: EventInput, isNew: boolean) {
     const ids = Array.isArray(input.people) ? input.people : [];
     if (ids.length > 20 || ids.some((x) => typeof x !== "string" || !ID_RE.test(x))) badRequest("담당자가 이상합니다.");
     props["담당자"] = { people: (ids as string[]).map((id) => ({ id })) };
+  }
+  if (input.names !== undefined) {
+    const names = Array.isArray(input.names) ? input.names : [];
+    if (names.length > 20 || names.some((x) => typeof x !== "string" || !x.trim() || x.length > 30 || /[,，、]/.test(x))) badRequest("담당자 이름이 이상합니다.");
+    const text = (names as string[]).map((x) => x.trim()).join(", ");
+    props[NAMES_PROP] = { rich_text: text ? [{ text: { content: text } }] : [] };
   }
   return props;
 }
