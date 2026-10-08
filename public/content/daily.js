@@ -863,9 +863,9 @@ function polite(s) {
 /* polite end */
 
 /* ───────── 하는 방법 (툴팁에 순서로) ─────────
-   명령어 설명: G:\내 드라이브\유현일님\웰니스박스 명령어 패키지\00-먼저 읽기.md
+   명령어 설명: G:\내 드라이브\PD님 폴더\공용\설치 패키지\웰니스박스 명령어 패키지\00-먼저 읽기.md
    약국 계정 게시: G:\내 드라이브\에이전트\매뉴얼\pharmacy-sns-publish, pharmacy-reels-publish */
-const P_CMD = "명령어 설명은 G:\\내 드라이브\\유현일님\\웰니스박스 명령어 패키지\\00-먼저 읽기.md 에 있어요.";
+const P_CMD = "명령어 설명은 G:\\내 드라이브\\PD님 폴더\\공용\\설치 패키지\\웰니스박스 명령어 패키지\\00-먼저 읽기.md 에 있어요.";
 const P_PUB = "매뉴얼은 G:\\내 드라이브\\에이전트\\매뉴얼\\ 폴더의 pharmacy-sns-publish(카드뉴스)와 pharmacy-reels-publish(릴스)에 있어요.";
 const NAME = { kim: "김호준", song: "송아영", kwon: "권현우", lee: "이민우" };
 /* 부계정 반응 순서 (RULES "업로드 뒤"와 같은 내용) */
