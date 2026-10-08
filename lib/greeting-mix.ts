@@ -69,10 +69,8 @@ const SMALL_TALK = [
 ];
 
 const shuffle = <T,>(list: T[]) => [...list].sort(() => Math.random() - 0.5);
-const shortTask = (text: string) => {
-  const line = text.split("\n")[0].trim();
-  return line.length > 22 ? `${line.slice(0, 22)}…` : line;
-};
+/* 할 일 제목은 자르지 않고 첫 줄을 다 적는다 ("…" 로 자르면 무슨 일인지 알 수 없다, 사용자 지적 261008) */
+const shortTask = (text: string) => text.split("\n")[0].trim();
 const daysBetween = (from: string, to: string) =>
   Math.round((Date.parse(`${to}T00:00:00+09:00`) - Date.parse(`${from}T00:00:00+09:00`)) / 86_400_000);
 
@@ -137,7 +135,7 @@ export function createMixedGreetings(
       `다음 할 일은 '${next}'이에요. 이것부터 끝내 볼까요?`,
       `'${next}' 하나만 끝내면 목록이 한결 가벼워져요.`,
       `지금 손댈 일은 '${next}'. 체크하는 맛 보러 가요.`,
-      open.length >= 2 ? `'${shortTask(open[0])}', 그다음 '${shortTask(open[1])}' 순서예요.` : `오늘 남은 일은 '${next}' 하나예요.`,
+      open.length >= 2 ? `남은 일 ${open.length}개 중에 '${next}'부터 해 봐요.` : `오늘 남은 일은 '${next}' 하나예요.`,
     ]);
   }
   if (facts.taskCount) {

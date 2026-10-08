@@ -1,47 +1,59 @@
-/* /hub: 노션 메인에 하나만 붙이는 화면.
-   오른쪽 업무 시스템은 가운데 카드가 좁아(약 480px) 넓게 줘도 양옆만 비니 카드에 맞는 폭으로 고정하고,
-   남는 폭은 왼쪽(위 회사 일정, 아래 채널 현황)에 준다. 아주 넓은 화면에서는 가운데로 모은다(최대 1680px).
-   1366px 노트북에서도 둘이 나란히, 1000px 보다 좁으면 위아래로 쌓는다. 노션 제목 모양을 따른다.
-   양옆은 일부러 비워 둔다: 이 화면 자체는 스크롤이 없어서, 빈 곳에서 휠을 굴리면 바깥 노션 페이지가 내려간다 */
-html:has(.hub), body:has(.hub) { margin: 0; height: 100%; overflow: hidden; background: #fff; }
-.hub {
-  display: grid; grid-template-columns: minmax(0, 1fr) clamp(420px, 30vw, 520px); gap: 24px;
-  max-width: 1440px; height: 100vh; margin: 0 auto; padding: 4px clamp(8px, 4vw, 72px) 0; box-sizing: border-box;
+/* /hub: 노션 메인에 하나만 붙이는 화면 (app/hub/page.tsx).
+   배경은 업무 시스템 하늘 한 장(SkyScene, 화면 전체에 고정)으로 통일하고 그 위에 흰 카드를 놓는다.
+   창 너비가 바뀌면 왼쪽(위 일정, 아래 채널 현황)만 늘고 줄며, 오른쪽 업무 시스템은 카드 폭 520px 로 고정한다.
+   카드 사이와 양옆 하늘은 스크롤이 없어 거기서 휠을 굴리면 바깥 노션 페이지가 내려간다.
+   글자 크기는 세 칸이 같은 단계를 쓴다: 칸 제목 16px, 본문 13px, 작은 글 12px */
+html:has(.hub), body:has(.hub) { margin: 0; height: 100%; overflow: hidden; background: transparent !important; }
+.hub { position: relative; height: 100vh; }
+.hub-grid {
+  display: grid; grid-template-columns: minmax(0, 1fr) 520px; gap: 20px;
+  height: 100%; max-width: 1880px; margin: 0 auto; padding: 16px 32px 0; box-sizing: border-box;
   font-family: "Pretendard Variable", Pretendard, ui-sans-serif, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
 }
 .hub-col { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-.hub-h { flex: none; margin: 0 0 8px 2px; font-size: 20px; font-weight: 700; color: #37352f; letter-spacing: -0.01em; }
-.hub-h2 { margin-top: 18px; }
-.hub-frame { flex: 1; min-height: 0; width: 100%; border: 0; border-radius: 4px; background: #fff; }
+.hub-left { gap: 16px; }
 
-/* 일정은 한눈에 보는 크기로: 칸을 낮게, 글을 조금 작게, 너무 길어지면 이 칸만 스크롤 */
-.hub-cal { flex: none; max-height: 46vh; overflow-y: auto; }
-.hub-cal .cs { padding-bottom: 4px; }
-/* 달 이름, 오늘과 앞뒤, 도구를 한 줄로 */
+.hub-card {
+  display: flex; flex-direction: column; min-height: 0; box-sizing: border-box;
+  padding: 14px 16px 12px; border-radius: 16px; background: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.7); box-shadow: 0 14px 34px -20px rgba(23, 32, 51, 0.55);
+}
+.hub-cal-card { flex: none; }
+.hub-pipe-card { flex: 1; padding-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.hub-h { flex: none; margin: 0 0 10px 2px; font-size: 16px; font-weight: 800; color: #172033; letter-spacing: -0.01em; }
+.hub-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: transparent; }
+.hub-app-frame { border-radius: 0; color-scheme: light; }
+
+/* 일정: 카드 안에 들어가니 달력 자체 그림자는 빼고, 머리줄은 한 줄로, 글자는 본문 13px */
+.hub-cal { flex: none; }
+.hub-cal .cs { min-height: 0; padding: 0; font-size: 13px; background: transparent; }
 .hub-cal .cs { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; }
 .hub-cal .cs > * { flex-basis: 100%; order: 3; }
-.hub-cal .cs > .cs-sub { order: 1; flex: 1 1 auto; flex-basis: auto; padding: 0 0 8px 2px; }
-.hub-cal .cs > .cs-bar { order: 2; flex: 0 0 auto; flex-basis: auto; padding: 0 0 8px; }
+.hub-cal .cs > .cs-sub { order: 1; flex: 1 1 auto; flex-basis: auto; padding: 0 0 10px 2px; }
+.hub-cal .cs > .cs-bar { order: 2; flex: 0 0 auto; flex-basis: auto; padding: 0 0 10px; }
 .hub-cal .cs-views { display: none; }
-.hub-cal .cs-sub b { font-size: 15px; }
-.hub-cal .cs-new { height: 28px; padding: 0 10px; font-size: 13px; }
-.hub-cal .cs-nav button { height: 26px; }
-.hub-cal .cs-nav .cs-arrow { width: 26px; }
-.hub-cal .cs-dow div { padding: 5px 0; font-size: 12px; }
+.hub-cal .cs-sub b { font-size: 14px; }
+.hub-cal .cs-new { height: 30px; padding: 0 12px; font-size: 13px; }
+.hub-cal .cs-nav button { height: 30px; font-size: 13px; }
+.hub-cal .cs-nav .cs-arrow { width: 30px; }
+.hub-cal .cs-grid { box-shadow: none; border-radius: 12px; }
+.hub-cal .cs-dow div { padding: 6px 0; font-size: 12px; }
 /* 주 칸 높이를 고정해 주를 넘겨도 아래 채널 현황이 움직이지 않게. 일정이 많은 날은 그 칸 안에서만 스크롤 */
-.hub-cal .cs-week { height: 122px; }
-.hub-cal .cs-day { min-height: 0; padding: 4px 5px 6px; overflow-y: auto; scrollbar-width: thin; }
-.hub-cal .cs-dhead { height: 22px; margin-bottom: 2px; }
-.hub-cal .cs-num { min-width: 22px; height: 22px; line-height: 22px; font-size: 13px; }
-.hub-cal .cs-hol { font-size: 10.5px; }
-.hub-cal .cs-card { padding: 4px 7px 5px; margin-bottom: 3px; border-radius: 8px; }
-.hub-cal .cs-ct { font-size: 12.5px; -webkit-line-clamp: 2; }
+.hub-cal .cs-week { height: 128px; }
+.hub-cal .cs-day { min-height: 0; padding: 5px 6px 6px; overflow-y: auto; scrollbar-width: thin; }
+.hub-cal .cs-dhead { height: 24px; margin-bottom: 3px; }
+.hub-cal .cs-num { min-width: 24px; height: 24px; line-height: 24px; font-size: 13px; }
+.hub-cal .cs-hol { font-size: 12px; }
+.hub-cal .cs-card { padding: 5px 8px 6px; margin-bottom: 4px; border-radius: 8px; }
+.hub-cal .cs-ct { font-size: 13px; -webkit-line-clamp: 2; }
 .hub-cal .cs-cp { display: none; }
 
 @media (max-width: 1000px) {
   html:has(.hub), body:has(.hub) { overflow: auto; height: auto; }
-  .hub { display: block; height: auto; padding: 4px 0 0; }
-  .hub-col + .hub-col { margin-top: 28px; }
-  .hub-cal { max-height: none; overflow: visible; }
-  .hub-frame { height: 90vh; flex: none; }
+  .hub { height: auto; }
+  .hub-grid { display: block; height: auto; padding: 12px; }
+  .hub-left + .hub-app { margin-top: 16px; }
+  .hub-pipe-card { height: 90vh; flex: none; }
+  .hub-app-frame { height: 100vh; flex: none; }
+  .hub-cal .cs-week { height: auto; }
 }

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { SkyScene } from "@/components/employee/SkyScene";
 import { CompanySchedule } from "@/components/schedule/CompanySchedule";
 import "../schedule/schedule.css";
 import "./hub.css";
@@ -10,25 +11,32 @@ export const metadata: Metadata = {
 
 /**
  * 노션 메인에 하나만 붙이는 화면.
- * 왼쪽(좁게): 위에 회사 일정 2주를 작게, 그 아래에 채널 현황(콘텐츠 관리). 오른쪽(넓게): 업무 시스템 첫 화면을 그대로.
- * 업무 관리와 콘텐츠 관리가 주인공이고 달력은 한눈에 보는 정도로 둔다(사용자 지시 261008).
+ * 배경은 업무 시스템의 하늘 한 장(SkyScene)으로 통일하고, 그 위에 흰 카드 세 장을 놓는다.
+ * 왼쪽(넓게): 위 회사 일정(작게), 아래 채널 현황. 오른쪽: 업무 시스템(카드 폭에 맞춰 고정, 하늘 배경은 빼고 띄움 ?inhub=1).
  * 모두 같은 출처라 로그인 한 번이면 같이 된다(오른쪽에서 로그인하면 왼쪽이 저절로 다시 읽는다).
+ * 카드 사이와 양옆 하늘은 스크롤이 없어 거기서 휠을 굴리면 바깥 노션 페이지가 내려간다.
  */
 export default function HubPage() {
   return (
     <div className="hub">
-      <section className="hub-col hub-left">
-        <h2 className="hub-h">📅 일정</h2>
-        <div className="hub-cal">
-          <CompanySchedule inHub />
-        </div>
-        <h2 className="hub-h hub-h2">📺 채널 현황</h2>
-        <iframe className="hub-frame" src="/content-board/pipeline?embed=1" title="채널 현황" />
-      </section>
-      <section className="hub-col hub-app">
-        <h2 className="hub-h">⏰ 업무 시스템</h2>
-        <iframe className="hub-frame" src="/" title="업무 시스템" />
-      </section>
+      <SkyScene />
+      <div className="hub-grid">
+        <section className="hub-col hub-left">
+          <div className="hub-card hub-cal-card">
+            <h2 className="hub-h">📅 일정</h2>
+            <div className="hub-cal">
+              <CompanySchedule inHub />
+            </div>
+          </div>
+          <div className="hub-card hub-pipe-card">
+            <h2 className="hub-h">📺 채널 현황</h2>
+            <iframe className="hub-frame" src="/content-board/pipeline?embed=1" title="채널 현황" />
+          </div>
+        </section>
+        <section className="hub-col hub-app">
+          <iframe className="hub-frame hub-app-frame" src="/?inhub=1" title="업무 시스템" />
+        </section>
+      </div>
     </div>
   );
 }
