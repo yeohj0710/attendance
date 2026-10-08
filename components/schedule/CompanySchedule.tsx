@@ -82,7 +82,8 @@ function loadPrefs() {
   }
 }
 
-export function CompanySchedule() {
+/** inHub: 업무 시스템과 나란히 놓인 화면(/hub)에서 쓸 때. 로그인은 옆의 업무 시스템에서 한다 */
+export function CompanySchedule({ inHub = false }: { inHub?: boolean } = {}) {
   const today = useMemo(kstToday, []);
   const [weekStart, setWeekStart] = useState(() => sundayOf(today));
   const [events, setEvents] = useState<CompanyEvent[]>([]);
@@ -106,7 +107,7 @@ export function CompanySchedule() {
 
   /* 노션 메인에 붙일 때(?embed=1)는 노션 제목이 따로 있으니 화면 제목과 바깥 여백을 뺀다 */
   const [embed, setEmbed] = useState(false);
-  useEffect(() => { setEmbed(new URLSearchParams(window.location.search).get("embed") === "1"); }, []);
+  useEffect(() => { setEmbed(inHub || new URLSearchParams(window.location.search).get("embed") === "1"); }, [inHub]);
 
   useEffect(() => {
     const prefs = loadPrefs();
@@ -151,6 +152,14 @@ export function CompanySchedule() {
   }, [call, from, to]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== "attendance.token" && e.key !== null) return;
+      if (getStoredAuth()) { setState((st) => (st === "ready" ? st : "loading")); void load(); } else setState("login");
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [load]);
   useEffect(() => {
     const again = () => {
       if (document.visibilityState === "visible" && !peekOpen.current && !dragRef.current && Date.now() - lastLoad.current > 60_000) void load();
@@ -337,7 +346,9 @@ export function CompanySchedule() {
       </div>
 
       {state === "login" ? (
-        <p className="cs-msg">업무 시스템에 로그인하면 볼 수 있어요. <Link href="/">로그인하러 가기</Link></p>
+        <p className="cs-msg">
+          {inHub ? "오른쪽 업무 시스템에 로그인하면 일정이 보여요." : <>업무 시스템에 로그인하면 볼 수 있어요. <Link href="/">로그인하러 가기</Link></>}
+        </p>
       ) : state === "error" ? (
         <p className="cs-msg">불러오지 못했어요. {error}</p>
       ) : (

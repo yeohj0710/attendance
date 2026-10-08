@@ -1,0 +1,38 @@
+/* /hub: 노션 메인에 하나만 붙이는 화면. 왼쪽 좁게(일정 작게 + 채널 현황), 오른쪽 넓게(업무 시스템). 노션 제목 모양을 따른다 */
+html:has(.hub), body:has(.hub) { margin: 0; height: 100%; overflow: hidden; background: #fff; }
+.hub {
+  display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 28px;
+  height: 100vh; padding: 4px 2px 0; box-sizing: border-box;
+  font-family: "Pretendard Variable", Pretendard, ui-sans-serif, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+}
+.hub-col { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.hub-h { flex: none; margin: 0 0 8px 2px; font-size: 20px; font-weight: 700; color: #37352f; letter-spacing: -0.01em; }
+.hub-h2 { margin-top: 18px; }
+.hub-frame { flex: 1; min-height: 0; width: 100%; border: 0; border-radius: 4px; background: #fff; }
+
+/* 일정은 한눈에 보는 크기로: 칸을 낮게, 글을 조금 작게, 너무 길어지면 이 칸만 스크롤 */
+.hub-cal { flex: none; max-height: 46vh; overflow-y: auto; overscroll-behavior: contain; }
+.hub-cal .cs { padding-bottom: 4px; }
+.hub-cal .cs-bar { padding-bottom: 4px; }
+.hub-cal .cs-views { display: none; }
+.hub-cal .cs-sub { padding: 2px 2px 8px; }
+.hub-cal .cs-sub b { font-size: 15px; }
+.hub-cal .cs-new { height: 28px; padding: 0 10px; font-size: 13px; }
+.hub-cal .cs-nav button { height: 26px; }
+.hub-cal .cs-nav .cs-arrow { width: 26px; }
+.hub-cal .cs-dow div { padding: 5px 0; font-size: 12px; }
+.hub-cal .cs-day { min-height: 74px; padding: 4px 5px 6px; }
+.hub-cal .cs-dhead { height: 22px; margin-bottom: 2px; }
+.hub-cal .cs-num { min-width: 22px; height: 22px; line-height: 22px; font-size: 13px; }
+.hub-cal .cs-hol { font-size: 10.5px; }
+.hub-cal .cs-card { padding: 4px 7px 5px; margin-bottom: 3px; border-radius: 8px; }
+.hub-cal .cs-ct { font-size: 12.5px; -webkit-line-clamp: 2; }
+.hub-cal .cs-cp { display: none; }
+
+@media (max-width: 900px) {
+  html:has(.hub), body:has(.hub) { overflow: auto; height: auto; }
+  .hub { display: block; height: auto; padding: 4px 0 0; }
+  .hub-col + .hub-col { margin-top: 28px; }
+  .hub-cal { max-height: none; overflow: visible; }
+  .hub-frame { height: 90vh; flex: none; }
+}
