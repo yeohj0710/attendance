@@ -304,3 +304,8 @@
 .content-page.is-embed .pipe-missing,
 .content-page.is-embed .content-sub { font-size: 13px; }
 .content-page.is-embed .pipe-runway dd { grid-template-columns: 48px 58px; }
+
+/* 스크롤 막대: 얇고 옅게, 바탕 없이 (?embed=1 로 /hub 칸에 들어갈 때 기본 회색 막대가 어색해서) */
+html:has(.content-page.is-embed),
+.pipe-scroll-x { scrollbar-width: thin; scrollbar-color: rgba(100, 116, 139, 0.38) transparent; }
+html:has(.content-page.is-embed):hover { scrollbar-color: rgba(100, 116, 139, 0.6) transparent; }
