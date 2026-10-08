@@ -558,6 +558,35 @@ function tasks(who, d) {
   return out.sort((a, b) => rank(a) - rank(b) || a.i - b.i);
 }
 
+/* ───────── 업로드 일정은 노션에서 (261008 대표님: 노션이 원본) ─────────
+   10/9 부터 PD님 계정 업로드 일정은 노션 편집 진행도에서 받는다(/api/calendar/uploads, 서버가 5분에 한 번 읽음).
+   10/8 까지는 위 UPLOADS 표 그대로 둔다(이미 저장된 체크 키가 제목에서 나오므로).
+   어라운드팜, 미미팜은 드라이브 릴스 목록이 원본이라 위 표 그대로 쓴다.
+   노션을 못 읽으면 위 표로 그린다. 출퇴근기록부로 보내는 할 일은 노션을 받아 본 뒤에만 보낸다 */
+const UP_CUTOVER = "10-09";
+const UP_FROM_NOTION = ["jejo", "oyak", "jay", "jaykr", "owmb", "jessi", "taeeun"];
+const upState = { ready: false, at: 0, sig: "" };
+async function loadUploads() {
+  try {
+    const r = await fetch("/api/calendar/uploads", { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    const j = await r.json();
+    if (Array.isArray(j.uploads)) {
+      const sig = JSON.stringify(j.uploads);
+      if (sig !== upState.sig) {
+        for (let i = UPLOADS.length - 1; i >= 0; i--) {
+          const [d, acc] = UPLOADS[i];
+          if (!before(d, UP_CUTOVER) && UP_FROM_NOTION.includes(acc)) UPLOADS.splice(i, 1);
+        }
+        for (const row of j.uploads) if (Array.isArray(row) && !before(row[0], UP_CUTOVER) && UP_FROM_NOTION.includes(row[1])) UPLOADS.push(row);
+        upState.sig = sig;
+      }
+    }
+  } catch (e) {}
+  upState.ready = true;
+  upState.at = Date.now();
+}
+
 /* ───────── 공용 저장 (/api/calendar, Upstash Redis) ─────────
    체크, 옮기기, 고치기, 지우기, 추가를 네 분이 같이 본다. 열 때 한 번 읽고, 고칠 때 한 칸씩 쓴다.
    창을 다시 볼 때와 보고 있는 동안 2분마다 새로 읽는다(창이 숨어 있으면 안 읽음).
@@ -1225,7 +1254,7 @@ function upcomingDays(k) {
 const byDayHas = (d) => ALL_DAYS.includes(d);
 function sendTasks(k) {
   /* 서버에서 최신 체크, 옮김, 숨김을 받은 뒤에만 보낸다. 옛 캐시로 보내면 업무 시스템가 할 일을 잘못 빼거나 넣는다 */
-  if (window.parent === window || !store.lastPull) return;
+  if (window.parent === window || !store.lastPull || !upState.ready) return;
   const byDay = buildItems(k);
   window.parent.postMessage({ source: "content-calendar", type: "tasks", who: k, online: store.online,
     today: dayData(k, byDay, TODAY), next: dayData(k, byDay, nextWorkDay(k)), upcoming: upcomingDays(k).map((d) => dayData(k, byDay, d)), url: location.origin + "/content/daily.html#" + k }, location.origin);
@@ -1261,9 +1290,10 @@ async function refresh(force) {
   if (!force && Date.now() - store.lastPull < 30000) return;
   if (document.querySelector("dialog[open]") || document.getElementById("menu") || drag) return;
   const before_ = JSON.stringify(SH);
-  const ok = await pull();
+  const upBefore = upState.sig;
+  const [ok] = await Promise.all([pull(), Date.now() - upState.at > 300000 ? loadUploads() : null]);
   showSync();
-  if (ok && JSON.stringify(SH) !== before_) (EMBED ? [EMBED] : Object.keys(PEOPLE)).forEach(renderPerson);
+  if ((ok && JSON.stringify(SH) !== before_) || upState.sig !== upBefore) (EMBED ? [EMBED] : Object.keys(PEOPLE)).forEach(renderPerson);
 }
 document.addEventListener("visibilitychange", () => refresh(false));
 window.addEventListener("focus", () => refresh(false));
@@ -1295,4 +1325,4 @@ function renderRest() {
 }
 
 renderJump(); renderCals(); renderStock(); renderEditors(); renderRest(); wireTools(); applyView(); showSync();
-pull().then(async (ok) => { showSync(); if (ok) { await migrateLocalChecks(); (EMBED ? [EMBED] : Object.keys(PEOPLE)).forEach(renderPerson); } });
+Promise.all([pull(), loadUploads()]).then(async ([ok]) => { showSync(); if (ok) await migrateLocalChecks(); (EMBED ? [EMBED] : Object.keys(PEOPLE)).forEach(renderPerson); });
