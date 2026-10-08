@@ -203,3 +203,230 @@
 .quest-tip-sec { color: #8fd3ff; font-weight: 700; }
 .quest-tip-time { color: #b6f05a; }
 .quest-tip a { color: #8fd3ff; }
+
+/* ───────── 실시간 작업실 (오늘 함께하는 사람들) ───────── */
+.desk-room {
+  border-radius: 12px;
+  padding: 14px;
+  background: linear-gradient(180deg, rgba(111, 192, 255, 0.18), rgba(181, 230, 160, 0.22));
+  border: 1px solid #e7ebf2;
+}
+.desk-room-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 12px; }
+.desk-room-title { margin-right: auto; font-size: 14px; font-weight: 700; color: #172033; }
+.desk-chip { padding: 2px 9px; border-radius: 99px; background: #fff; border: 1px solid #e7ebf2; font-size: 11.5px; font-weight: 700; color: #6b7690; }
+.desk-chip-event { background: rgba(255, 163, 40, 0.16); border-color: transparent; color: #e07b00; }
+.desk-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 479px) { .desk-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.desk-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid #e7ebf2;
+  text-align: left;
+  box-shadow: 0 6px 16px -14px rgba(10, 20, 50, 0.5);
+  transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s;
+}
+.desk-card:hover { transform: translateY(-1px); border-color: #ffc46b; box-shadow: 0 10px 22px -14px rgba(255, 140, 0, 0.55); }
+.desk-card.is-me { border-color: #ffb340; box-shadow: 0 0 0 2px rgba(255, 179, 64, 0.25); }
+.desk-card-top { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.desk-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(160deg, hsl(var(--desk-hue) 75% 66%), hsl(var(--desk-hue) 65% 50%));
+}
+.desk-who { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.desk-name { font-size: 14px; font-weight: 700; color: #172033; }
+.desk-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11.5px; font-weight: 600; color: #ff8a00; }
+.desk-time { flex: none; padding: 2px 8px; border-radius: 99px; background: #eef3ff; font-size: 11px; font-weight: 700; color: #4568f5; }
+.desk-now {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  min-height: 2.9em;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f6f8fb;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #374159;
+  overflow-wrap: anywhere;
+  animation: desk-now-in 0.35s ease-out both;
+}
+@keyframes desk-now-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.desk-progress { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #6b7690; }
+.desk-progress b { flex: none; color: #ff8a00; font-variant-numeric: tabular-nums; }
+.desk-foot { font-size: 11px; color: #9aa3b5; }
+.desk-tier-gold .desk-avatar, .desk-tier-platinum .desk-avatar, .desk-tier-legend .desk-avatar { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #ffcf5a; }
+@media (prefers-reduced-motion: reduce) { .desk-now { animation: none; } }
+
+/* 작업실 카드 안 무대: 예전 픽셀 캐릭터 + 세계 배경(멀티버스) + 말풍선 */
+.desk-stage {
+  position: relative;
+  display: block;
+  height: 9.6rem;
+  overflow: hidden;
+  border-radius: 8px;
+  isolation: isolate;
+}
+.desk-stage .team-pixel-art { top: auto; bottom: 0.1rem; }
+.desk-stage::after {
+  /* 땅 */
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 1.6rem;
+  z-index: 0;
+  background: var(--world-ground);
+}
+.desk-world-tag {
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  z-index: 7;
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.82);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #374159;
+}
+.desk-bubble {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 8px;
+  z-index: 8;
+  display: block;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid #e1e7f0;
+  box-shadow: 0 4px 10px -6px rgba(10, 20, 50, 0.35);
+  font-size: 12px;
+  line-height: 1.4;
+  color: #172033;
+  overflow-wrap: anywhere;
+  animation: desk-now-in 0.35s ease-out both;
+}
+.desk-world-forest { background: linear-gradient(180deg, #bfe6ff 0%, #e6f7ff 55%, #d6f2c4 100%); --world-ground: linear-gradient(180deg, #8fd27a, #6cbf5c); }
+.desk-world-ocean { background: linear-gradient(180deg, #8fd3ff 0%, #c9ecff 60%, #a6e3f5 100%); --world-ground: linear-gradient(180deg, #f6e2b3, #e9cc8e); }
+.desk-world-snow { background: linear-gradient(180deg, #dbe7f5 0%, #f2f6fb 70%); --world-ground: linear-gradient(180deg, #ffffff, #e3ecf6); }
+.desk-world-night { background: radial-gradient(1.5px 1.5px at 20% 30%, #fff, transparent), radial-gradient(1px 1px at 60% 18%, #fff, transparent), radial-gradient(1.5px 1.5px at 82% 40%, #fff, transparent), linear-gradient(180deg, #24305e 0%, #4b5b9a 100%); --world-ground: linear-gradient(180deg, #5b6aa8, #3f4c86); }
+.desk-world-blossom { background: radial-gradient(4px 4px at 18% 35%, #ffc4dd, transparent), radial-gradient(3px 3px at 70% 25%, #ffd6e7, transparent), radial-gradient(4px 4px at 88% 50%, #ffc4dd, transparent), linear-gradient(180deg, #ffe6f1 0%, #fff4f8 70%); --world-ground: linear-gradient(180deg, #b9e3a3, #94d17f); }
+.desk-world-desert { background: linear-gradient(180deg, #ffe0a8 0%, #fff1d6 70%); --world-ground: linear-gradient(180deg, #f2c983, #e2ad62); }
+.desk-world-night .desk-world-tag { background: rgba(20, 28, 60, 0.75); color: #fff; }
+
+/* 작업실 캐릭터 (components/employee/DeskBuddy.tsx) */
+.desk-stage .buddy { position: absolute; left: 50%; bottom: 0; z-index: 1; width: min(100%, 16rem); height: auto; transform: translateX(-50%); image-rendering: pixelated; }
+.buddy-eyes { transform-box: fill-box; transform-origin: center; animation: buddy-blink 4.2s infinite; }
+@keyframes buddy-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
+.buddy-hand-l { animation: buddy-type 0.5s ease-in-out infinite alternate; }
+.buddy-hand-r { animation: buddy-type 0.5s ease-in-out 0.25s infinite alternate; }
+@keyframes buddy-type { from { transform: translateY(0); } to { transform: translateY(-2px); } }
+.buddy-steam { animation: buddy-steam 2.4s ease-in-out infinite; }
+@keyframes buddy-steam { 0%, 100% { opacity: 0.2; transform: translateY(1px); } 50% { opacity: 0.9; transform: translateY(-1px); } }
+.buddy-zzz { animation: buddy-zzz 2.6s ease-in-out infinite; }
+@keyframes buddy-zzz { 0% { opacity: 0; transform: translateY(4px); } 40% { opacity: 1; } 100% { opacity: 0; transform: translateY(-6px); } }
+.buddy-spark { transform-box: fill-box; transform-origin: center; animation: buddy-spark 1.6s ease-in-out infinite; }
+@keyframes buddy-spark { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .buddy-eyes, .buddy-hand-l, .buddy-hand-r, .buddy-steam, .buddy-zzz, .buddy-spark { animation: none; }
+}
+
+/* 말풍선 글은 안쪽 상자에서 두 줄까지만 (바깥 여백으로 세 번째 줄이 비치지 않게) */
+.desk-bubble > span { display: block; max-height: 2.8em; overflow: hidden; }
+.desk-stage { height: 11.4rem; }
+
+/* 오늘의 캐릭터 이름표와 등급 */
+.desk-char-tag {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  z-index: 7;
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.82);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #6b7690;
+}
+.desk-char-uncommon { color: #23995a; }
+.desk-char-rare { color: #fff; background: linear-gradient(90deg, #4f86e8, #8f6fd8); }
+.desk-char-legendary {
+  color: #5a3200;
+  background: linear-gradient(90deg, #ffe08a, #ffb52e, #ffe08a);
+  background-size: 200% 100%;
+  box-shadow: 0 0 10px rgba(255, 190, 60, 0.8);
+  animation: desk-legend 2.4s linear infinite;
+}
+@keyframes desk-legend { from { background-position: 0 0; } to { background-position: 200% 0; } }
+
+/* 머리 위 말풍선 아이콘 */
+.desk-emote {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  z-index: 9;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-left: -15px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid #e1e7f0;
+  box-shadow: 0 4px 10px -4px rgba(10, 20, 50, 0.35);
+  font-size: 16px;
+  animation: desk-emote 3.2s ease-out both;
+}
+@keyframes desk-emote {
+  0% { opacity: 0; transform: translateY(8px) scale(0.6); }
+  12% { opacity: 1; transform: translateY(0) scale(1.08); }
+  20% { transform: scale(1); }
+  85% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+@media (prefers-reduced-motion: reduce) { .desk-char-legendary, .desk-emote { animation: none; } }
+
+/* 도움받기 메뉴 (components/employee/HelpLaunch.tsx) */
+.help-launch-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 220px;
+  padding: 8px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid #e1e7f0;
+  box-shadow: 0 14px 30px -12px rgba(10, 20, 50, 0.45);
+  text-align: left;
+}
+.help-launch-menu a {
+  display: block;
+  padding: 7px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #172033;
+  text-decoration: none;
+}
+.help-launch-menu a:hover { background: #fff6e8; }
+.help-launch-menu a small { font-weight: 500; color: #6b7690; }
+.help-launch-note { padding: 2px 10px 0; font-size: 11.5px; line-height: 1.5; color: #6b7690; }

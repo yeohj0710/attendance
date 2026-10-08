@@ -27,12 +27,15 @@ const CHIP_CLASS: Record<string, string> = {
 export function TaskText({
   done,
   label,
+  minutes,
   note,
   text,
   children,
 }: {
   done: boolean;
   label?: string;
+  /** 걸리는 시간. 줄 오른쪽 끝에 회색 작은 글씨로 */
+  minutes?: string;
   note?: string;
   text: string;
   /** 링크를 살려 그리는 글 (없으면 text 그대로) */
@@ -110,8 +113,9 @@ export function TaskText({
 
   return (
     <div onMouseEnter={open} onMouseLeave={close} ref={wrapRef}>
+      <div className="flex items-baseline gap-2">
       <span
-        className={`break-words leading-relaxed ${expanded ? "block whitespace-pre-wrap" : "line-clamp-1"} ${
+        className={`min-w-0 flex-1 break-words leading-relaxed ${expanded ? "block whitespace-pre-wrap" : "line-clamp-1"} ${
           done ? "text-muted line-through" : label === "빈 날" ? "font-bold text-danger" : "text-ink"
         } ${overflows && !expanded ? "cursor-pointer" : note ? "cursor-help" : ""}`}
         onClick={(event) => {
@@ -130,6 +134,8 @@ export function TaskText({
         ) : null}
         {children ?? text}
       </span>
+      {minutes ? <span className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted">{minutes}</span> : null}
+      </div>
       {expanded ? (
         <button
           className="mt-0.5 text-xs font-bold text-accent hover:underline"

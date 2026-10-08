@@ -1,0 +1,213 @@
+/*
+ * 출퇴근기록부 배경 장면 (components/employee/SkyScene.tsx).
+ * 움직임은 전부 CSS 로만 한다. 그림 파일은 없다.
+ */
+
+.sky-scene {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  background: var(--sky);
+  transition: background 2s;
+  --sky: linear-gradient(180deg, #6fc0ff 0%, #a8dcff 45%, #e9f7ff 100%);
+  --hill-far: #b5e6a0;
+  --hill-mid: #8fd27a;
+  --hill-near: #6cbf5c;
+  --cloud: rgba(255, 255, 255, 0.95);
+}
+
+/* 시간대 */
+.sky-dawn { --sky: linear-gradient(180deg, #7f8fd8 0%, #f4b6c2 55%, #ffe1c4 100%); }
+.sky-morning { --sky: linear-gradient(180deg, #6fc0ff 0%, #a8dcff 45%, #eaf8ff 100%); }
+.sky-day { --sky: linear-gradient(180deg, #4fb0ff 0%, #93d4ff 50%, #e3f5ff 100%); }
+.sky-sunset { --sky: linear-gradient(180deg, #5b6fd0 0%, #f39a8b 50%, #ffd59a 100%); --cloud: rgba(255, 232, 222, 0.95); }
+.sky-night { --sky: linear-gradient(180deg, #121a3a 0%, #26346b 55%, #46558f 100%); --cloud: rgba(170, 182, 222, 0.35); --hill-far: #2e4a5a; --hill-mid: #26404e; --hill-near: #1e3542; }
+
+/* 계절: 언덕 색 */
+.season-spring:not(.sky-night) { --hill-far: #c4ebb0; --hill-mid: #9edb87; --hill-near: #7ccb69; }
+.season-summer:not(.sky-night) { --hill-far: #9fdc84; --hill-mid: #6fc95a; --hill-near: #4fb444; }
+.season-autumn:not(.sky-night) { --hill-far: #f2c879; --hill-mid: #e7a25a; --hill-near: #c9803f; }
+.season-winter:not(.sky-night) { --hill-far: #f1f6fb; --hill-mid: #dde8f3; --hill-near: #c7d6e6; }
+
+/* 날씨 */
+.weather-cloudy:not(.sky-night), .weather-rain:not(.sky-night), .weather-snow:not(.sky-night) {
+  --sky: linear-gradient(180deg, #8fa4bd 0%, #b9c8d8 55%, #e3ebf3 100%);
+  --cloud: rgba(236, 241, 247, 0.95);
+}
+.weather-rain .sky-cloud { filter: brightness(0.85); }
+
+/* 기념일 */
+.holiday-halloween.sky-sunset, .holiday-halloween.sky-night { --sky: linear-gradient(180deg, #2a1a4a 0%, #6b3a7a 55%, #f08a3c 100%); }
+
+/* 해, 달, 별 */
+.sky-sun { position: absolute; width: 64px; height: 64px; margin-left: -32px; border-radius: 50%; background: radial-gradient(circle, #fff6c2 0 40%, #ffd76a 60%, rgba(255, 215, 106, 0) 72%); }
+.sky-sunset .sky-sun { background: radial-gradient(circle, #ffe0b0 0 40%, #ff9f5a 60%, rgba(255, 159, 90, 0) 72%); }
+.sky-moon { position: absolute; right: 14%; top: 10%; width: 44px; height: 44px; border-radius: 50%; background: #fdf6d8; box-shadow: inset -10px -4px 0 #e9dfb2, 0 0 30px rgba(253, 246, 216, 0.5); }
+.sky-moon.is-full { width: 78px; height: 78px; box-shadow: 0 0 50px rgba(255, 238, 170, 0.7); background: radial-gradient(circle at 40% 40%, #fffbe6, #ffe9a6); }
+.sky-stars {
+  position: absolute;
+  inset: 0 0 45% 0;
+  background-image:
+    radial-gradient(1.5px 1.5px at 8% 20%, #fff, transparent), radial-gradient(1px 1px at 22% 8%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 35% 30%, #fff, transparent), radial-gradient(1px 1px at 48% 14%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 63% 26%, #fff, transparent), radial-gradient(1px 1px at 77% 6%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 90% 22%, #fff, transparent), radial-gradient(1px 1px at 15% 38%, #fff, transparent),
+    radial-gradient(1px 1px at 55% 40%, #fff, transparent), radial-gradient(1.5px 1.5px at 83% 36%, #fff, transparent);
+  animation: sky-twinkle 4s ease-in-out infinite alternate;
+}
+.sky-dawn .sky-stars { opacity: 0.4; }
+@keyframes sky-twinkle { from { opacity: 0.6; } to { opacity: 1; } }
+
+/* 구름 */
+.sky-cloud { position: absolute; width: 170px; height: 44px; border-radius: 30px; background: var(--cloud); animation: sky-drift 90s linear infinite; }
+.sky-cloud::before, .sky-cloud::after { content: ""; position: absolute; background: inherit; border-radius: 50%; }
+.sky-cloud::before { width: 70px; height: 70px; left: 28px; top: -34px; }
+.sky-cloud::after { width: 50px; height: 50px; left: 86px; top: -22px; }
+.sky-cloud-0 { top: 9%; }
+.sky-cloud-1 { top: 24%; transform: scale(0.7); animation-duration: 120s; animation-delay: -50s; }
+.sky-cloud-2 { top: 40%; transform: scale(0.55); animation-duration: 140s; animation-delay: -95s; }
+.sky-cloud-3 { top: 16%; transform: scale(0.85); animation-duration: 105s; animation-delay: -30s; }
+.sky-cloud-4 { top: 32%; transform: scale(0.6); animation-duration: 130s; animation-delay: -70s; }
+.sky-cloud-5 { top: 5%; transform: scale(0.5); animation-duration: 150s; animation-delay: -120s; }
+@keyframes sky-drift { from { left: -220px; } to { left: 110vw; } }
+
+/* 언덕과 랜드마크 */
+.sky-hills { position: absolute; left: 0; right: 0; bottom: 0; height: 240px; }
+.sky-hills svg { display: block; width: 100%; height: 100%; }
+.hill-far { fill: var(--hill-far); transition: fill 2s; }
+.hill-mid { fill: var(--hill-mid); transition: fill 2s; }
+.hill-near { fill: var(--hill-near); transition: fill 2s; }
+.sky-landmark { position: absolute; bottom: 118px; width: 96px; transform: translateX(-50%); }
+.sky-landmark svg { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+.sky-night .sky-landmark { filter: brightness(0.6) saturate(0.8); }
+
+/* 하늘 이벤트 */
+.sky-event { position: absolute; left: 0; animation-timing-function: linear; animation-fill-mode: both; }
+.sky-event-art { display: block; width: auto; height: 42px; max-width: 140px; image-rendering: pixelated; }
+.sky-motion-fly { animation-name: sky-fly; }
+.sky-motion-drift { animation-name: sky-fly; }
+.sky-motion-drift .sky-event-art { height: 64px; max-width: 200px; }
+.sky-motion-streak { animation-name: sky-streak; }
+.sky-motion-float { animation-name: sky-float; left: 50%; }
+.sky-rarity-legendary .sky-event-art { filter: drop-shadow(0 0 6px rgba(255, 214, 90, 0.9)); }
+.sky-rarity-rare .sky-event-art { filter: drop-shadow(0 0 4px rgba(150, 200, 255, 0.8)); }
+@keyframes sky-fly {
+  0% { transform: translate(-160px, 0); }
+  25% { transform: translate(25vw, -10px); }
+  50% { transform: translate(52vw, 6px); }
+  75% { transform: translate(78vw, -8px); }
+  100% { transform: translate(calc(100vw + 160px), 0); }
+}
+@keyframes sky-streak {
+  0% { transform: translate(70vw, 0) rotate(-20deg); opacity: 0; }
+  10% { opacity: 1; }
+  100% { transform: translate(20vw, 22vh) rotate(-20deg); opacity: 0; }
+}
+@keyframes sky-float {
+  0% { transform: translate(-50%, 30px) scale(0.6); opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translate(-50%, -20px) scale(1.15); opacity: 0; }
+}
+
+/* 떨어지는 것 */
+.sky-particles span { position: absolute; top: -20px; animation: sky-fall linear infinite; }
+.sky-particles-petal span { width: calc(8px * var(--size)); height: calc(6px * var(--size)); border-radius: 60% 0; background: #ffc6dc; }
+.sky-particles-leaf span { width: calc(9px * var(--size)); height: calc(7px * var(--size)); border-radius: 0 70%; background: #e8893a; }
+.sky-particles-snow span { width: calc(6px * var(--size)); height: calc(6px * var(--size)); border-radius: 50%; background: #fff; box-shadow: 0 0 3px rgba(255, 255, 255, 0.8); }
+.sky-particles-rain span { width: 1.5px; height: 14px; background: rgba(170, 200, 230, 0.7); }
+.sky-particles-firefly span { top: auto; bottom: 120px; width: 4px; height: 4px; border-radius: 50%; background: #f4ff8a; box-shadow: 0 0 8px #f4ff8a; animation-name: sky-firefly; }
+@keyframes sky-fall {
+  from { transform: translate(0, 0) rotate(0deg); }
+  to { transform: translate(var(--drift), 105vh) rotate(320deg); }
+}
+@keyframes sky-firefly {
+  0%, 100% { transform: translate(0, 0); opacity: 0.2; }
+  50% { transform: translate(var(--drift), -60px); opacity: 1; }
+}
+
+/* 크리스마스 전구 줄 */
+.sky-lights {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 14px;
+  background:
+    radial-gradient(circle at 10px 8px, #ff5d5d 4px, transparent 5px) 0 0 / 60px 14px,
+    radial-gradient(circle at 30px 8px, #ffd34d 4px, transparent 5px) 0 0 / 60px 14px,
+    radial-gradient(circle at 50px 8px, #59d68b 4px, transparent 5px) 0 0 / 60px 14px;
+  animation: sky-twinkle 1.2s steps(2) infinite;
+}
+
+/* 레어 알림 */
+.sky-toast {
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 99px;
+  background: rgba(24, 30, 48, 0.92);
+  color: #ffd36b;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  animation: sky-toast 5s ease-out both;
+}
+@keyframes sky-toast { 0% { opacity: 0; transform: translate(-50%, -8px); } 10%, 85% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
+
+/* 도트 프레임 넘기기 (PixelArt.tsx frameStyle) */
+@keyframes px-show-2 { 0% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes px-show-3 { 0% { opacity: 1; } 33.333% { opacity: 0; } }
+@keyframes px-show-4 { 0% { opacity: 1; } 25% { opacity: 0; } }
+
+/* 도감 */
+.sky-dex { position: relative; }
+.sky-dex-button { cursor: pointer; }
+.sky-dex-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  display: block;
+  width: min(84vw, 360px);
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 12px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid #e1e7f0;
+  box-shadow: 0 14px 30px -12px rgba(10, 20, 50, 0.45);
+  text-align: left;
+}
+.sky-dex-head { display: block; margin-bottom: 10px; font-size: 12px; color: #6b7690; }
+.sky-dex-head b { display: block; font-size: 14px; color: #172033; }
+.sky-dex-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.sky-dex-item { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px; border-radius: 8px; background: #f6f8fb; text-align: center; }
+.sky-dex-art { width: 40px; height: 32px; image-rendering: pixelated; }
+.sky-dex-item.is-unknown .sky-dex-art { filter: brightness(0) opacity(0.25); }
+.sky-dex-name { font-size: 10.5px; font-weight: 700; color: #172033; line-height: 1.2; }
+.sky-dex-rarity { font-size: 9.5px; color: #9aa3b5; }
+.sky-dex-item.sky-rarity-rare .sky-dex-rarity { color: #2f73e0; }
+.sky-dex-item.sky-rarity-legendary .sky-dex-rarity { color: #e07b00; font-weight: 700; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sky-cloud, .sky-stars, .sky-particles span, .sky-lights, .sky-event { animation: none !important; }
+  .sky-particles { display: none; }
+}
+
+/* 무지개 (가끔) */
+.sky-rainbow {
+  position: absolute;
+  left: 50%;
+  bottom: 90px;
+  width: 760px;
+  height: 380px;
+  margin-left: -380px;
+  border-radius: 380px 380px 0 0;
+  background: radial-gradient(circle at 50% 100%, transparent 58%, rgba(255, 90, 90, 0.35) 59%, rgba(255, 170, 60, 0.35) 62%, rgba(255, 230, 80, 0.35) 65%, rgba(100, 210, 120, 0.35) 68%, rgba(80, 160, 255, 0.35) 71%, rgba(150, 110, 230, 0.35) 74%, transparent 76%);
+  opacity: 0.8;
+}

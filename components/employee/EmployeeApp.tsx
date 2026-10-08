@@ -22,10 +22,15 @@ import {
   contentTeamKey,
   sendCalendarToggle,
 } from "@/components/employee/ContentTeamToday";
-import type { CalendarImportItem } from "@/components/employee/ContentTeamToday";
+import type { CalendarImportItem, UpcomingCalendarDay } from "@/components/employee/ContentTeamToday";
 import { TaskText } from "@/components/employee/TaskText";
+import { HelpLaunch } from "@/components/employee/HelpLaunch";
+import { OtherDayTasks, TaskDayNav } from "@/components/employee/TaskDayBrowser";
 import { createMixedGreetings, pickFreshGreetings, type MixedGreetingContext } from "@/lib/greeting-mix";
 import { MapleScene, QuestIcon, QuestProgress } from "@/components/employee/MapleQuest";
+import { DeskBuddy, pickDailyCharacter } from "@/components/employee/DeskBuddy";
+import { SkyDex, SkyScene } from "@/components/employee/SkyScene";
+import { RARITY_LABEL, recordDex } from "@/lib/scene";
 import {
   createLocalGreetings,
   type GreetingContext,
@@ -102,6 +107,7 @@ type WorkTask = {
   updatedAt: string;
   calKey?: string;
   calLabel?: string;
+  calMin?: string;
   note?: string;
 };
 
@@ -1640,6 +1646,16 @@ export function EmployeeApp() {
     }
   }
 
+  /* 날짜 넘기기에서 지난 날 업무일지를 읽는다. 읽은 날은 캐시에 남아 다시 읽지 않는다. */
+  const loadOtherDayWorkLog = useCallback(
+    async (workDate: string) => {
+      if (!auth || !employee) return null;
+      return fetchWorkLog({ employeeId: employee.id, workDate }, auth).catch(() => null);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [auth, employee?.id],
+  );
+
   async function importContentCalendarTasks(items: CalendarImportItem[], keyPrefix: string) {
     if (!auth || !employee || !todayWorkLog) return;
     const requestAuth = auth;
@@ -1939,7 +1955,7 @@ export function EmployeeApp() {
   return (
     <>
     <main className="mx-auto flex min-h-dvh w-full max-w-4xl flex-col justify-start px-3 pb-16 pt-6 sm:px-5 sm:pt-8">
-      <MapleScene />
+      <SkyScene weatherLabel={officeWeather?.label} />
       <section className="w-full max-w-xl self-center rounded-lg border border-line bg-white p-4 shadow-panel">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -2149,6 +2165,7 @@ export function EmployeeApp() {
             contentWho={contentWho}
             isLoading={isTodayWorkLoading}
             onImportCalendar={importContentCalendarTasks}
+            onLoadWorkLog={loadOtherDayWorkLog}
             isSaving={isTodayWorkSaving}
             message={todayWorkMessage}
             newTaskText={todayTaskText}
@@ -2680,6 +2697,51 @@ function CommentNotificationModal({
   );
 }
 
+/* 작업실 말풍선 아이콘: 15~35초마다 한 사람에게 하나. 창을 안 보면 쉰다 */
+const DESK_EMOTES = ["☕", "💡", "❗", "🎵", "💬", "✨", "📞", "📝", "🍪", "👍", "🔥", "❓", "🌱", "📸", "🎬"];
+
+function DeskEmoteTicker({ count, onEmote }: { count: number; onEmote: (emote: { index: number; icon: string; key: number } | null) => void }) {
+  const countRef = useRef(count);
+  countRef.current = count;
+  useEffect(() => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    let timer = 0;
+    let key = 0;
+    const tick = () => {
+      timer = window.setTimeout(() => {
+        if (!document.hidden && countRef.current > 0) {
+          const k = ++key;
+          onEmote({
+            index: Math.floor(Math.random() * countRef.current),
+            icon: (() => {
+              // 점심시간(12시대)에는 음식, 오후 3시대에는 간식 아이콘이 섞인다
+              const hour = (new Date().getUTCHours() + 9) % 24;
+              const pool = hour === 12 ? [...DESK_EMOTES, "🍚", "🍜", "🍱", "🥗", "🍙"] : hour === 15 ? [...DESK_EMOTES, "🍩", "🧋", "🍫"] : DESK_EMOTES;
+              return pool[Math.floor(Math.random() * pool.length)];
+            })(),
+            key: k,
+          });
+          window.setTimeout(() => onEmote(null), 3200);
+        }
+        tick();
+      }, 15_000 + Math.random() * 20_000);
+    };
+    tick();
+    return () => window.clearTimeout(timer);
+  }, [onEmote]);
+  return null;
+}
+
+/* 작업실 멀티버스: 대표 칭호 등급마다 월드가 다르다 (app/maple-quest.css 의 desk-world-*) */
+const DESK_WORLDS: Record<string, { id: string; label: string; hint: string }> = {
+  rookie: { id: "forest", label: "🌲 숲 월드", hint: "루키 칭호의 월드예요. 칭호가 오르면 월드가 바뀌어요." },
+  bronze: { id: "ocean", label: "🌊 바다 월드", hint: "브론즈 칭호의 월드예요." },
+  silver: { id: "snow", label: "❄️ 눈마을 월드", hint: "실버 칭호의 월드예요." },
+  gold: { id: "desert", label: "🏜️ 황금 사막 월드", hint: "골드 칭호의 월드예요." },
+  platinum: { id: "blossom", label: "🌸 벚꽃 월드", hint: "플래티넘 칭호의 월드예요." },
+  legend: { id: "night", label: "🌌 별밤 월드", hint: "레전드 칭호의 월드예요." },
+};
+
 function TeamDeskScene({
   currentEmployeeId,
   now,
@@ -2701,6 +2763,9 @@ function TeamDeskScene({
   todayDate?: string | null;
   weather: GreetingWeather | null;
 }) {
+  // 가끔 한 사람 머리 위에 말풍선 아이콘이 뜬다(몇 시간 봐도 덜 질리게)
+  const [emote, setEmote] = useState<{ index: number; icon: string; key: number } | null>(null);
+
   if (!records.length) {
     return null;
   }
@@ -2708,29 +2773,21 @@ function TeamDeskScene({
   const ambience = getDeskAmbience(now, todayDate, weather);
 
   return (
-    <div className={`team-pixel-room mt-3 ${ambience.className}`} aria-label="실시간 작업실">
-      <div className="team-pixel-room-header">
-        <span>실시간 작업실</span>
-        <span>{records.length}명 작업 중</span>
+    <div className="desk-room mt-3" aria-label="실시간 작업실">
+      <DeskEmoteTicker count={records.length} onEmote={setEmote} />
+      <div className="desk-room-head">
+        <span className="desk-room-title">실시간 작업실</span>
+        <span className="desk-chip">{records.length}명 일하는 중</span>
+        <span className="desk-chip">{ambience.weatherText}</span>
+        <SkyDex />
+        {ambience.eventLabel ? <span className="desk-chip desk-chip-event">{ambience.eventLabel}</span> : null}
       </div>
-      <span className="team-pixel-clock" aria-hidden="true">
-        {ambience.clockLabel}
-      </span>
-      <span className="team-pixel-weather-badge">{ambience.weatherText}</span>
-      {ambience.eventLabel ? <span className="team-pixel-event-banner">{ambience.eventLabel}</span> : null}
-      <span className="team-pixel-weather-layer" aria-hidden="true" />
-      <span className="team-pixel-window" aria-hidden="true">
-        <span />
-        <span />
-      </span>
-      <span className="team-pixel-board" aria-hidden="true">
-        WORK
-      </span>
-      <div className="team-pixel-grid">
+      <div className="desk-grid">
         {records.map((record, index) => (
           <TeamDeskSeat
             currentEmployeeId={currentEmployeeId}
             dateKey={todayDate ?? record.workDate}
+            emote={emote?.index === index ? emote : null}
             index={index}
             key={record.employeeId}
             now={now}
@@ -2749,6 +2806,7 @@ function TeamDeskScene({
 function TeamDeskSeat({
   currentEmployeeId,
   dateKey,
+  emote,
   index,
   now,
   onPrefetchRecord,
@@ -2759,6 +2817,7 @@ function TeamDeskSeat({
 }: {
   currentEmployeeId: string;
   dateKey?: string | null;
+  emote?: { icon: string; key: number } | null;
   index: number;
   now: Date;
   onPrefetchRecord: (record: TeamAttendanceRecord) => void;
@@ -2797,74 +2856,57 @@ function TeamDeskSeat({
     return () => window.clearTimeout(timer);
   }, [index, mumbleIndex, mumbleLines.length]);
 
+  const progress = taskCount ? Math.min(1, doneCount / taskCount) : 0;
+  // 오늘의 캐릭터: 사람마다 날마다 새로 뽑는다. 만난 캐릭터는 도감에 남는다.
+  const dayKey = dateKey ?? record.workDate;
+  const character = pickDailyCharacter(record.employeeId, dayKey, record.employeeName);
+  useEffect(() => {
+    recordDex(`char:${character.def.id}`, dayKey);
+  }, [character.def.id, dayKey]);
+  // 멀티버스: 대표 칭호 등급이 오를수록 다른 월드에서 일한다.
+  const world = DESK_WORLDS[titleRarity] ?? DESK_WORLDS.rookie;
+
   return (
     <button
       aria-label={`${withHonorific(record.employeeName)} 업무 기록 보기`}
-      className={`team-pixel-seat team-pixel-tier-${titleRarity} team-pixel-depth-${titleDepth} team-pixel-effect-${activityEffect.level} team-pixel-effect-${activityEffect.tone} team-pixel-hair-${palette.hairStyle} team-pixel-outfit-${palette.outfit} team-pixel-posture-${state.posture} team-pixel-mood-${state.mood} team-pixel-screen-${state.screen}${state.rare ? ` team-pixel-rare-${state.rare}` : ""}${isMe ? " team-pixel-seat-me" : ""}`}
+      className={`desk-card desk-tier-${titleRarity}${isMe ? " is-me" : ""}`}
       onFocus={() => onPrefetchRecord(record)}
       onClick={() => onSelectRecord(record)}
       onPointerEnter={() => onPrefetchRecord(record)}
-      style={
-        {
-          ...getDeskPaletteStyle(palette),
-          ...liveEffectStyle,
-        } as CSSProperties
-      }
       title={`${withHonorific(record.employeeName)}, ${formatKstTimeRange(record)}`}
       type="button"
     >
-      {titleProfile ? <span className="team-pixel-title-aura" aria-hidden="true" /> : null}
-      <span className="team-pixel-live-aura" aria-hidden="true" />
-      <span className="team-pixel-live-particles" aria-hidden="true" />
-      <span className="team-pixel-nameplate">
-        <span className="team-pixel-name">{record.employeeName}</span>
-        <span className={`team-pixel-time ${workHeatClassName}`}>{workingLabel}</span>
-      </span>
-      <span className="team-pixel-mumble" key={`${record.employeeId}-${safeMumbleIndex}`}>
-        {mumbleLines[safeMumbleIndex]}
-      </span>
-      <span className="team-pixel-art" aria-hidden="true">
-        <span className="team-pixel-rug" />
-        <span className="team-pixel-ground-shadow" />
-        <span className="team-pixel-lamp">
-          <span />
+      <span className="desk-card-top">
+        <span className="desk-who">
+          <span className="desk-name">{withHonorific(record.employeeName)}</span>
+          {titleProfile ? <span className="desk-title">{titleProfile.representativeTitle.name}</span> : null}
         </span>
-        <span className="team-pixel-chair" />
-        <span className="team-pixel-worker">
-          <span className="team-pixel-head">
-            <span className="team-pixel-hair" />
-            <span className="team-pixel-face" />
-            <span className="team-pixel-mouth" />
+        <span className={`desk-time ${workHeatClassName}`}>{workingLabel}</span>
+      </span>
+      {/* 캐릭터와 책상(DeskBuddy), 지금 하는 일은 말풍선. 배경 월드는 대표 칭호 등급에 따라 */}
+      <span aria-hidden="true" className={`desk-stage desk-world-${world.id}`} title={world.hint}>
+        <span className="desk-world-tag">{world.label}</span>
+        <span className="desk-bubble" key={`${record.employeeId}-${safeMumbleIndex}`}>
+          <span>{mumbleLines[safeMumbleIndex].replace(/^…/, "")}</span>
+        </span>
+        <DeskBuddy character={character} mood={state.mood} screen={state.screen} sleepy={state.showZzz} />
+        <span className={`desk-char-tag desk-char-${character.def.rarity}`}>
+          {character.def.rarity === "common" ? "" : `${RARITY_LABEL[character.def.rarity]} `}
+          {character.def.name}
+        </span>
+        {emote ? (
+          <span className="desk-emote" key={emote.key}>
+            {emote.icon}
           </span>
-          <span className="team-pixel-body" />
-          <span className="team-pixel-leg team-pixel-leg-left" />
-          <span className="team-pixel-leg team-pixel-leg-right" />
-          <span className="team-pixel-arm team-pixel-arm-left" />
-          <span className="team-pixel-arm team-pixel-arm-right" />
-        </span>
-        <span className="team-pixel-desk">
-          <span className="team-pixel-monitor">
-            <span />
-            <span />
-            <span />
-          </span>
-          <span className="team-pixel-keyboard" />
-          <span className="team-pixel-desk-items">
-            {state.items.map((item) => (
-              <span aria-hidden="true" className={`team-pixel-item team-pixel-item-${item}`} key={item} />
-            ))}
-          </span>
-        </span>
-        {state.showZzz ? <span className="team-pixel-zzz">zzz</span> : null}
-        <span className="team-pixel-plant">
-          <span />
-          <span />
-        </span>
+        ) : null}
       </span>
-      <span className="team-pixel-stat">
-        <span>{taskText}</span>
-        <span>{isMe ? "내 자리" : "클릭해서 보기"}</span>
+      <span className="desk-progress">
+        <span className="maple-bar-track">
+          <span className="maple-bar-fill" style={{ width: `${progress * 100}%` }} />
+        </span>
+        <b>{taskText}</b>
       </span>
+      <span className="desk-foot">{isMe ? "내 자리" : "눌러서 업무 기록 보기"}</span>
     </button>
   );
 }
@@ -3398,7 +3440,7 @@ function TaskPreviewList({ tasks }: { tasks: WorkTask[] }) {
         >
           <span aria-hidden="true" className={`quest-check${task.done ? " is-on" : ""}`} />
           <div className="min-w-0 flex-1">
-            <TaskText done={task.done} label={task.calLabel} note={task.note} text={task.text}>
+            <TaskText done={task.done} label={task.calLabel} minutes={task.calMin} note={task.note} text={task.text}>
               <LinkifiedText text={task.text} />
             </TaskText>
           </div>
@@ -7277,6 +7319,7 @@ function QuickWorkLogPanel({
   contentWho = null,
   isLoading,
   onImportCalendar,
+  onLoadWorkLog,
   isSaving,
   message,
   newTaskText,
@@ -7293,6 +7336,8 @@ function QuickWorkLogPanel({
   contentWho?: string | null;
   isLoading: boolean;
   onImportCalendar?: (items: CalendarImportItem[], keyPrefix: string) => Promise<void>;
+  /** 다른 날짜 업무일지 읽기 (날짜 넘기기, 보기만) */
+  onLoadWorkLog?: (workDate: string) => Promise<WorkLog | null>;
   isSaving: boolean;
   message: string;
   newTaskText: string;
@@ -7306,11 +7351,23 @@ function QuickWorkLogPanel({
   workLog: WorkLog | null;
 }) {
   const tasks = workLog?.tasks ?? [];
+  // 날짜 넘기기: null 이면 오늘. 다른 날은 보기만 한다.
+  const [viewDate, setViewDate] = useState<string | null>(null);
+  const [upcoming, setUpcoming] = useState<UpcomingCalendarDay[] | null>(null);
+  const today = workLog?.workDate ?? "";
+  const loadLog = useCallback(
+    async (date: string) => (onLoadWorkLog ? onLoadWorkLog(date) : null),
+    [onLoadWorkLog],
+  );
+
+  useEffect(() => {
+    setViewDate(null);
+  }, [today]);
 
   return (
     <div className="quick-panel border-t border-line px-3 pb-3">
       {contentWho && onImportCalendar ? (
-        <ContentCalendarSync onImport={onImportCalendar} who={contentWho} workLog={workLog} />
+        <ContentCalendarSync onImport={onImportCalendar} onUpcoming={setUpcoming} who={contentWho} workLog={workLog} />
       ) : null}
       {isLoading ? (
         <div className="flex items-center justify-center gap-2 pb-5 pt-8 text-sm font-semibold text-muted">
@@ -7321,6 +7378,15 @@ function QuickWorkLogPanel({
 
       {!isLoading && workLog ? (
         <div className="space-y-3 pt-3">
+          <TaskDayNav
+            onChange={(date) => setViewDate(date === today ? null : date)}
+            today={today}
+            viewDate={viewDate ?? today}
+          />
+          {viewDate ? (
+            <OtherDayTasks date={viewDate} loadLog={loadLog} today={today} upcoming={contentWho ? upcoming : null} />
+          ) : null}
+          {viewDate ? null : <>
           {tasks.length ? (
             <QuestProgress done={tasks.filter((task) => task.done).length} total={tasks.length} />
           ) : null}
@@ -7365,6 +7431,7 @@ function QuickWorkLogPanel({
               추가
             </button>
           </div> : null}
+          </>}
         </div>
       ) : null}
 
@@ -7939,7 +8006,7 @@ function TaskSection({
                     </div>
                   </div>
                 ) : (
-                  <TaskText done={task.done} label={task.calLabel} note={task.note} text={task.text}>
+                  <TaskText done={task.done} label={task.calLabel} minutes={task.calMin} note={task.note} text={task.text}>
                     <LinkifiedText text={task.text} />
                   </TaskText>
                 )}
@@ -7951,6 +8018,7 @@ function TaskSection({
                   </div>
                 ) : (
                   <div className="flex items-center gap-1">
+                    <HelpLaunch note={task.note} text={task.text} />
                     <button
                       aria-label={`${task.text} 수정`}
                       className="rounded p-1 text-muted transition hover:bg-accent/10 hover:text-accent disabled:hover:bg-transparent disabled:hover:text-muted"

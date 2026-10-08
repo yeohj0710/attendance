@@ -21,6 +21,8 @@ export type WorkTask = {
   calLabel?: string;
   /** 마우스를 올리면 뜨는 설명 */
   note?: string;
+  /** 걸리는 시간 (예: 15분, AI 20분) */
+  calMin?: string;
 };
 
 export type WorkComment = {
@@ -82,6 +84,7 @@ type WorkLogData = {
     cal_key?: string;
     cal_label?: string;
     note?: string;
+    cal_min?: string;
   }>;
   cal_imported?: string[];
   deleted_tasks?: Array<{
@@ -113,6 +116,7 @@ type WorkTaskInput = Partial<WorkTask> & {
   text?: string;
   cal_key?: string;
   cal_label?: string;
+  cal_min?: string;
   completed_order?: number | null;
   created_at?: string;
   updated_at?: string;
@@ -141,6 +145,7 @@ function serializeTask(task: WorkTask): NonNullable<WorkLogData["tasks"]>[number
     ...(task.calKey ? { cal_key: task.calKey } : {}),
     ...(task.calLabel ? { cal_label: task.calLabel } : {}),
     ...(task.note ? { note: task.note } : {}),
+    ...(task.calMin ? { cal_min: task.calMin } : {}),
   };
 }
 
@@ -154,6 +159,7 @@ function keepCalendarFields(sentTasks: WorkTask[], currentTasks: WorkTask[]) {
       ...task,
       calKey: current.calKey,
       ...(current.calLabel ? { calLabel: current.calLabel } : {}),
+      ...(current.calMin ? { calMin: current.calMin } : {}),
       ...(task.note || current.note ? { note: task.note || current.note } : {}),
     };
   });
@@ -165,6 +171,7 @@ export type CalendarTaskInput = {
   label?: unknown;
   note?: unknown;
   done?: unknown;
+  min?: unknown;
 };
 
 /**
@@ -194,6 +201,7 @@ export async function importCalendarTasks(
       text: String(item?.text ?? "").trim().slice(0, 300),
       label: String(item?.label ?? "").slice(0, 20),
       note: String(item?.note ?? "").slice(0, TASK_NOTE_MAX_LENGTH),
+      min: String(item?.min ?? "").slice(0, 20),
       done: item?.done === true,
     }))
     .filter((item) => item.key && item.text)
@@ -233,6 +241,7 @@ export async function importCalendarTasks(
       existing.calKey = item.key;
       if (item.label) existing.calLabel = item.label;
       if (item.note) existing.note = item.note;
+      if (item.min) existing.calMin = item.min;
       if (item.done && !existing.done) {
         existing.done = true;
         existing.completedOrder = completedOrder++;
@@ -251,6 +260,7 @@ export async function importCalendarTasks(
         calKey: item.key,
         ...(item.label ? { calLabel: item.label } : {}),
         ...(item.note ? { note: item.note } : {}),
+        ...(item.min ? { calMin: item.min } : {}),
       });
     }
     imported.add(item.key);
@@ -909,6 +919,8 @@ function normalizeTasks(tasks: WorkTaskInput[], now: string): WorkTask[] {
       if (calKey) normalizedTask.calKey = calKey;
       if (calLabel) normalizedTask.calLabel = calLabel;
       if (note) normalizedTask.note = note;
+      const calMin = String(task.calMin ?? task.cal_min ?? "").slice(0, 20);
+      if (calMin) normalizedTask.calMin = calMin;
 
       return normalizedTask;
     })
