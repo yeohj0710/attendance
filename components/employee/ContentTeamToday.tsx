@@ -12,7 +12,7 @@ import { useEffect, useState } from "react";
 const CALENDAR_URL =
   process.env.NEXT_PUBLIC_CONTENT_CALENDAR_URL ?? "https://pharmacist-mcn-structure.vercel.app";
 const MESSAGE_SOURCE = "content-calendar";
-const FALLBACK_HEIGHT = 640;
+const FALLBACK_HEIGHT = 360;
 
 /* 출퇴근기록부 이름 → 캘린더의 사람 키 */
 const CONTENT_TEAM: Record<string, string> = {
@@ -60,34 +60,38 @@ export function ContentTeamToday({
   if (!who) return null;
 
   return (
-    <div className="mt-4 rounded border border-line bg-field/60">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 pt-3">
-        <span className="block text-sm font-bold text-ink">
-          콘텐츠팀 오늘 할 일{own ? "" : " (관리자 미리보기)"}
-        </span>
+    <div className="mt-5 rounded border border-line bg-field/60">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-3">
+        <span className="text-sm font-bold text-ink">콘텐츠팀 오늘 할 일</span>
         {own ? null : (
           <select
             aria-label="미리 볼 사람"
-            className="rounded border border-line bg-white px-2 py-1 text-xs text-ink"
+            className="rounded border border-line bg-white px-1.5 py-0.5 text-xs text-ink"
             onChange={(event) => setPicked(event.target.value)}
             value={picked}
           >
             {Object.entries(CONTENT_TEAM).map(([label, key]) => (
               <option key={key} value={key}>
-                {label}
+                {label} 화면
               </option>
             ))}
           </select>
         )}
+        <a
+          className="ml-auto text-xs font-semibold text-accent hover:underline"
+          href={`${CALENDAR_URL}/daily.html#${who}`}
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          캘린더 전체 보기
+        </a>
       </div>
-      {own ? null : (
-        <p className="px-3 pt-1 text-[0.7rem] text-muted">
-          그분 화면과 같습니다. 여기서 체크하면 실제 기록에 남으니 보기만 해 주세요.
-        </p>
-      )}
-      <div className="px-2 pb-2 pt-2">
+      <div className="border-t border-line px-3 pb-3 pt-3">
+        {own ? null : (
+          <p className="mb-2 text-xs text-muted">미리보기예요. 여기서 체크하면 그분 기록에 남습니다.</p>
+        )}
         <iframe
-          className="w-full border-0 bg-transparent"
+          className="block w-full border-0 bg-transparent"
           key={who}
           src={`${CALENDAR_URL}/daily.html?embed=today&who=${who}`}
           style={{ height: `${height}px` }}

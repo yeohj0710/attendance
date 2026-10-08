@@ -15,7 +15,7 @@ import {
 import { LoginPanel } from "@/components/LoginPanel";
 import { Spinner } from "@/components/Spinner";
 import { WorkInsights } from "@/components/employee/WorkInsights";
-import { ContentTeamToday } from "@/components/employee/ContentTeamToday";
+import { ContentTeamToday, contentTeamKey } from "@/components/employee/ContentTeamToday";
 import {
   createLocalGreetings,
   type GreetingContext,
@@ -1854,6 +1854,7 @@ export function EmployeeApp() {
   );
   const titleSummary =
     !isSharedView && titleProfile ? getCareerTitleSummary(titleProfile.stats) : null;
+  const isContentTeam = contentTeamKey(employee?.name) !== null;
   const titleRequirementHint =
     !isSharedView && titleProfile
       ? getRandomAchievedQuestTitleRequirement(titleProfile.stats, titleHintSeedRef.current)
@@ -2062,6 +2063,9 @@ export function EmployeeApp() {
           </div>
         </dl>
 
+        {/* 콘텐츠팀 네 분은 캘린더의 오늘 칸이 본업이라 출퇴근 정보 바로 아래, 스크롤 없이 보이는 자리에 둔다. 공유 링크에는 붙이지 않는다. */}
+        {!isSharedView && auth && isContentTeam ? <ContentTeamToday name={employee?.name} /> : null}
+
         <div className="mt-5 rounded border border-line bg-field/60">
           <div className="px-3 py-3">
             <span className="block text-sm font-bold text-ink">오늘 할 일 / 한 일</span>
@@ -2082,8 +2086,10 @@ export function EmployeeApp() {
             workLog={todayWorkLog}
           />
         </div>
-        {/* 콘텐츠팀 네 분에게만 캘린더의 오늘 칸을 붙인다. 공유 링크에는 붙이지 않는다. */}
-        {!isSharedView && auth ? <ContentTeamToday isAdmin={employee?.role === "admin"} name={employee?.name} /> : null}
+        {/* 관리자는 콘텐츠팀 네 분 화면을 골라 미리 본다. 자기 할 일 아래에 둔다. */}
+        {!isSharedView && auth && !isContentTeam ? (
+          <ContentTeamToday isAdmin={employee?.role === "admin"} name={employee?.name} />
+        ) : null}
       </section>
 
       <section className="mt-4 w-full max-w-xl self-center rounded-lg border border-line bg-white/95 p-4 shadow-panel">
