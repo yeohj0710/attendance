@@ -1,15 +1,16 @@
-/* 회사 일정 달력 (/schedule). 노션 캘린더 보기 모양. 모든 규칙을 .cs 안에 가둬 업무 시스템의 다른 화면에 새지 않게 한다 */
+/* 회사 일정 달력 (/schedule). 노션 캘린더 보기 구조에 업무 시스템의 밝은 색을 입혔다.
+   일요일과 공휴일은 빨강, 토요일은 파랑, 오늘은 파란 동그라미와 옅은 노랑 칸. 모든 규칙을 .cs 안에 가둔다 */
 .cs {
-  --cs-text: #37352f;
-  --cs-muted: #787774;
-  --cs-faint: #9b9a97;
-  --cs-line: #e9e9e7;
-  --cs-hover: rgba(55, 53, 47, 0.06);
-  --cs-weekend: #f7f7f5;
-  --cs-blue: #2383e2;
-  --cs-red: #eb5757;
-  --cs-card: rgba(15, 15, 15, 0.08) 0 0 0 1px, rgba(15, 15, 15, 0.06) 0 2px 4px;
-  --cs-pop: rgba(15, 15, 15, 0.05) 0 0 0 1px, rgba(15, 15, 15, 0.1) 0 3px 6px, rgba(15, 15, 15, 0.2) 0 9px 24px;
+  --cs-text: #172033;
+  --cs-muted: #647086;
+  --cs-faint: #98a2b3;
+  --cs-line: #e6ebf2;
+  --cs-hover: rgba(69, 104, 245, 0.07);
+  --cs-blue: #4568f5;
+  --cs-red: #e5484d;
+  --cs-sat: #3b6ef5;
+  --cs-card: 0 1px 2px rgba(23, 32, 51, 0.06), 0 0 0 1px rgba(23, 32, 51, 0.06);
+  --cs-pop: 0 0 0 1px rgba(23, 32, 51, 0.06), 0 4px 10px rgba(23, 32, 51, 0.08), 0 14px 32px rgba(23, 32, 51, 0.16);
   min-height: 100vh; max-width: 1440px; margin: 0 auto; padding: 28px 32px 40px;
   background: #fff; color: var(--cs-text);
   font-family: "Pretendard Variable", Pretendard, ui-sans-serif, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
@@ -22,79 +23,90 @@ html:has(.cs), body:has(.cs) { background: #fff; }
 
 .cs.is-embed { min-height: 0; padding: 2px 2px 12px; }
 .cs.is-embed .cs-head { display: none; }
-.cs-head h1 { margin: 0 0 10px; font-size: 30px; font-weight: 700; letter-spacing: -0.02em; color: var(--cs-text); }
+.cs-head h1 { margin: 0 0 10px; font-size: 30px; font-weight: 800; letter-spacing: -0.02em; color: var(--cs-text); }
 
-.cs-bar { display: flex; align-items: center; gap: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--cs-line); }
+.cs-bar { display: flex; align-items: center; gap: 12px; padding-bottom: 8px; }
 .cs-views span {
-  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 14px;
-  background: rgba(55, 53, 47, 0.06); font-weight: 500;
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 999px;
+  background: #eef2ff; color: var(--cs-blue); font-weight: 600;
 }
 .cs-views svg { width: 16px; height: 16px; }
 .cs-tools { display: flex; align-items: center; gap: 2px; margin-left: auto; }
 .cs-ic {
-  display: inline-grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 6px;
+  display: inline-grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 8px;
   background: none; color: var(--cs-faint); cursor: pointer; text-decoration: none;
 }
-.cs-ic:hover { background: var(--cs-hover); color: var(--cs-text); }
-.cs-ic.is-on { color: var(--cs-blue); }
+.cs-ic:hover { background: var(--cs-hover); color: var(--cs-blue); }
+.cs-ic.is-on { color: var(--cs-blue); background: #eef2ff; }
 .cs-search { display: inline-flex; align-items: center; }
 .cs-search input { width: 0; padding: 0; border: 0; outline: none; background: none; font: inherit; color: var(--cs-text); transition: width 0.15s; }
 .cs-search.is-open input { width: 150px; padding: 0 4px; }
 .cs-new {
-  height: 28px; margin-left: 6px; padding: 0 12px; border: 0; border-radius: 6px;
-  background: var(--cs-blue); color: #fff !important; font-weight: 600; cursor: pointer;
+  height: 32px; margin-left: 6px; padding: 0 14px; border: 0; border-radius: 10px;
+  background: var(--cs-blue); color: #fff !important; font-weight: 700; cursor: pointer;
+  box-shadow: 0 6px 14px -8px rgba(69, 104, 245, 0.9);
 }
-.cs-new:hover { background: #0077d4; }
-.cs-new:disabled { opacity: 0.5; cursor: default; }
+.cs-new:hover { background: #3557e6; }
+.cs-new:disabled { opacity: 0.5; cursor: default; box-shadow: none; }
 
-.cs-sub { display: flex; align-items: center; gap: 12px; padding: 12px 0 10px; }
-.cs-sub b { font-weight: 600; }
-.cs-nav { display: flex; align-items: center; gap: 2px; margin-left: auto; }
-.cs-nav button { height: 24px; padding: 0 7px; border: 0; border-radius: 4px; background: none; cursor: pointer; }
-.cs-nav button:hover { background: var(--cs-hover); }
-.cs-nav .cs-arrow { display: inline-grid; place-items: center; width: 24px; padding: 0; color: var(--cs-faint); }
+.cs-sub { display: flex; align-items: center; gap: 12px; padding: 6px 2px 12px; }
+.cs-sub b { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; }
+.cs-nav { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.cs-nav button { height: 30px; padding: 0 12px; border: 1px solid var(--cs-line); border-radius: 999px; background: #fff; cursor: pointer; font-weight: 600; }
+.cs-nav button:hover { background: #f5f7ff; border-color: #c9d4fb; }
+.cs-nav .cs-arrow { display: inline-grid; place-items: center; width: 30px; padding: 0; color: var(--cs-muted); }
 
 .cs-msg { padding: 40px 0; color: var(--cs-muted); }
 .cs-msg a { color: var(--cs-blue); }
 
-.cs-grid { border-left: 1px solid var(--cs-line); transition: opacity 0.15s; }
-.cs-grid.is-loading { opacity: 0.5; }
-.cs-dow { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); margin-left: -1px; }
-.cs-dow div { text-align: center; font-size: 12px; color: var(--cs-faint); padding: 0 0 6px; }
-.cs-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-top: 1px solid var(--cs-line); }
-.cs-day {
-  min-width: 0; min-height: 132px; padding: 4px 6px 8px;
-  border-right: 1px solid var(--cs-line); border-bottom: 1px solid var(--cs-line); background: #fff;
+/* 달력 판: 흰 카드에 둥근 모서리 */
+.cs-grid {
+  overflow: hidden; border: 1px solid var(--cs-line); border-radius: 16px; background: #fff;
+  box-shadow: 0 12px 30px -22px rgba(23, 32, 51, 0.45); transition: opacity 0.15s;
 }
-.cs-day.is-off { background: var(--cs-weekend); }
-.cs-day.is-over { background: rgba(35, 131, 226, 0.07); box-shadow: inset 0 0 0 2px rgba(35, 131, 226, 0.5); }
-.cs-dhead { display: flex; align-items: center; height: 28px; margin-bottom: 2px; }
+.cs-grid.is-loading { opacity: 0.5; }
+.cs-dow { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); background: #f8faff; border-bottom: 1px solid var(--cs-line); }
+.cs-dow div { text-align: center; font-size: 12.5px; font-weight: 700; color: var(--cs-muted); padding: 8px 0; }
+.cs-dow .is-sun { color: var(--cs-red); }
+.cs-dow .is-sat { color: var(--cs-sat); }
+.cs-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.cs-week + .cs-week { border-top: 1px solid var(--cs-line); }
+.cs-day { min-width: 0; min-height: 136px; padding: 6px 7px 9px; background: #fff; }
+.cs-day + .cs-day { border-left: 1px solid var(--cs-line); }
+.cs-day.is-red { background: #fff7f7; }
+.cs-day.is-sat { background: #f7f9ff; }
+.cs-day.is-today { background: #fffbeb; }
+.cs-day.is-over { background: #eef2ff; box-shadow: inset 0 0 0 2px rgba(69, 104, 245, 0.55); }
+.cs-dhead { display: flex; align-items: center; gap: 4px; height: 28px; margin-bottom: 4px; }
 .cs-plus {
-  display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px;
+  display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px;
   background: none; color: var(--cs-faint); line-height: 1; cursor: pointer; opacity: 0; flex: none;
 }
-.cs .cs-plus svg { display: block; width: 14px; height: 14px; stroke-width: 1.7; }
+.cs .cs-plus svg { display: block; width: 14px; height: 14px; stroke-width: 1.8; }
 .cs-day:hover .cs-plus, .cs-plus:focus-visible { opacity: 1; }
-.cs-plus:hover { background: var(--cs-hover); color: var(--cs-text); }
-.cs-num { margin-left: auto; min-width: 24px; height: 24px; padding: 0 4px; border-radius: 12px; text-align: center; line-height: 24px; }
-.cs-day.is-off .cs-num { color: var(--cs-faint); }
-.cs-day.is-today .cs-num { background: var(--cs-red); color: #fff; font-weight: 600; }
+.cs-plus:hover { background: #eef2ff; color: var(--cs-blue); }
+.cs-hol { margin-left: auto; font-size: 11.5px; font-weight: 700; color: var(--cs-red); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-num { margin-left: auto; min-width: 26px; height: 26px; padding: 0 5px; border-radius: 13px; text-align: center; line-height: 26px; font-weight: 600; }
+.cs-hol + .cs-num { margin-left: 2px; }
+.cs-day.is-red .cs-num { color: var(--cs-red); }
+.cs-day.is-sat .cs-num { color: var(--cs-sat); }
+.cs-day.is-today .cs-num { background: var(--cs-blue); color: #fff; font-weight: 800; box-shadow: 0 4px 10px -4px rgba(69, 104, 245, 0.8); }
 .cs-full { display: none; }
 
 .cs-card {
-  display: block; width: 100%; margin: 0 0 4px; padding: 5px 8px 6px; border: 0; border-radius: 6px;
-  background: #fff; box-shadow: var(--cs-card); text-align: left; cursor: pointer;
+  display: block; width: 100%; margin: 0 0 5px; padding: 6px 9px 7px; border: 0; border-radius: 10px;
+  background: #fff; box-shadow: var(--cs-card); text-align: left; cursor: pointer; transition: transform 0.08s, box-shadow 0.08s;
 }
-.cs-card:hover { background: #fafaf9; }
-.cs-card.is-drop-before { box-shadow: 0 -3px 0 -1px #2383e2, var(--cs-card); }
-.cs-card.is-drop-after { box-shadow: 0 3px 0 -1px #2383e2, var(--cs-card); }
-.cs-ct { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-weight: 600; line-height: 1.38; overflow-wrap: anywhere; }
+.cs-card:hover { transform: translateY(-1px); box-shadow: 0 6px 14px -8px rgba(23, 32, 51, 0.35), 0 0 0 1px rgba(69, 104, 245, 0.25); }
+.cs-card.is-drop-before { box-shadow: 0 -3px 0 -1px var(--cs-blue), var(--cs-card); }
+.cs-card.is-drop-after { box-shadow: 0 3px 0 -1px var(--cs-blue), var(--cs-card); }
+.cs-ct { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
 .cs-cp { display: block; margin-top: 1px; font-size: 12px; color: var(--cs-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.cs-menu { position: fixed; z-index: 70; width: 240px; padding: 6px; background: #fff; border-radius: 8px; box-shadow: var(--cs-pop); }
-.cs-menu h4 { margin: 2px 8px 4px; font-size: 12px; font-weight: 500; color: var(--cs-faint); }
+.cs-menu { position: fixed; z-index: 70; width: 240px; padding: 6px; background: #fff; border-radius: 12px; box-shadow: var(--cs-pop); }
+.cs-menu h4 { margin: 2px 8px 4px; font-size: 12px; font-weight: 600; color: var(--cs-faint); }
 .cs-menu label, .cs-mbtn {
-  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 0 8px; border: 0; border-radius: 5px;
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 0 8px; border: 0; border-radius: 8px;
   background: none; text-align: left; cursor: pointer;
 }
 .cs-menu label:hover, .cs-mbtn:hover { background: var(--cs-hover); }
@@ -103,44 +115,26 @@ html:has(.cs), body:has(.cs) { background: #fff; }
 .cs-mbtn { color: var(--cs-muted); }
 .cs-menu-empty { margin: 4px 8px; font-size: 13px; color: var(--cs-faint); }
 
-.cs-dialog { border: 0; border-radius: 10px; padding: 0; width: min(520px, calc(100vw - 32px)); box-shadow: var(--cs-pop); color: var(--cs-text); }
-.cs-dialog::backdrop { background: rgba(15, 15, 15, 0.45); }
-.cs-dialog form { display: grid; gap: 8px; padding: 22px 26px 18px; font-size: 14px; }
-.cs-dtitle { width: 100%; border: 0; outline: none; padding: 0 0 6px; font: inherit; font-size: 24px; font-weight: 700; color: var(--cs-text); }
-.cs-dtitle::placeholder { color: rgba(55, 53, 47, 0.25); }
-.cs-prop { display: grid; grid-template-columns: 90px 1fr; align-items: center; gap: 8px; }
-.cs-prop > span { color: var(--cs-faint); }
-.cs-prop em { font-style: normal; padding: 4px 6px; }
-.cs-prop input { font: inherit; color: var(--cs-text); padding: 4px 6px; border: 0; border-radius: 4px; background: none; }
-.cs-prop input:hover { background: var(--cs-hover); }
-.cs-prop input:focus { outline: none; background: rgba(35, 131, 226, 0.07); }
-.cs-dbtns { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
-.cs-dbtns span { flex: 1; }
-.cs-dbtns a { color: var(--cs-muted); font-size: 13px; }
-.cs-dbtns button { height: 32px; padding: 0 12px; border: 1px solid var(--cs-line); border-radius: 6px; background: #fff; cursor: pointer; }
-.cs-dbtns button:hover { background: var(--cs-hover); }
-.cs-dbtns .cs-ok { background: var(--cs-blue); border-color: var(--cs-blue); color: #fff; }
-.cs-dbtns .cs-del { border-color: transparent; color: #c4554d; padding: 0 8px; }
-
 .cs-toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 80;
-  display: flex; gap: 12px; align-items: center; padding: 9px 14px; border-radius: 8px;
-  background: #2f2f2f; color: #fff; box-shadow: var(--cs-pop);
+  display: flex; gap: 12px; align-items: center; padding: 10px 16px; border-radius: 12px;
+  background: #172033; color: #fff; box-shadow: var(--cs-pop);
 }
-.cs-toast button { border: 0; background: none; color: #8fc3ff !important; font-weight: 600; cursor: pointer; padding: 0; }
+.cs-toast button { border: 0; background: none; color: #a8bcff !important; font-weight: 700; cursor: pointer; padding: 0; }
 
 @media (max-width: 760px) {
   .cs { padding: 18px 14px 32px; }
   .cs-head h1 { font-size: 24px; }
   .cs-dow { display: none; }
-  .cs-grid { border-left: 0; }
-  .cs-week { display: block; border-top: 0; }
-  .cs-day { min-height: 0; border-right: 0; padding: 6px 2px 10px; background: none !important; }
-  .cs-num { display: none; }
-  .cs-full { display: inline; margin-left: auto; font-weight: 600; }
-  .cs-day.is-today .cs-full { color: var(--cs-red); }
+  .cs-week { display: block; }
+  .cs-day { min-height: 0; padding: 8px 10px 10px; }
+  .cs-day + .cs-day { border-left: 0; border-top: 1px solid var(--cs-line); }
+  .cs-num, .cs-hol { display: none; }
+  .cs-full { display: inline; margin-left: auto; font-weight: 700; }
+  .cs-day.is-red .cs-full { color: var(--cs-red); }
+  .cs-day.is-sat .cs-full { color: var(--cs-sat); }
+  .cs-day.is-today .cs-full { color: var(--cs-blue); }
   .cs-plus { opacity: 1; }
-  .cs-prop { grid-template-columns: 76px 1fr; }
 }
 
 /* ───────── 일정 페이지 창 (노션 가운데 열기) ───────── */

@@ -18,6 +18,17 @@ type CompanyEvent = PeekEvent;
 type Toast = { text: string; undo?: () => void } | null;
 
 const DOW = ["일", "월", "화", "수", "목", "금", "토"];
+/* 공휴일과 대체공휴일 (빨간 날). 2027년까지 적어 두었으니 해가 바뀌면 이어서 적는다 */
+const HOLIDAYS: Record<string, string> = {
+  "2026-01-01": "신정", "2026-02-16": "설날", "2026-02-17": "설날", "2026-02-18": "설날", "2026-03-01": "삼일절", "2026-03-02": "대체공휴일",
+  "2026-05-05": "어린이날", "2026-05-24": "부처님오신날", "2026-05-25": "대체공휴일", "2026-06-03": "지방선거", "2026-06-06": "현충일",
+  "2026-08-15": "광복절", "2026-08-17": "대체공휴일", "2026-09-24": "추석", "2026-09-25": "추석", "2026-09-26": "추석",
+  "2026-10-03": "개천절", "2026-10-05": "대체공휴일", "2026-10-09": "한글날", "2026-12-25": "성탄절",
+  "2027-01-01": "신정", "2027-02-06": "설날", "2027-02-07": "설날", "2027-02-08": "설날", "2027-02-09": "대체공휴일", "2027-03-01": "삼일절",
+  "2027-05-05": "어린이날", "2027-05-13": "부처님오신날", "2027-06-06": "현충일", "2027-08-15": "광복절", "2027-08-16": "대체공휴일",
+  "2027-09-14": "추석", "2027-09-15": "추석", "2027-09-16": "추석", "2027-10-03": "개천절", "2027-10-04": "대체공휴일",
+  "2027-10-09": "한글날", "2027-10-11": "대체공휴일", "2027-12-25": "성탄절", "2027-12-27": "대체공휴일",
+};
 const NOTION_DB_URL = "https://www.notion.so/1533b1f9b9ae800bb0dbc264b47ae6d0";
 const WEEKS = 2;
 const REFRESH_MS = 120_000;
@@ -331,18 +342,19 @@ export function CompanySchedule() {
         <p className="cs-msg">불러오지 못했어요. {error}</p>
       ) : (
         <div className={`cs-grid${state === "loading" ? " is-loading" : ""}`}>
-          <div className="cs-dow">{DOW.map((d) => <div key={d}>{d}</div>)}</div>
+          <div className="cs-dow">{DOW.map((d, i) => <div key={d} className={i === 0 ? "is-sun" : i === 6 ? "is-sat" : ""}>{d}</div>)}</div>
           {Array.from({ length: WEEKS }, (_, w) => (
             <div className="cs-week" key={w}>
               {Array.from({ length: 7 }, (_, i) => {
                 const date = addDays(weekStart, w * 7 + i);
                 const list = byDay.get(date) ?? [];
-                const weekend = i === 0 || i === 6;
+                const holiday = HOLIDAYS[date];
+                const tone = i === 0 || holiday ? " is-red" : i === 6 ? " is-sat" : "";
                 const day = +date.slice(8, 10);
                 return (
                   <div
                     key={date}
-                    className={`cs-day${weekend ? " is-off" : ""}${date === today ? " is-today" : ""}${overDay === date ? " is-over" : ""}`}
+                    className={`cs-day${tone}${date === today ? " is-today" : ""}${overDay === date ? " is-over" : ""}`}
                     data-d={date}
                     onDoubleClick={(e) => { if (!(e.target as HTMLElement).closest(".cs-card")) openNew(date); }}
                     onDragOver={(e) => {
@@ -370,8 +382,9 @@ export function CompanySchedule() {
                       <button type="button" className="cs-plus" title="새로 만들기" aria-label={`${label(date)} 일정 만들기`} onClick={() => openNew(date)}>
                         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" /></svg>
                       </button>
+                      {holiday ? <span className="cs-hol">{holiday}</span> : null}
                       <span className="cs-num">{day === 1 ? `${+date.slice(5, 7)}월 1일` : day}</span>
-                      <span className="cs-full">{label(date)} ({DOW[i]}){date === today ? " 오늘" : ""}</span>
+                      <span className="cs-full">{label(date)} ({DOW[i]}){holiday ? ` ${holiday}` : ""}{date === today ? " 오늘" : ""}</span>
                     </div>
                     {list.map((e) => (
                       <button

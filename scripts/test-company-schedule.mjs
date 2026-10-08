@@ -114,7 +114,9 @@ ok("바꾼 순서는 정렬시간으로 노션에 저장", orderCalls.length ===
 await page.reload({ waitUntil: "networkidle" });
 await page.waitForSelector(".cs-card");
 ok("다시 열어도 바꾼 순서", (await titles(D(2))).join("|") === "(주)옆문 15:00|에이트명동1번가약국 촬영 09:00|서민지 원장님 미팅(양재) 11:00");
-ok("오늘 빨간 표시", (await page.locator(`.cs-day.is-today[data-d="${TODAY}"]`).count()) === 1);
+ok("일요일 빨강, 토요일 파랑", (await day(D(0)).getAttribute("class")).includes("is-red") && (await day(D(6)).getAttribute("class")).includes("is-sat"));
+ok("공휴일은 빨간 날과 이름", await page.evaluate(() => [...document.querySelectorAll(".cs-day")].every((c) => !c.querySelector(".cs-hol") || c.classList.contains("is-red"))));
+ok("오늘 표시", (await page.locator(`.cs-day.is-today[data-d="${TODAY}"]`).count()) === 1);
 
 /* 일정 창: 노션처럼 본문까지 */
 await day(D(3)).locator(".cs-card", { hasText: "OWM" }).click();
