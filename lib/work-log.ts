@@ -1037,6 +1037,17 @@ async function getRecentLogsBefore(employeeId: string, workDate: string) {
   return [];
 }
 
+/*
+ * 못 끝낸 일 넘기기는 진짜 남는 일만 (261008 대표님).
+ * 콘텐츠팀 캘린더에서 들어온 할 일 가운데 그날만 의미가 있거나 매일 다시 나오는 종류는 했다고 보고 넘기지 않는다.
+ * 라벨은 public/content/daily.js 의 KIND 이름. 사람이 직접 적은 할 일(calKey 없음)과 할 일, 인수인계, 마감, 편집, 기획은 그대로 넘긴다.
+ */
+const NO_CARRYOVER_CAL_LABELS = new Set(["루틴", "업로드", "촬영", "예약", "원격", "확인", "빈 날", "미정"]);
+
+function shouldCarryOver(task: WorkTask) {
+  return !(task.calKey && task.calLabel && NO_CARRYOVER_CAL_LABELS.has(task.calLabel));
+}
+
 async function getCarryoverTasks(employeeId: string, workDate: string) {
   const now = new Date().toISOString();
   const seenTexts = new Set<string>();
@@ -1055,7 +1066,7 @@ async function getCarryoverTasks(employeeId: string, workDate: string) {
       }
 
       seenTexts.add(key);
-      if (!task.done) {
+      if (!task.done && shouldCarryOver(task)) {
         carryoverTasks.push({
           ...task,
           id: randomUUID(),
