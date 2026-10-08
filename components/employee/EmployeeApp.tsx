@@ -24,6 +24,7 @@ import {
 } from "@/components/employee/ContentTeamToday";
 import type { CalendarImportItem } from "@/components/employee/ContentTeamToday";
 import { TaskText } from "@/components/employee/TaskText";
+import { createMixedGreetings, pickFreshGreetings, type MixedGreetingContext } from "@/lib/greeting-mix";
 import { MapleScene, QuestIcon, QuestProgress } from "@/components/employee/MapleQuest";
 import {
   createLocalGreetings,
@@ -427,7 +428,7 @@ export function EmployeeApp() {
     const requestId = greetingLoadRequestIdRef.current + 1;
     greetingLoadRequestIdRef.current = requestId;
     const context = getGreetingContext();
-    const fallbackMessages = createLocalGreetings(context, "visit", 6);
+    const fallbackMessages = pickFreshGreetings(createMixedGreetings(context, "visit", 12), 6);
     setGreetingMessages(fallbackMessages);
     setGreetingIndex(0);
     void fetchGreeting("visit", context).then((nextGreeting) => {
@@ -435,7 +436,7 @@ export function EmployeeApp() {
         return;
       }
       if (nextGreeting?.messages.length) {
-        setGreetingMessages(nextGreeting.messages);
+        setGreetingMessages(pickFreshGreetings(nextGreeting.messages, 6));
         setGreetingIndex(0);
       }
       if (nextGreeting?.weather !== undefined) {
@@ -618,7 +619,7 @@ export function EmployeeApp() {
     }
   }
 
-  function getGreetingContext(recordOverride?: AttendanceRecord | null): GreetingContext {
+  function getGreetingContext(recordOverride?: AttendanceRecord | null): MixedGreetingContext {
     const greetingRecord = recordOverride ?? status?.openRecord ?? status?.todayRecord ?? null;
     const todayDate = status?.kstDate ?? greetingRecord?.workDate;
     const myTeamRecord = teamRecords.find(
@@ -661,10 +662,24 @@ export function EmployeeApp() {
       titleLevel: titleSummary?.levelInfo.level,
       titleAchievedCount: titleSummary?.achievedCount,
       titleCount: titleSummary?.titleCount,
+      teamNames: teamRecords
+        .filter(
+          (record) =>
+            record.checkInAt &&
+            record.employeeId !== employee?.id &&
+            !formerTeamMemberNames.has(record.employeeName),
+        )
+        .map((record) => record.employeeName)
+        .slice(0, 12),
+      openTasks: (matchingTodayWorkLog?.tasks ?? [])
+        .filter((task) => !task.done)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        .map((task) => task.text)
+        .slice(0, 3),
     };
   }
 
-  async function fetchGreeting(event: GreetingEvent, context: GreetingContext) {
+  async function fetchGreeting(event: GreetingEvent, context: MixedGreetingContext) {
     if (!auth) return null;
 
     const result = await apiFetch<{
