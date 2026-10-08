@@ -1,12 +1,12 @@
 /* /hub: 노션 메인에 하나만 붙이는 화면 (app/hub/page.tsx).
    배경은 업무 시스템 하늘 한 장(SkyScene, 화면 전체에 고정)으로 통일하고 그 위에 흰 카드를 놓는다.
-   창 너비가 바뀌면 왼쪽(위 일정, 아래 채널 현황)만 늘고 줄며, 오른쪽 업무 시스템은 카드 폭 520px 로 고정한다.
+   창 너비가 바뀌면 왼쪽(위 일정, 아래 채널 현황)만 늘고 줄며, 오른쪽 업무 시스템은 600px 로 고정한다(그 안 카드는 칸 폭을 다 쓰고 위 여백 0, app/page.tsx 의 ?inhub=1).
    카드 사이와 양옆 하늘은 스크롤이 없어 거기서 휠을 굴리면 바깥 노션 페이지가 내려간다.
    글자 크기는 세 칸이 같은 단계를 쓴다: 칸 제목 16px, 본문 13px, 작은 글 12px */
 html:has(.hub), body:has(.hub) { margin: 0; height: 100%; overflow: hidden; background: transparent !important; }
 .hub { position: relative; height: 100vh; }
 .hub-grid {
-  display: grid; grid-template-columns: minmax(0, 1fr) 520px; gap: 20px;
+  display: grid; grid-template-columns: minmax(0, 1fr) 600px; gap: 20px;
   height: 100%; max-width: 1880px; margin: 0 auto; padding: 16px 32px 0; box-sizing: border-box;
   font-family: "Pretendard Variable", Pretendard, ui-sans-serif, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
 }
@@ -40,7 +40,7 @@ html:has(.hub), body:has(.hub) { margin: 0; height: 100%; overflow: hidden; back
 .hub-cal .cs-dow div { padding: 6px 0; font-size: 12px; }
 /* 주 칸 높이를 고정해 주를 넘겨도 아래 채널 현황이 움직이지 않게. 일정이 많은 날은 그 칸 안에서만 스크롤 */
 .hub-cal .cs-week { height: 128px; }
-.hub-cal .cs-day { min-height: 0; padding: 5px 6px 6px; overflow-y: auto; scrollbar-width: thin; }
+.hub-cal .cs-day { min-height: 0; padding: 5px 6px 6px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(100, 116, 139, 0.38) transparent; }
 .hub-cal .cs-dhead { height: 24px; margin-bottom: 3px; }
 .hub-cal .cs-num { min-width: 24px; height: 24px; line-height: 24px; font-size: 13px; }
 .hub-cal .cs-hol { font-size: 12px; }
