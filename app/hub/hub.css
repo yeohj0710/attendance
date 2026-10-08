@@ -1,8 +1,11 @@
-/* /hub: 노션 메인에 하나만 붙이는 화면. 왼쪽 좁게(일정 작게 + 채널 현황), 오른쪽 넓게(업무 시스템). 노션 제목 모양을 따른다 */
+/* /hub: 노션 메인에 하나만 붙이는 화면.
+   오른쪽 업무 시스템은 가운데 카드가 좁아(약 480px) 넓게 줘도 양옆만 비니 카드에 맞는 폭으로 고정하고,
+   남는 폭은 왼쪽(위 회사 일정, 아래 채널 현황)에 준다. 아주 넓은 화면에서는 가운데로 모은다(최대 1680px).
+   1366px 노트북에서도 둘이 나란히, 1000px 보다 좁으면 위아래로 쌓는다. 노션 제목 모양을 따른다 */
 html:has(.hub), body:has(.hub) { margin: 0; height: 100%; overflow: hidden; background: #fff; }
 .hub {
-  display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 28px;
-  height: 100vh; padding: 4px 2px 0; box-sizing: border-box;
+  display: grid; grid-template-columns: minmax(0, 1fr) clamp(420px, 30vw, 540px); gap: 24px;
+  max-width: 1680px; height: 100vh; margin: 0 auto; padding: 4px 2px 0; box-sizing: border-box;
   font-family: "Pretendard Variable", Pretendard, ui-sans-serif, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
 }
 .hub-col { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
@@ -13,9 +16,12 @@ html:has(.hub), body:has(.hub) { margin: 0; height: 100%; overflow: hidden; back
 /* 일정은 한눈에 보는 크기로: 칸을 낮게, 글을 조금 작게, 너무 길어지면 이 칸만 스크롤 */
 .hub-cal { flex: none; max-height: 46vh; overflow-y: auto; overscroll-behavior: contain; }
 .hub-cal .cs { padding-bottom: 4px; }
-.hub-cal .cs-bar { padding-bottom: 4px; }
+/* 달 이름, 오늘과 앞뒤, 도구를 한 줄로 */
+.hub-cal .cs { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; }
+.hub-cal .cs > * { flex-basis: 100%; order: 3; }
+.hub-cal .cs > .cs-sub { order: 1; flex: 1 1 auto; flex-basis: auto; padding: 0 0 8px 2px; }
+.hub-cal .cs > .cs-bar { order: 2; flex: 0 0 auto; flex-basis: auto; padding: 0 0 8px; }
 .hub-cal .cs-views { display: none; }
-.hub-cal .cs-sub { padding: 2px 2px 8px; }
 .hub-cal .cs-sub b { font-size: 15px; }
 .hub-cal .cs-new { height: 28px; padding: 0 10px; font-size: 13px; }
 .hub-cal .cs-nav button { height: 26px; }
@@ -29,7 +35,7 @@ html:has(.hub), body:has(.hub) { margin: 0; height: 100%; overflow: hidden; back
 .hub-cal .cs-ct { font-size: 12.5px; -webkit-line-clamp: 2; }
 .hub-cal .cs-cp { display: none; }
 
-@media (max-width: 900px) {
+@media (max-width: 1000px) {
   html:has(.hub), body:has(.hub) { overflow: auto; height: auto; }
   .hub { display: block; height: auto; padding: 4px 0 0; }
   .hub-col + .hub-col { margin-top: 28px; }
