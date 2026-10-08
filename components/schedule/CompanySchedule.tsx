@@ -93,6 +93,10 @@ export function CompanySchedule() {
   const from = weekStart;
   const to = addDays(weekStart, WEEKS * 7 - 1);
 
+  /* 노션 메인에 붙일 때(?embed=1)는 노션 제목이 따로 있으니 화면 제목과 바깥 여백을 뺀다 */
+  const [embed, setEmbed] = useState(false);
+  useEffect(() => { setEmbed(new URLSearchParams(window.location.search).get("embed") === "1"); }, []);
+
   useEffect(() => {
     const prefs = loadPrefs();
     setHidePeople(prefs.hidePeople);
@@ -268,7 +272,7 @@ export function CompanySchedule() {
   const filtered = hidePeople.length > 0;
 
   return (
-    <main className="cs">
+    <main className={`cs${embed ? " is-embed" : ""}`}>
       <header className="cs-head">
         <h1>일정</h1>
       </header>
