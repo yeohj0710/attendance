@@ -102,11 +102,12 @@
 .content-tip.is-below { transform: translate(-50%, 0); }
 
 /* ───────── 채널 현황 ───────── */
-/* 단계 색: 한 가지 파란색을 옅은 쪽(기획안)에서 진한 쪽(편집 끝)으로. 빈 칸은 빨간 점선 */
-.stage-plan { background: #d3e2f6; color: #0c2d5c; }
-.stage-shot { background: #8db4ea; color: #0c2d5c; }
-.stage-edit { background: #4a86d9; color: #fff; }
-.stage-ready { background: #1b4f9c; color: #fff; }
+/* 단계 색: 뜻이 바로 읽히게. 편집 완료 초록(올리면 됨), 편집 중 파랑, 촬영 소스 노랑(편집 맡길 것), 기획안 회색(아직 안 찍음), 빈 칸 빨간 점선.
+   색약 검사(dataviz validate_palette, 모든 쌍) 통과. 네모 안 날짜 글자가 같이 있어 색만으로 구분하지 않는다 */
+.stage-plan { background: #e4e8ef; color: #4a5568; }
+.stage-shot { background: #f0b232; color: #4a3200; }
+.stage-edit { background: #3d7be0; color: #fff; }
+.stage-ready { background: #1f9d63; color: #fff; }
 .stage-empty { background: #fff; color: #d13438; box-shadow: inset 0 0 0 1.5px #e5484d; }
 /* 날짜 미정: 안쪽에 흰 테두리 */
 .is-tentative { box-shadow: inset 0 0 0 2px #fff; }

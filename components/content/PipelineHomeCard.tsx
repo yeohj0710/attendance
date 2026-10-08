@@ -1,7 +1,7 @@
 "use client";
 
 import { formatMonthDay } from "@/components/content/useContentData";
-import { stageRuns } from "@/components/content/pipelineRuns";
+import { slotWeek, stageRuns } from "@/components/content/pipelineRuns";
 import type { PipelineAccount, PipelineData } from "@/lib/content-pipeline";
 
 /* 출퇴근기록부 이름 → 현황판 담당 이름 (components/employee/ContentTeamToday.tsx 의 사람 키와 같다) */
@@ -39,6 +39,24 @@ export function PipelineSummary({
 
   return (
     <div className="pipe-card-body">
+      <p className="pipe-card-legend">
+        {(
+          [
+            ["ready", "편집 완료"],
+            ["edit", "편집 중"],
+            ["shot", "촬영 소스"],
+            ["plan", "기획안"],
+          ] as const
+        ).map(([stage, label]) => (
+          <span key={stage}>
+            <i className={`stage-${stage}`} />
+            {label}
+          </span>
+        ))}
+        <span>
+          <i className="stage-empty" />빈 칸
+        </span>
+      </p>
       {accounts.map((account) => {
         const runs = stageRuns(account, data.today);
         const slots = account.slots.slice(0, SHOW_SLOTS);
@@ -53,9 +71,22 @@ export function PipelineSummary({
         return (
           <button className="pipe-card-row" key={account.key} onClick={onOpenAll} type="button">
             <span className="pipe-card-name">{account.name}</span>
-            <span className="pipe-card-bar" aria-hidden="true">
+            <span className="pipe-card-squares" aria-hidden="true">
               {slots.map((slot, index) => (
-                <i className={`pc-${slot.stage}`} key={`${slot.date}-${index}`} />
+                <i
+                  className={[
+                    `stage-${slot.stage}`,
+                    slot.tentative ? "is-tentative" : "",
+                    index > 0 && slotWeek(slot) !== slotWeek(slots[index - 1]) ? "is-week-start" : "",
+                    slot.date === account.next?.forDate && index === slots.findIndex((s) => s.date === account.next?.forDate) ? "is-target" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  key={`${slot.date}-${index}`}
+                  title={`${formatMonthDay(slot.date)} ${slot.title ?? "올릴 영상 없음"}`}
+                >
+                  {Number(slot.date.slice(8, 10))}
+                </i>
               ))}
             </span>
             <span className="pipe-card-runs">

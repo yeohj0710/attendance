@@ -1,5 +1,8 @@
 /* 업무 시스템 첫 화면 채널 현황 카드 (components/content/PipelineHomeCard.tsx). 창은 maple-quest 를 그대로 쓴다 */
 .pipe-card-body { padding: 6px 14px; }
+.pipe-card-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0 2px; font-size: 11.5px; color: #6b7690; }
+.pipe-card-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.pipe-card-legend i { width: 10px; height: 10px; border-radius: 3px; }
 .pipe-card-row {
   display: grid;
   grid-template-columns: 104px minmax(0, 1fr);
@@ -12,15 +15,22 @@
 .pipe-card-row:last-child { border-bottom: 0; }
 .pipe-card-row:hover .pipe-card-name { color: #2f73e0; }
 .pipe-card-name { font-size: 13px; font-weight: 700; }
-.pipe-card-bar { display: flex; gap: 2px; height: 12px; }
-.pipe-card-bar i { flex: 1; min-width: 6px; max-width: 28px; }
-.pipe-card-bar i:first-child { border-radius: 3px 0 0 3px; }
-.pipe-card-bar i:last-child { border-radius: 0 3px 3px 0; }
-.pc-ready { background: #1b4f9c; }
-.pc-edit { background: #4a86d9; }
-.pc-shot { background: #8db4ea; }
-.pc-plan { background: #d3e2f6; }
-.pc-empty { background: #f6d0d0; }
+/* 작은 네모: 영상 한 편, 안에 업로드 날짜(일). 색은 채널 현황판과 같다(app/content-board/content.css .stage-*) */
+.pipe-card-squares { display: flex; flex-wrap: wrap; gap: 3px; }
+.pipe-card-squares i {
+  width: 26px;
+  height: 24px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.pipe-card-squares i.is-week-start { margin-left: 5px; }
+.pipe-card-squares i.is-target { outline: 2px solid #d13438; outline-offset: 1px; }
 .pipe-card-runs { grid-column: 2; display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; color: #6b7690; }
 .pipe-card-runs b { color: #172033; font-weight: 600; }
 .pipe-card-runs b.is-none { color: #d13438; }
