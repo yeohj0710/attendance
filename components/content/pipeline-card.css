@@ -21,8 +21,9 @@
 .pc-shot { background: #8db4ea; }
 .pc-plan { background: #d3e2f6; }
 .pc-empty { background: #f6d0d0; }
-.pipe-card-runs { grid-column: 2; font-size: 12px; color: #6b7690; white-space: pre-wrap; }
+.pipe-card-runs { grid-column: 2; display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; color: #6b7690; }
 .pipe-card-runs b { color: #172033; font-weight: 600; }
+.pipe-card-runs b.is-none { color: #d13438; }
 .pipe-card-next { grid-column: 2; font-size: 12px; font-weight: 700; color: #2e7d4f; }
 .pipe-card-next.is-late { color: #d13438; }
 .pipe-card-next.is-soon { color: #d66a00; }

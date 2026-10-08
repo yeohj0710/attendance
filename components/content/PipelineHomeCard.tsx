@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { formatMonthDay, useContentData } from "@/components/content/useContentData";
-import { runStageAt, stageRuns } from "@/components/content/pipelineRuns";
+import { stageRuns } from "@/components/content/pipelineRuns";
 import type { PipelineAccount, PipelineData } from "@/lib/content-pipeline";
 import "./pipeline-card.css";
 
@@ -64,13 +64,22 @@ export function PipelineHomeCard({ who }: { who: string | null }) {
               <span className="pipe-card-name">{account.name}</span>
               <span className="pipe-card-bar" aria-hidden="true">
                 {slots.map((slot, index) => (
-                  <i className={`pc-${runStageAt(index, runs)}`} key={`${slot.date}-${index}`} />
+                  <i className={`pc-${slot.stage}`} key={`${slot.date}-${index}`} />
                 ))}
               </span>
               <span className="pipe-card-runs">
-                편집 끝 <b>{runs.ready.count ? `${formatMonthDay(runs.ready.last!)} ${runs.ready.days}일분` : "없음"}</b>
-                {"  "}소스 <b>{runs.shot.count ? `${formatMonthDay(runs.shot.last!)} ${runs.shot.days}일분` : "없음"}</b>
-                {"  "}기획 <b>{runs.plan.count ? `${formatMonthDay(runs.plan.last!)} ${runs.plan.days}일분` : "없음"}</b>
+                {([
+                  ["편집 완료", runs.ready],
+                  ["촬영 소스", runs.shot],
+                  ["기획안", runs.plan],
+                ] as const).map(([label, run]) => (
+                  <span key={label}>
+                    {label}{" "}
+                    <b className={run.count ? "" : "is-none"}>
+                      {run.count ? `${formatMonthDay(run.last!)} ${run.days}일분` : "없음"}
+                    </b>
+                  </span>
+                ))}
               </span>
               <span className={`pipe-card-next${level}`}>{actionText(account, data.today)}</span>
             </Link>

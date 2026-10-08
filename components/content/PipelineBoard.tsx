@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ContentShell, useTip } from "@/components/content/ContentShell";
 import { formatClock, formatMonthDay, useContentData, weekdayLabel } from "@/components/content/useContentData";
-import { RUN_LABEL, runStageAt, stageRuns, type RunStage } from "@/components/content/pipelineRuns";
+import { stageRuns, type RunStage } from "@/components/content/pipelineRuns";
 import type { PipelineAccount, PipelineData, PipelineSlot, Stage } from "@/lib/content-pipeline";
 
 /*
@@ -12,13 +12,20 @@ import type { PipelineAccount, PipelineData, PipelineSlot, Stage } from "@/lib/c
  * 덜 된 단계일수록 옅게, 다 된 단계일수록 진하게 (한 가지 파란색). 빈 칸은 빨간 점선.
  */
 const STAGES: Array<{ key: Exclude<Stage, "empty">; label: string; help: string }> = [
-  { key: "ready", label: "편집 끝", help: "편집이 끝나 올리기만 하면 되는 편" },
+  { key: "ready", label: "편집 완료", help: "편집이 끝나 올리기만 하면 되는 편" },
   { key: "edit", label: "편집 중", help: "편집자님께 맡겨서 초안이나 수정본을 기다리는 편" },
   { key: "shot", label: "촬영 소스", help: "찍어 두었지만 아직 편집을 맡기지 않은 편" },
   { key: "plan", label: "기획안", help: "기획안만 있고 아직 찍지 않은 편" },
 ];
 
 const COUNTS = [12, 24] as const;
+
+/* 왼쪽 "며칠분" 표. 아래 단계는 위 단계를 포함한다 (촬영 소스 = 찍어 둔 것 + 편집 중 + 편집 끝) */
+const RUNWAY: Array<{ stage: RunStage; label: string; help: string; none: string }> = [
+  { stage: "ready", label: "편집 완료", help: "편집이 끝난 영상으로", none: "바로 다음 업로드할 영상부터 편집이 안 끝났어요." },
+  { stage: "shot", label: "촬영 소스", help: "찍어 둔 영상(편집 중, 편집 완료 포함)으로", none: "바로 다음 업로드할 영상부터 아직 안 찍었어요." },
+  { stage: "plan", label: "기획안", help: "기획안이 있는 영상(찍은 것 포함)으로", none: "바로 다음 업로드할 영상부터 기획안이 없어요." },
+];
 const BOARD_URL = "https://wellnessbox-board.vercel.app";
 
 function dayLabel(date: string) {
@@ -204,6 +211,32 @@ function AccountRow({
           {account.name}
           <small>{account.owner}</small>
         </div>
+        <dl className="pipe-runway">
+          {RUNWAY.map(({ stage, label, help, none }) => {
+            const run = runs[stage];
+            return (
+              <div
+                className={run.count ? "" : "is-none"}
+                key={stage}
+                {...bind(
+                  run.count
+                    ? `${help} ${dayLabel(run.last!)} 업로드까지 ${run.count}편을 끊기지 않고 올릴 수 있어요. 오늘부터 ${run.days}일분이에요.`
+                    : none,
+                )}
+                tabIndex={0}
+              >
+                <dt>
+                  <i className={`pipe-swatch stage-${stage}`} />
+                  {label}
+                </dt>
+                <dd>
+                  <b>{run.count ? (run.beyond ? `${run.days}일+` : `${run.days}일분`) : "없음"}</b>
+                  <span>{run.count ? `${formatMonthDay(run.last!)}까지` : ""}</span>
+                </dd>
+              </div>
+            );
+          })}
+        </dl>
         <ShootLine account={account} />
         {account.stale ? (
           <p
@@ -253,46 +286,7 @@ function AccountRow({
             );
           })}
         </div>
-        <div className="pipe-bar" aria-hidden="true">
-          {slots.map((slot, index) => {
-            const gap = index > 0 && weekOf(slot.date) !== weekOf(slots[index - 1].date);
-            const stage = runStageAt(index, runs);
-            return (
-              <span
-                className={`pipe-bar-cell stage-${stage}${gap ? " is-week-start" : ""}${index === 0 ? " is-first" : ""}${index === slots.length - 1 ? " is-last" : ""}`}
-                key={`${slot.date}-${index}`}
-              />
-            );
-          })}
         </div>
-        </div>
-        <p className="pipe-runs">
-          {(["ready", "edit", "shot", "plan"] as RunStage[]).map((stage) => {
-            const run = runs[stage];
-            return (
-              <span
-                className={run.count ? "" : "is-none"}
-                key={stage}
-                {...bind(
-                  run.count
-                    ? `${RUN_LABEL[stage]} 빈틈없이 ${run.count}편, ${dayLabel(run.last!)} 업로드까지 채워져 있어요. 오늘부터 ${run.days}일분이에요.${run.beyond ? " 8주 안 업로드가 모두 채워졌어요." : ""}`
-                    : `다음 업로드할 영상부터 ${RUN_LABEL[stage].replace("까지", "")} 단계가 아니에요.`,
-                )}
-                tabIndex={0}
-              >
-                <i className={`pipe-swatch stage-${stage}`} />
-                {RUN_LABEL[stage]}{" "}
-                {run.count ? (
-                  <>
-                    <b>{formatMonthDay(run.last!)}</b> {run.beyond ? `${run.days}일분 넘게` : `${run.days}일분`}
-                  </>
-                ) : (
-                  <b>없음</b>
-                )}
-              </span>
-            );
-          })}
-        </p>
         <p
           className={`pipe-next ${level}`}
           {...bind(

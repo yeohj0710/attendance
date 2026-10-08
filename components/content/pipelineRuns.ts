@@ -31,14 +31,6 @@ export function stageRuns(account: PipelineAccount, today: string) {
   return out;
 }
 
-/** 칸 하나가 막대에서 어느 구간에 들어가는지 (그 칸까지 빈틈없이 이어진 가장 높은 단계) */
-export function runStageAt(index: number, runs: ReturnType<typeof stageRuns>): Stage {
-  for (const stage of ["ready", "edit", "shot", "plan"] as const) {
-    if (index < runs[stage].count) return stage;
-  }
-  return "empty";
-}
-
 export function slotWeek(slot: PipelineSlot) {
   const d = new Date(`${slot.date}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
