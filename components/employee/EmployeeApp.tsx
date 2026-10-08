@@ -25,6 +25,7 @@ import {
 import type { CalendarImportItem, UpcomingCalendarDay } from "@/components/employee/ContentTeamToday";
 import { TaskText } from "@/components/employee/TaskText";
 import { HelpLaunch } from "@/components/employee/HelpLaunch";
+import { ContentEntryLinks } from "@/components/content/ContentEntryLinks";
 import { OtherDayTasks, TaskDayNav } from "@/components/employee/TaskDayBrowser";
 import { createMixedGreetings, pickFreshGreetings, type MixedGreetingContext } from "@/lib/greeting-mix";
 import { MapleScene, QuestIcon, QuestProgress } from "@/components/employee/MapleQuest";
@@ -2159,6 +2160,7 @@ export function EmployeeApp() {
                 콘텐츠팀 캘린더
               </a>
             ) : null}
+            {!isSharedView && auth ? <ContentEntryLinks alone={!contentWho} /> : null}
           </div>
           <QuickWorkLogPanel
             canEdit={!isReadOnly}

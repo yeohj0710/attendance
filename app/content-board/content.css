@@ -1,0 +1,292 @@
+/*
+ * 콘텐츠팀 채널 현황, 일정 달력. 출퇴근기록부 밝은 메이플 판(maple-quest.css)과 같은 창, 줄, 설명창을 쓴다.
+ * 배경은 움직이지 않는 하늘색만 깐다. 안쪽 여백은 위아래, 좌우를 같게 맞춘다.
+ */
+.content-page {
+  --pipe-info: 236px;
+  --pipe-cell: 24px;
+  position: relative;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 20px 16px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.content-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, #a8dcff 0%, #d6efff 40%, #f3faff 100%);
+}
+
+.content-nav { display: flex; align-items: center; gap: 12px; }
+.content-back {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2f73e0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.85);
+}
+.content-back:hover { text-decoration: underline; }
+.content-tabs {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.85);
+}
+.content-tabs a {
+  padding: 6px 12px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7690;
+}
+.content-tabs a.is-on { background: linear-gradient(180deg, #ffe08a 0%, #ffb52e 100%); color: #172033; }
+
+.content-card {
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 0 0 1px rgba(30, 60, 110, 0.12), 0 18px 40px -22px rgba(10, 20, 50, 0.45);
+  padding: 16px;
+}
+.content-message { text-align: center; color: #4a5568; font-size: 14px; }
+.content-message a { color: #2f73e0; font-weight: 600; }
+
+.content-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: -16px -16px 16px;
+  padding: 16px;
+  border-radius: 12px 12px 0 0;
+  background: linear-gradient(90deg, rgba(255, 160, 40, 0.12), rgba(255, 160, 40, 0));
+  border-bottom: 1px solid #e7ebf2;
+}
+.content-title { margin: 0; font-size: 17px; font-weight: 700; color: #172033; }
+.content-sub { margin: 4px 0 0; font-size: 13px; color: #6b7690; line-height: 1.6; }
+.content-section-title { margin: 0 0 12px; font-size: 15px; font-weight: 700; color: #172033; }
+.content-head-side { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.content-fresh { font-size: 12px; color: #6b7690; }
+.content-link { font-size: 12px; font-weight: 600; color: #2f73e0; }
+.content-link:hover { text-decoration: underline; }
+.content-toggle { display: flex; padding: 3px; border-radius: 8px; background: #eef1f6; }
+.content-toggle button {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #6b7690;
+}
+.content-toggle button.is-on { background: #fff; color: #172033; box-shadow: 0 1px 2px rgba(10, 20, 50, 0.15); }
+
+.content-tip {
+  position: fixed;
+  z-index: 60;
+  max-width: 300px;
+  transform: translate(-50%, -100%);
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(24, 30, 48, 0.96);
+  color: #e9eefb;
+  border: 1px solid rgba(140, 170, 230, 0.5);
+  box-shadow: 0 0 0 1px #05070d, 0 14px 30px -10px rgba(0, 0, 0, 0.6);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+.content-tip.is-below { transform: translate(-50%, 0); }
+
+/* ───────── 채널 현황 ───────── */
+/* 단계 색: 한 가지 파란색을 옅은 쪽(기획안)에서 진한 쪽(편집 끝)으로. 빈 칸은 빨간 점선 */
+.stage-plan { background: #cfe0f7; }
+.stage-shot { background: #8db4ea; }
+.stage-edit { background: #4a86d9; }
+.stage-ready { background: #1b4f9c; }
+.stage-empty { background: #fff; box-shadow: inset 0 0 0 1.5px #e5484d; }
+/* 날짜 미정: 같은 색에 흰 빗금 */
+.is-tentative {
+  background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.75) 0 2px, transparent 2px 5px);
+}
+
+.pipe-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 12px; font-size: 12px; color: #4a5568; }
+.pipe-legend-item { display: inline-flex; align-items: center; gap: 6px; cursor: default; }
+.pipe-swatch { display: inline-block; width: 11px; height: 11px; border-radius: 3px; flex: none; }
+
+.pipe-scroll { overflow-x: auto; margin: 0 -16px; padding: 0 16px; }
+.pipe-grid { display: grid; width: 100%; min-width: max-content; }
+.pipe-corner,
+.pipe-info {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #fff;
+}
+.pipe-corner {
+  display: flex;
+  align-items: flex-end;
+  padding: 0 12px 6px 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #6b7690;
+  border-bottom: 1px solid #e7ebf2;
+}
+.pipe-date {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-bottom: 6px;
+  font-size: 11px;
+  line-height: 1.3;
+  color: #6b7690;
+  border-bottom: 1px solid #e7ebf2;
+}
+.pipe-date-month { min-height: 14px; font-weight: 700; color: #ff8a00; white-space: nowrap; }
+.pipe-date-day { font-weight: 700; color: #172033; font-variant-numeric: tabular-nums; }
+.pipe-date.is-weekend .pipe-date-dow { color: #c0392b; }
+.pipe-date.is-today .pipe-date-day {
+  min-width: 20px;
+  border-radius: 99px;
+  background: #ff9a1f;
+  color: #fff;
+  text-align: center;
+}
+.pipe-info {
+  padding: 12px 12px 12px 0;
+  border-bottom: 1px solid #eef1f6;
+}
+.pipe-name { font-size: 14px; font-weight: 700; color: #172033; cursor: default; }
+.pipe-name small { margin-left: 6px; font-size: 12px; font-weight: 600; color: #6b7690; }
+.pipe-next { margin: 4px 0 0; font-size: 12.5px; font-weight: 700; cursor: default; }
+.pipe-next span { font-weight: 500; color: #6b7690; }
+.pipe-next.is-late { color: #d13438; }
+.pipe-next.is-soon { color: #d66a00; }
+.pipe-next.is-ok { color: #2e7d4f; }
+.pipe-days { display: flex; flex-wrap: wrap; gap: 2px 10px; margin: 4px 0 0; font-size: 12px; color: #4a5568; }
+.pipe-days span,
+.pipe-stock span { display: inline-flex; align-items: center; gap: 4px; cursor: default; }
+.pipe-shoot { margin: 4px 0 0; font-size: 12px; color: #4a5568; }
+.pipe-shoot.is-none { color: #9aa3b5; }
+.pipe-stale { margin: 4px 0 0; font-size: 12px; color: #d66a00; cursor: default; }
+.pipe-note { margin: 4px 0 0; font-size: 12px; color: #6b7690; line-height: 1.6; }
+.pipe-stock { display: flex; flex-wrap: wrap; gap: 2px 10px; margin: 6px 0 0; font-size: 12px; color: #4a5568; }
+
+.pipe-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 12px 0;
+  border-bottom: 1px solid #eef1f6;
+}
+.pipe-cell.is-weekend,
+.pipe-date.is-weekend { background: #f7f9fc; }
+.pipe-cell.is-monday,
+.pipe-date.is-monday { box-shadow: inset 1px 0 0 #e7ebf2; }
+.pipe-cell.is-today { background: #fff6e8; }
+.pipe-slot {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.pipe-slot.is-offday { outline: 1.5px dashed #d66a00; outline-offset: 1px; }
+.pipe-slot:hover,
+.pipe-slot:focus-visible { outline: 2px solid #ff9a1f; outline-offset: 1px; }
+
+.pipe-waiting { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.pipe-waiting-item { padding: 12px; border-radius: 10px; background: #f7f9fc; }
+.pipe-missing { margin: 10px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.9; }
+.pipe-missing a { color: #2f73e0; font-weight: 600; }
+
+@media (max-width: 640px) {
+  .content-page { --pipe-info: 168px; --pipe-cell: 22px; padding: 12px 12px 32px; }
+  .content-nav { flex-wrap: wrap; }
+}
+
+/* ───────── 일정 달력 ───────── */
+.cal-bar { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 12px; }
+.cal-bar strong { min-width: 110px; text-align: center; font-size: 15px; color: #172033; }
+.cal-bar button {
+  min-width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #eef1f6;
+  font-size: 18px;
+  font-weight: 700;
+  color: #4a5568;
+}
+.cal-bar button:disabled { opacity: 0.35; }
+.cal-bar .cal-today { padding: 0 12px; font-size: 12px; }
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  border-top: 1px solid #e7ebf2;
+  border-left: 1px solid #e7ebf2;
+}
+.cal-dow,
+.cal-day { border-right: 1px solid #e7ebf2; border-bottom: 1px solid #e7ebf2; }
+.cal-dow { padding: 6px 0; text-align: center; font-size: 12px; font-weight: 700; color: #6b7690; background: #f7f9fc; }
+.cal-dow.is-sun,
+.cal-day.is-sun .cal-num { color: #c0392b; }
+.cal-dow.is-sat,
+.cal-day.is-sat .cal-num { color: #2f73e0; }
+.cal-day { min-height: 104px; padding: 6px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cal-day.is-outside { background: #fafbfd; }
+.cal-day.is-outside > * { opacity: 0.45; }
+.cal-day.is-today { background: #fff6e8; }
+.cal-num { font-size: 12px; font-weight: 700; color: #172033; }
+.cal-day.is-today .cal-num {
+  align-self: flex-start;
+  min-width: 20px;
+  border-radius: 99px;
+  background: #ff9a1f;
+  color: #fff;
+  text-align: center;
+}
+.cal-event {
+  display: block;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: #e8f1fd;
+  color: #1f3f73;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cal-event b { margin-right: 4px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cal-event.is-shoot { background: #ffecd2; color: #7a3d00; }
+.cal-event:hover,
+.cal-event:focus-visible { box-shadow: inset 0 0 0 1.5px #ff9a1f; }
+.cal-agenda { margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.cal-agenda li {
+  display: grid;
+  grid-template-columns: 76px 48px minmax(0, 1fr);
+  gap: 2px 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #eef1f6;
+}
+.cal-agenda li:last-child { border-bottom: 0; }
+.cal-agenda-date { font-weight: 700; color: #172033; }
+.cal-agenda-time { color: #6b7690; font-variant-numeric: tabular-nums; }
+.cal-agenda a { color: #172033; font-weight: 600; }
+.cal-agenda a.is-shoot { color: #a35200; }
+.cal-agenda a:hover { text-decoration: underline; }
+.cal-agenda-people { grid-column: 3; font-size: 12px; color: #6b7690; }
+.cal-agenda-people:empty { display: none; }
+
+@media (max-width: 640px) {
+  .cal-day { min-height: 72px; padding: 4px 2px; }
+  .cal-event { padding: 1px 3px; font-size: 10.5px; }
+  .cal-event b { display: none; }
+}
