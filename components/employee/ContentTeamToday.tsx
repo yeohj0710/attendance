@@ -23,7 +23,7 @@ const FRAME_ATTR = "data-content-calendar";
 /* 출퇴근기록부 이름 → 캘린더의 사람 키 */
 const CONTENT_TEAM: Record<string, string> = {
   김호준: "kim",
-  송아영: "song",
+  이윤진: "song",
   권현우: "kwon",
   이민우: "lee",
 };

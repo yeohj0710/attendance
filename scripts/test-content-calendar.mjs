@@ -32,6 +32,7 @@ const browser = await chromium.launch();
 const page = await (await browser.newContext({ viewport: { width: 1500, height: 2400 } })).newPage();
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
+await page.clock.install({ time: new Date("2026-10-08T03:00:00Z") });
 await page.goto("http://localhost:4199/daily.html#kim", { waitUntil: "networkidle" });
 await page.waitForTimeout(400);
 const ok = (name, cond) => console.log((cond ? "통과 " : "실패 ") + name);

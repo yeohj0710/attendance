@@ -1,5 +1,7 @@
 # Codex Deployment Guardrails
 
+- 담당 PD는 노션 「인플루언서 담당표」(81e8ea1addb347f6909c80e743c5e3d8)가 원본이다. `lib/content-assignments.ts`가 원본 페이지 ID로 계정을 연결하고 5분 동안 캐시한다. 현황판과 `/api/calendar/uploads`가 같은 담당표를 쓴다. `daily.js`는 2026-11-04 이후 업로드, 촬영 준비와 편집 확인을 현재 담당자에게 배정한다. 이전 날짜의 담당과 체크 키는 유지한다. 이윤진 PD님은 기존 체크를 보존하도록 내부 키 `song`을 사용한다. 검사는 `node scripts/test-content-assignments.mjs`이며 노션과 공용 저장소에 쓰지 않는다.
+
 - Korean user-facing changes must keep the existing product tone and layout density.
 - Before editing, inspect the current dirty worktree. Do not mix unrelated dirty changes into a commit. If the same file already has unrelated edits and the requested work needs that file, either isolate the patch precisely or say the file is already dirty before committing.
 - If the user asks to deploy this app, deploy the production domain unless they explicitly ask for preview only.

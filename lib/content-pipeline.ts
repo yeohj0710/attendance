@@ -12,6 +12,7 @@ import {
   type NotionPage,
 } from "@/lib/notion";
 import { SCHEDULE_DATABASE_ID } from "@/lib/content-schedule";
+import { getContentAssignments, type ContentAssignments } from "@/lib/content-assignments";
 
 /**
  * 콘텐츠팀 채널 현황판 (/content-board/pipeline).
@@ -56,11 +57,10 @@ type AccountConfig = {
 
 const WEEKDAYS = [1, 2, 3, 4, 5];
 
-const ACCOUNTS: AccountConfig[] = [
+const ACCOUNTS: Omit<AccountConfig, "owner">[] = [
   {
     key: "jejo",
     name: "김제조 약사님",
-    owner: "김호준 PD님",
     notion: ["김주성 대표님"],
     planDb: "1043b1f9b9ae82039e3e81e44227d9d7",
     cadence: [{ days: WEEKDAYS }],
@@ -71,7 +71,6 @@ const ACCOUNTS: AccountConfig[] = [
   {
     key: "oyak",
     name: "오주헌 약사님",
-    owner: "송아영 PD님",
     notion: ["오주헌 약사님"],
     planDb: "32c3b1f9b9ae8095853aff9289cd8eda",
     cadence: [{ days: WEEKDAYS }],
@@ -82,7 +81,6 @@ const ACCOUNTS: AccountConfig[] = [
   {
     key: "jessi",
     name: "제씨약사님",
-    owner: "송아영 PD님",
     notion: ["제선영 약사님"],
     planDb: "3303b1f9b9ae80b5be8cd09f16c9febd",
     cadence: [
@@ -96,7 +94,6 @@ const ACCOUNTS: AccountConfig[] = [
   {
     key: "jay",
     name: "제이약사님",
-    owner: "권현우 PD님",
     notion: ["전종열 약사님"],
     planDb: "cc83b1f9b9ae83328848017bd402e0e1",
     cadence: [{ from: "2026-11-02", days: WEEKDAYS }],
@@ -108,7 +105,6 @@ const ACCOUNTS: AccountConfig[] = [
   {
     key: "taeeun",
     name: "김태은 원장님",
-    owner: "권현우 PD님",
     notion: ["닥터 닭갈비"],
     planDb: "eae3b1f9b9ae83eba83681ee62d75a91",
     cadence: [{ from: "2026-10-15", days: WEEKDAYS }],
@@ -119,7 +115,6 @@ const ACCOUNTS: AccountConfig[] = [
   {
     key: "around",
     name: "어라운드팜",
-    owner: "이민우님",
     notion: ["어라운드팜"],
     planDb: "be33b1f9b9ae8212ad1a815ba421305e",
     cadence: [{ days: [2, 4, 6] }],
@@ -130,7 +125,6 @@ const ACCOUNTS: AccountConfig[] = [
   {
     key: "mimi",
     name: "미미팜",
-    owner: "이민우님",
     notion: ["MIMIPharm"],
     planDb: "3d13b1f9b9ae80d6929adfba5608030c",
     cadence: [{ days: [2, 4] }],
@@ -141,7 +135,6 @@ const ACCOUNTS: AccountConfig[] = [
   {
     key: "owmb",
     name: "OWM 분당 약국장님",
-    owner: "김호준 PD님",
     notion: ["OWM 분당 약국장"],
     planDb: "cd43b1f9b9ae837eb94b01e96105452c",
     cadence: [{ from: "2026-10-12", days: WEEKDAYS }],
@@ -152,7 +145,6 @@ const ACCOUNTS: AccountConfig[] = [
   {
     key: "seominji",
     name: "서민지 약사님",
-    owner: "김호준 PD님",
     notion: [],
     planDb: "29b3b1f9b9ae833bb551813da36c2c44",
     cadence: [],
@@ -163,7 +155,6 @@ const ACCOUNTS: AccountConfig[] = [
   {
     key: "owmm",
     name: "OWM 명동 약국장님",
-    owner: "김호준 PD님",
     notion: ["OWM 명동 약국장"],
     planDb: "ad43b1f9b9ae838a8bae8110bffd2fba",
     cadence: [],
@@ -174,13 +165,32 @@ const ACCOUNTS: AccountConfig[] = [
   {
     key: "yoo",
     name: "유지선 대표님",
-    owner: "권현우 PD님",
     notion: [],
     planDb: "31c3b1f9b9ae821899ee81596a58ea35",
     cadence: [],
     holidays: false,
     shootWords: ["유지선"],
     note: "시작 날짜가 정해지면 업로드 요일을 넣어요.",
+  },
+  {
+    key: "mens",
+    name: "맨즈약사님",
+    notion: ["맨즈약사님"],
+    planDb: "ea83b1f9b9ae82fe9a0c014797347865",
+    cadence: [],
+    holidays: false,
+    shootWords: ["맨즈약사"],
+    note: "시작 전 계정이에요. 업로드 일정은 아직 정하지 않았어요.",
+  },
+  {
+    key: "yousunchun",
+    name: "유선춘 약사님",
+    notion: ["유선춘 약사님"],
+    planDb: "22a3b1f9b9ae82e4933b8109a1f17316",
+    cadence: [],
+    holidays: false,
+    shootWords: ["유선춘"],
+    note: "기획안과 촬영 준비를 확인해 주세요. 업로드 일정은 아직 정하지 않았어요.",
   },
 ];
 
@@ -263,6 +273,7 @@ export type PipelineAccount = {
 };
 
 export type PipelineData = {
+  assignments: ContentAssignments;
   /** 보는 사람 (API 가 붙인다, 캐시에는 없다) */
   viewer?: { name: string; role: string };
   today: string;
@@ -452,6 +463,7 @@ function buildAccount(
 }
 
 async function loadPipeline(): Promise<PipelineData> {
+  const assignments = await getContentAssignments();
   const today = kstToday();
 
   /* 현황판: 업로드 완료가 아닌 편(최근 30일, 날짜 없음). 할 일 달력 업로드 줄: UPLOADS_FROM 부터는 업로드 완료까지 전부 */
@@ -499,7 +511,8 @@ async function loadPipeline(): Promise<PipelineData> {
   const missing: PipelineData["missing"] = [];
   const uploads: PipelineData["uploads"] = [];
   const uploadTo = addDays(today, 120);
-  const built = ACCOUNTS.map((account) => {
+  const built = ACCOUNTS.map((base) => {
+    const account = { ...base, owner: assignments[base.key]?.owner ?? "담당 미정" };
     const skipped = (date: string | null | undefined) => Boolean(account.skipBefore && date && date < account.skipBefore);
     const mine: PipelineItem[] = progress.filter((p) => account.notion.includes(p.influencer) && !skipped(p.date));
     if (account.cadence.length) {
@@ -552,6 +565,7 @@ async function loadPipeline(): Promise<PipelineData> {
 
   return {
     today,
+    assignments,
     start: addDays(today, 1),
     horizonDays: HORIZON_DAYS,
     fetchedAt: new Date().toISOString(),
@@ -562,6 +576,7 @@ async function loadPipeline(): Promise<PipelineData> {
   };
 }
 
-export const getPipelineData = unstable_cache(loadPipeline, ["content-pipeline-v2"], {
+export const getPipelineData = unstable_cache(loadPipeline, ["content-pipeline-v3"], {
   revalidate: CACHE_SECONDS,
+  tags: ["content-pipeline"],
 });

@@ -20,11 +20,11 @@ const LINK = (u, t) => `<a href="${u}" target="_blank" rel="noopener">${t}</a>`;
 
 const PEOPLE = {
   kim:  { name: "김호준 PD님", team: "콘텐츠 1팀", color: "#1e62a8", soft: "#eaf1fa",
-          accs: "김제조 약사님, 서민지 약사님 (새 계정), OWM 분당 약국장님, OWM 명동 약국장님 (시작 대기), 어라운드팜과 미미팜 촬영", editor: "편집 고명진님 (주 15편)" },
+          accs: "김제조 약사님, 김태은 원장님, 서민지 약사님, OWM 명동 약국장님", editor: "편집 윤민유님" },
   kwon: { name: "권현우 PD님", team: "콘텐츠 2팀", color: "#b8620e", soft: "#fbf0e4",
-          accs: "제이약사님 (한국 영상), 김태은 원장님, 유지선 대표님 (예정), 미미팜 기획", editor: "편집 윤민유님 (2팀, 3팀 합쳐 주 17편)" },
-  song: { name: "송아영 PD님", team: "콘텐츠 3팀", color: "#0f7d6c", soft: "#e6f4f1",
-          accs: "제씨약사님, 오주헌 약사님", editor: "편집 윤민유님 (2팀, 3팀 합쳐 주 17편)" },
+          accs: "OWM 분당 약국장님, 제씨약사님, 제이약사님, 유지선 대표님", editor: "노션 담당표에서 확인" },
+  song: { name: "이윤진 PD님", team: "콘텐츠 3팀", color: "#0f7d6c", soft: "#e6f4f1",
+          accs: "오주헌 약사님", editor: "편집자 미정" },
   lee:  { name: "이민우님", team: "약국 계정 운영", color: "#7b4bb0", soft: "#f2ecf9",
           accs: "어라운드팜, 미미팜 게시 (에이전트 폴더 자동화, 실행하고 확인), 조하늘님 소통, 외근 보조", editor: "편집 조하늘님" },
 };
@@ -317,7 +317,47 @@ const OWNER_BEFORE = { oyak: "kim", owmb: "song", jay: "song", jaykr: "song", je
 /* 제이약사님은 한국 영상으로 (10/7). 영어 계정 남은 편은 이미 넘겨서 10/9부터 우리 할 일 없음, 한국 계정은 10/16 첫 촬영 뒤 11월쯤 천천히 시작 (10/8 대표님) */
 const JAY_ENG_LAST = "10-08";
 const JAY_KR_FROM = "11-02";
-const ownerOf = (acc, d) => (before(d, SWAP_FROM) && OWNER_BEFORE[acc]) || OWNER[acc];
+// 연동 전 과거 날짜의 담당과 체크 키는 그대로 둔다.
+const ASSIGNMENTS_FROM = "11-04";
+const liveAssignments = {};
+const ownerOf = (acc, d) => !before(d, ASSIGNMENTS_FROM) && liveAssignments[acc]
+  ? liveAssignments[acc].person
+  : (before(d, SWAP_FROM) && OWNER_BEFORE[acc]) || OWNER[acc];
+const ACCOUNT_WORDS = { jejo: /김제조|김주성/, oyak: /오주헌|오약/, jessi: /제씨|제선영/, jaykr: /전종열|제이약사/, taeeun: /김태은|닭갈비/, owmb: /OWM 분당/, seominji: /서민지/, owmm: /OWM 명동/, yoo: /유지선/, around: /어라운드팜/, mimi: /미미팜/ };
+const accountFor = (text) => Object.keys(ACCOUNT_WORDS).find((key) => ACCOUNT_WORDS[key].test(text));
+function shootPeople(s, d) {
+  const acc = accountFor(s.t);
+  if (before(d, ASSIGNMENTS_FROM) || !acc || ["around", "mimi"].includes(acc) || !liveAssignments[acc]) return s.who;
+  const person = ownerOf(acc, d);
+  return [person, ...s.who.slice(1).filter((assistant) => assistant !== person)];
+}
+function shootEditor(s, d) {
+  const acc = accountFor(s.t);
+  if (before(d, ASSIGNMENTS_FROM) || !acc || ["around", "mimi"].includes(acc) || !liveAssignments[acc]) return s.editor;
+  const editor = liveAssignments[acc].editor;
+  return editor && editor !== "미정" ? editor : "담당 편집자님";
+}
+const mirrorOwner = (m, d) => {
+  const acc = accountFor(m.acc);
+  return acc ? ownerOf(acc, d) : m.who;
+};
+function applyAssignments(assignments) {
+  for (const acc of Object.keys(liveAssignments)) delete liveAssignments[acc];
+  for (const acc of Object.keys(OWNER)) liveAssignments[acc] = { person: null };
+  for (const [acc, assignment] of Object.entries(assignments)) {
+    liveAssignments[acc] = { ...assignment, person: PEOPLE[assignment.person] ? assignment.person : null };
+  }
+  for (const [key, person] of Object.entries(PEOPLE)) {
+    const mine = Object.entries(liveAssignments).filter(([acc, assignment]) => acc !== "jaykr" && assignment.person === key).map(([, assignment]) => assignment);
+    person.accs = mine.map((a) => a.name).join(", ") || "담당 계정 없음";
+    person.editor = [...new Set(mine.map((a) => a.editor))].join(", ");
+    const section = document.getElementById("cal-" + key);
+    if (section) {
+      section.querySelector(".pcal-meta p").textContent = person.accs;
+      section.querySelector(".pcal-meta small").textContent = person.editor;
+    }
+  }
+}
 const ACC_NAME = { jejo: "김제조", oyak: "오주헌", jay: "제이약사님", jaykr: "제이약사님 한국 계정", owmb: "OWM 분당", jessi: "제씨약사님", taeeun: "김태은 원장님", around: "어라운드팜", mimi: "미미팜" };
 const REACT = "업로드 직후 부계정 5개로 반응해요. 영상을 끝까지 2번 보고, 이어지는 댓글을 달고, 서로 공유하고 저장해요.";
 const REPLY = "업로드 뒤 2~3시간 동안 댓글에 답글을 달아요.";
@@ -361,17 +401,17 @@ const editSub = (rows) => `업로드가 다가오는데 편집본을 아직 확�
 function common(who, d) {
   const out = [];
   for (const s of FIXED_SHOOTS) {
-    if (s.d === d && s.who.includes(who)) {
-      const assist = s.who[0] !== who;
+    if (s.d === d && shootPeople(s, d).includes(who)) {
+      const assist = shootPeople(s, d)[0] !== who;
       out.push({ k: "shoot", time: s.time, t: (assist ? (who === "lee" ? "외근 보조: " : "동행: ") : "") + s.t, sub: s.sub });
     }
-    if (s.after === d && s.who[0] === who && dow(d) !== 1) out.push({ k: "edit", t: `${lab(s.d)} 촬영분 정리하고 ${s.editor}께 의뢰`, sub: `${lab(s.d)} 촬영 원본을 드라이브에 편별로 나눠 넣고, 어느 파일이 어느 대사인지 대본과 맞춰 두세요. 노션에서 그 편들이 \"녹화 완료\"로 되어 있는지 확인해 주세요. 그다음 /edit-request 로 의뢰 목록을 만들어 ${s.editor}께 보내요.` });
+    if (s.after === d && shootPeople(s, d)[0] === who && dow(d) !== 1) out.push({ k: "edit", t: `${lab(s.d)} 촬영분 정리하고 ${shootEditor(s, d)}께 의뢰`, sub: `${lab(s.d)} 촬영 원본을 드라이브에 편별로 나눠 넣고, 어느 파일이 어느 대사인지 대본과 맞춰 두세요. 노션에서 그 편들이 \"녹화 완료\"로 되어 있는지 확인해 주세요. 그다음 /edit-request 로 의뢰 목록을 만들어 ${shootEditor(s, d)}께 보내요.` });
   }
   for (const t of TODO) if (t.d === d && t.who.includes(who)) out.push({ k: "todo", lb: before(d, "10-12") ? "인수인계" : "할 일", t: t.t, sub: t.sub });
   for (const s of WEEK_SHOOTS) {
   }
   /* 촬영 준비 마감은 그날 몫을 한 줄로 묶는다 */
-  const dues = WEEK_SHOOTS.filter((s) => (!s.gone || before(d, s.gone)) && dueOf(s.w) === d && (s.who[0] === who || (who === "lee" && s.around && s.who.includes(who))));
+  const dues = WEEK_SHOOTS.filter((s) => (!s.gone || before(d, s.gone)) && dueOf(s.w) === d && (shootPeople(s, d)[0] === who || (who === "lee" && s.around && shootPeople(s, d).includes(who))));
   if (dues.length) {
     const weeks = [...new Set(dues.map((s) => lab(s.w)))].join(", ");
     const extra = [];
@@ -384,20 +424,20 @@ function common(who, d) {
   for (const s of FIXED_SHOOTS) {
     let due = add(s.d, -7);
     if (HOLIDAYS[due]) due = add(due, -1);
-    if (due === d && s.who[0] === who && !before(due, TODAY) && !TODO.some((x) => x.t.includes(lab(s.d)) && x.who.includes(who)))
+    if (due === d && shootPeople(s, d)[0] === who && !before(due, TODAY) && !TODO.some((x) => x.t.includes(lab(s.d)) && x.who.includes(who)))
       out.push({ k: "due", t: `${lab(s.d)} ${s.t} 준비`, sub: "촬영 일주일 전이에요. 오늘까지 대본을 완성하고, 신보 최석호 과장님께 5층이나 6층을 예약해 주세요." });
   }
   /* 월요일 편집 점검 (유현일님이 하던 리듬): 이번 주 업로드 일정 확인, 조정 + 편집 의뢰 */
   if (dow(d) === 1 && !before(d, "10-12")) {
-    const shot = WEEK_SHOOTS.filter((s) => !s.gone && s.editor && add(s.w, 7) === d && s.who[0] === who).map((s) => `${polite(s.t.replace(/ \(.+\)$/, ""))}(${s.editor}께)`);
-    const fixed = FIXED_SHOOTS.filter((s) => s.after === d && s.who[0] === who).map((s) => `${lab(s.d)} ${polite(s.t)}`);
+    const shot = WEEK_SHOOTS.filter((s) => !s.gone && shootEditor(s, d) && add(s.w, 7) === d && shootPeople(s, d)[0] === who).map((s) => `${polite(s.t.replace(/ \(.+\)$/, ""))}(${shootEditor(s, d)}께)`);
+    const fixed = FIXED_SHOOTS.filter((s) => s.after === d && shootPeople(s, d)[0] === who).map((s) => `${lab(s.d)} ${polite(s.t)}`);
     const extra = [...shot, ...fixed];
     out.push({ k: "edit", t: who === "lee" ? "월요일 편집 점검: 이번 주 게시 일정 확인, 조정 + 조하늘님 의뢰" : "월요일 편집 점검: 이번 주 업로드 일정 확인, 조정 + 편집 의뢰",
       sub: (who === "lee" ? "노션을 보고 이번 주 게시 일정이 맞는지 확인하고, 빈 날이나 겹치는 날은 조정해 주세요." : "노션 「인플루언서 스케줄 및 진행도」를 보고 이번 주 업로드 일정이 맞는지 확인하고, 빈 날이나 겹치는 날은 조정해 주세요.") +
-        " 다음 주 업로드분까지 편집자님께 넘어갔는지도 봐요." + (extra.length ? ` 지난주 촬영분도 오늘 편집 의뢰해 주세요: ${extra.join(", ")}.` : "") + (MONDAY_EXTRA[who] || "") });
+        " 다음 주 업로드분까지 편집자님께 넘어갔는지도 봐요." + (extra.length ? ` 지난주 촬영분도 오늘 편집 의뢰해 주세요: ${extra.join(", ")}.` : "") + (before(d, ASSIGNMENTS_FROM) ? MONDAY_EXTRA[who] || "" : " 담당 계정과 편집자는 노션 담당표에서 확인해 주세요.") });
   }
   if (dow(d) === 1) {
-    const ms = MIRROR.filter((m) => m.who === who && !before(d, m.from));
+    const ms = MIRROR.filter((m) => mirrorOwner(m, d) === who && !before(d, m.from));
     if (ms.length) out.push({ k: "mirror", t: `유튜브, 틱톡 예약 걸기: ${ms.map((m) => m.acc).join(", ")}`,
       sub: `지난주 인스타에 올린 원본을 유튜브와 틱톡에 각각 게시일 +7일 18:15로 예약해요. 날짜는 주말까지 세고, 평일 공휴일에 걸리면 다음 날로 넘겨요. 계정마다 하루 1편까지만 걸고, 이미 예약된 편은 빼 주세요. 예약은 Codex에 맡기고, 끝나면 예약 목록만 확인하면 돼요.${ms.some((m) => m.links) ? "<br>" + ms.filter((m) => m.links).map((m) => m.acc + " " + m.links).join(" / ") : ""}` });
   }
@@ -434,7 +474,7 @@ function rawTasks(who, d) {
   const work = weekDay(d) && !hol;
 
   /* PD 업로드: 그날 담당(ownerOf)에게. 담당 바꾼 날(SWAP_FROM) 전에는 원래 담당 */
-  if (who !== "lee") {
+  {
     const mine = (acc) => ownerOf(acc, d) === who;
     if (weekDay(d) && mine("jejo")) out.push(upSet(d, "jejo", "17:00 김제조 업로드", "올리기 전에 김제조 약사님 관리방에 영상과 캡션을 먼저 공유해 주세요. 17시에 올리고 \"업로드 완료\" 태그를 단 다음, 부계정으로 반응하고 답글을 달아요. 클린본은 NPK NAS에 올리고, 김제조 OS에 기획안 1개를 올려 주세요. 올라간 건 여기서 확인해요: " + CHECK_LINKS.jejo, { gapSub: "이날 올릴 김제조 약사님 영상이 없어요. 노션에서 편집이 끝나 기다리는 편을 골라 이 날짜를 넣어 주세요. 업로드를 7일 넘게 비우면 안 돼요." }));
     if (work && mine("oyak")) out.push(upSet(d, "oyak", "저녁 오주헌 업로드", "오주헌 약사님 관리방에 영상과 캡션을 먼저 올리고, 저녁에 업로드해요. 올린 뒤 스토리에 공유하고 \"업로드 완료\" 태그를 단 다음, 부계정으로 반응하고 답글을 달아 주세요. 화면에 약국 이름이 나오지 않는지(달력 같은 소품까지) 꼭 봐 주세요. 올라간 건 여기서 확인해요: " + CHECK_LINKS.oyak, { gapSub: before(d, "10-19") ? GAP_SUB : "이날 올릴 오주헌 약사님 영상이 없어요. 9/30, 10/12 주 촬영분 가운데 편집이 끝난 편으로 채워 주세요." }));
@@ -488,8 +528,8 @@ function planQuota(who, d) {
   const end = add(d, 27);
   const items = [
     /* 7일 전이 이미 지난 주(10/12 주)는 촬영 주 화요일까지로 본다 */
-    ...WEEK_SHOOTS.filter((s) => !s.gone && (s.planBy || s.who[0]) === who && s.n).map((s) => ({ due: before(add(s.w, -7), "10-12") ? add(s.w, 1) : dueOf(s.w), n: parseInt(s.n, 10) || 0, name: s.t.replace(/ \(.+\)$/, "") })),
-    ...FIXED_SHOOTS.filter((s) => s.who[0] === who && s.n).map((s) => { let due = add(s.d, -7); while (!workDay(due)) due = add(due, -1); if (before(due, "10-12")) due = add(s.d, -1); return { due, n: s.n, name: s.t }; }),
+    ...WEEK_SHOOTS.filter((s) => !s.gone && (s.planBy || shootPeople(s, d)[0]) === who && s.n).map((s) => ({ due: before(add(s.w, -7), "10-12") ? add(s.w, 1) : dueOf(s.w), n: parseInt(s.n, 10) || 0, name: s.t.replace(/ \(.+\)$/, "") })),
+    ...FIXED_SHOOTS.filter((s) => shootPeople(s, d)[0] === who && s.n).map((s) => { let due = add(s.d, -7); while (!workDay(due)) due = add(due, -1); if (before(due, "10-12")) due = add(s.d, -1); return { due, n: s.n, name: s.t }; }),
   ].filter((x) => x.n && !before(x.due, d) && !before(end, x.due));
   if (!items.length) return null;
   const n = items.reduce((a, x) => a + x.n, 0);
@@ -573,15 +613,17 @@ function tasks(who, d) {
    노션을 못 읽으면 위 표로 그린다. 출퇴근기록부로 보내는 할 일은 노션을 받아 본 뒤에만 보낸다 */
 const UP_CUTOVER = "10-09";
 const UP_FROM_NOTION = ["jejo", "oyak", "jay", "jaykr", "owmb", "jessi", "taeeun"];
-const upState = { ready: false, at: 0, sig: "" };
+const upState = { ready: false, at: 0, sig: "", error: false };
 async function loadUploads() {
   try {
     const r = await fetch("/api/calendar/uploads", { cache: "no-store" });
     if (!r.ok) throw new Error(r.status);
     const j = await r.json();
+    if (!Array.isArray(j.uploads) || !j.assignments || typeof j.assignments !== "object") throw new Error("담당표 없음");
     if (Array.isArray(j.uploads)) {
-      const sig = JSON.stringify(j.uploads);
+      const sig = JSON.stringify([j.uploads, j.assignments]);
       if (sig !== upState.sig) {
+        applyAssignments(j.assignments);
         for (let i = UPLOADS.length - 1; i >= 0; i--) {
           const [d, acc] = UPLOADS[i];
           if (!before(d, UP_CUTOVER) && UP_FROM_NOTION.includes(acc)) UPLOADS.splice(i, 1);
@@ -590,8 +632,9 @@ async function loadUploads() {
         upState.sig = sig;
       }
     }
-  } catch (e) {}
-  upState.ready = true;
+    upState.ready = true;
+    upState.error = false;
+  } catch (e) { upState.ready = false; upState.error = true; }
   upState.at = Date.now();
 }
 
@@ -706,6 +749,7 @@ function showSync() {
   const s = document.getElementById("sync");
   if (!s) return;
   s.textContent = store.online ? "네 분이 같이 보는 캘린더 (자동 저장)" : "서버 연결 안 됨, 이 브라우저에만 저장 중";
+  if (upState.error) s.textContent += " 담당표 연결 실패. 새로고침해 주세요.";
   s.className = "sync " + (store.online ? "is-ok" : "is-off");
 }
 
@@ -852,7 +896,7 @@ const POLITE = [
   ["김제조", "약사님"], ["서민지", "약사님"], ["오주헌", "약사님"], ["전종열", "약사님"], ["채진병", "약사님"],
   ["제씨", "약사님", true], ["제이", "약사님", true],
   ["김태은", "원장님"], ["유지선", "대표님"], ["김주성", "대표님"], ["권혁찬", "대표님"], ["박영인", "실장님"], ["최석호", "과장님"],
-  ["김호준", "PD님"], ["송아영", "PD님"], ["권현우", "PD님"], ["강민형", "PD님"],
+  ["김호준", "PD님"], ["송아영", "PD님"], ["이윤진", "PD님"], ["권현우", "PD님"], ["강민형", "PD님"],
   ["이민우", "님", true], ["유현일", "님", true], ["여형준", "님", true], ["노재영", "님", true], ["윤민유", "님", true], ["김도희", "님", true], ["고명진", "님", true],
   ["조하늘", "님", true], ["전재덕", "님", true], ["고혜영", "님", true], ["최혜진", "님", true], ["신용범", "님", true], ["엄성미", "님", true], ["고명진", "님", true],
 ];
@@ -876,7 +920,7 @@ function polite(s) {
    약국 계정 게시: G:\내 드라이브\에이전트\매뉴얼\pharmacy-sns-publish, pharmacy-reels-publish */
 const P_CMD = "명령어 설명은 G:\\내 드라이브\\PD님 폴더\\공용\\설치 패키지\\웰니스박스 명령어 패키지\\00-먼저 읽기.md 에 있어요.";
 const P_PUB = "매뉴얼은 G:\\내 드라이브\\에이전트\\매뉴얼\\ 폴더의 pharmacy-sns-publish(카드뉴스)와 pharmacy-reels-publish(릴스)에 있어요.";
-const NAME = { kim: "김호준", song: "송아영", kwon: "권현우", lee: "이민우" };
+const NAME = { kim: "김호준", song: "이윤진", kwon: "권현우", lee: "이민우" };
 /* 부계정 반응 순서 (RULES "업로드 뒤"와 같은 내용) */
 const STEP_REACT1 = "1번 부계정으로 영상을 끝까지 2번 보고, 좋아요와 저장을 누르고, 영상과 이어지는 댓글을 단 다음 다음 부계정에 DM으로 공유해요.";
 function howTo(who, it) {
@@ -1080,9 +1124,9 @@ function renderPerson(k) {
     const wk = el("div", "g-week");
     wk.dataset.w = i;
     wk.hidden = i !== view.week;
-    const shoots = WEEK_SHOOTS.filter((s) => !s.gone && s.w === wMon && s.who.includes(k));
-    const lead = shoots.filter((s) => s.who[0] === k);
-    const assist = shoots.filter((s) => s.who[0] !== k);
+    const shoots = WEEK_SHOOTS.filter((s) => !s.gone && s.w === wMon && shootPeople(s, wMon).includes(k));
+    const lead = shoots.filter((s) => shootPeople(s, wMon)[0] === k);
+    const assist = shoots.filter((s) => shootPeople(s, wMon)[0] !== k);
     const band = el("div", "g-band");
     band.innerHTML = (i === 0 ? `<span class="b-hand">인수인계 주</span>` : "") +
       (lead.length ? `<span class="b-label">이번 주 촬영 (요일 정하기)</span>` + lead.map((s) => `<span class="b-chip">${polite(s.t)}${s.n ? ` <b>${s.n}</b>` : ""}</span>`).join("") : "") +
@@ -1233,7 +1277,7 @@ async function refresh(force) {
   const upBefore = upState.sig;
   const [ok] = await Promise.all([pull(), Date.now() - upState.at > 300000 ? loadUploads() : null]);
   showSync();
-  if ((ok && JSON.stringify(SH) !== before_) || upState.sig !== upBefore) (EMBED ? [EMBED] : Object.keys(PEOPLE)).forEach(renderPerson);
+  if ((ok && JSON.stringify(SH) !== before_) || upState.sig !== upBefore) { (EMBED ? [EMBED] : Object.keys(PEOPLE)).forEach(renderPerson); renderStock(); }
 }
 document.addEventListener("visibilitychange", () => refresh(false));
 window.addEventListener("focus", () => refresh(false));
@@ -1244,9 +1288,9 @@ function renderStock() {
   const box = document.getElementById("stock");
   if (!box) return;
   box.innerHTML = `<div class="st-row st-head"><div>계정</div><div>남은 영상</div><div>버티는 날</div><div>다음 촬영</div><div>찍을 편수</div><div>이유</div></div>` +
-    STOCK.map((x) => `<div class="st-row" style="--c:${PEOPLE[x.pd].color}"><div><b>${x.acc}</b><small>${PEOPLE[x.pd].name}</small></div>` +
+    STOCK.map((x) => { const acc = accountFor(x.acc); const pd = acc && !["around", "mimi"].includes(acc) ? ownerOf(acc, TODAY) : x.pd; return `<div class="st-row" style="--c:${PEOPLE[pd]?.color || "#64748b"}"><div><b>${x.acc}</b><small>${PEOPLE[pd]?.name || "담당 미정"}</small></div>` +
       `<div><span class="ed-num">${x.left}</span>${x.leftSub ? `<small>${x.leftSub}</small>` : ""}</div><div>${x.until}</div><div>${x.next}</div>` +
-      `<div><span class="st-n">${x.n}</span></div><div class="st-why">${x.why}</div></div>`).join("");
+      `<div><span class="st-n">${x.n}</span></div><div class="st-why">${x.why}</div></div>`; }).join("");
 }
 
 function renderEditors() {
@@ -1265,4 +1309,4 @@ function renderRest() {
 }
 
 renderJump(); renderCals(); renderStock(); renderEditors(); renderRest(); applyView(); showSync();
-Promise.all([pull(), loadUploads()]).then(async ([ok]) => { showSync(); if (ok) await migrateLocalChecks(); (EMBED ? [EMBED] : Object.keys(PEOPLE)).forEach(renderPerson); });
+Promise.all([pull(), loadUploads()]).then(async ([ok]) => { showSync(); if (ok) await migrateLocalChecks(); (EMBED ? [EMBED] : Object.keys(PEOPLE)).forEach(renderPerson); renderStock(); });

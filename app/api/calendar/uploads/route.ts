@@ -1,4 +1,5 @@
 import { getCalendarUploads } from "@/lib/content-uploads";
+import { getContentAssignments } from "@/lib/content-assignments";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,8 +10,8 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   try {
-    const uploads = await getCalendarUploads();
-    return Response.json({ uploads, fetchedAt: new Date().toISOString() }, { headers: { "Cache-Control": "public, max-age=60, s-maxage=60" } });
+    const [uploads, assignments] = await Promise.all([getCalendarUploads(), getContentAssignments()]);
+    return Response.json({ uploads, assignments, fetchedAt: new Date().toISOString() }, { headers: { "Cache-Control": "public, max-age=60, s-maxage=60" } });
   } catch {
     return Response.json({ error: "노션에서 업로드 일정을 읽지 못했어요" }, { status: 502, headers: { "Cache-Control": "no-store" } });
   }
